@@ -1,10 +1,11 @@
 # Line file format
 
 Lines are plain JSON. The engine contains no line data: everything below is read at runtime,
-either from `public/lines/` (built-in, listed in `public/lines/index.json`) or imported from
-**Select Line → Import line JSON** (stored in the browser's IndexedDB).
+either from `src/data/lines/*.json` (built-in; every file in that folder is picked up
+automatically) or imported from **Select Line → Import line JSON** (stored in the browser).
 
-The minimal format from the original brief is valid as-is (`public/lines/example-minimal.json`):
+The minimal format from the original brief is valid as-is (`src/data/example-minimal.json`, also
+shown by the **Example file** button):
 
 ```json
 {
@@ -40,6 +41,24 @@ The minimal format from the original brief is valid as-is (`public/lines/example
 | `speedRestrictions` | array | `[]` | Temporary/permanent speed restrictions. |
 | `directions.A.name` / `directions.B.name` | string | `Direction <terminus>` | A = first → last station, B = reverse. |
 | `announcements` | object | English | Templates: `nextStation`, `arrival`, `terminus`; `{station}` and `{line}` are substituted. |
+
+### Branching lines (`branches`)
+
+A line that forks (like Line B) lists its trunk in `stations` and each branch in `branches`.
+Each branch becomes a separate drivable service that shares the trunk alignment, shown as
+`Line B → Bellevue – Centre` and `Line B → Aéroport Est`.
+
+```json
+"stations": [ …trunk…, { "name": "Parc Monceau", "speedLimit": 65 } ],
+"branches": [
+  { "id": "bellevue", "name": "Bellevue – Centre",
+    "link": { "distanceToNext": 1150, "track": [ { "length": 60 }, { "length": 806, "radius": 330, "turn": "left" } ] },
+    "stations": [ { "name": "Mairie de Bellevue", "distanceToNext": 1000 }, … ] }
+]
+```
+
+`link` is merged into the last trunk station (the junction): it holds the distance, speed limit
+and track layout from the junction to the branch's first station.
 
 ### `signaling`
 
@@ -87,6 +106,7 @@ for both directions. Lineside warning and execution boards are generated automat
 | `announcement` | path / URL | — | MP3 played as next-station announcement (relative to the line file). |
 | `announcementText` | string | — | Custom speech text for this station. |
 | `track` | array | straight & level | Alignment between this station and the next (see below). |
+| `connections` | array of names | `[]` | Walking connections to stations with another name (drawn dashed on the map), e.g. `["Aéroport International"]`. Stations with the same name on different lines are interchanges automatically. |
 
 ### `track` segments
 
@@ -121,7 +141,7 @@ Station ids are shown in the station table (they are the slug of the name, e.g.
 
 ## Trains
 
-Trains live in `public/trains/*.json` (listed in `public/trains/index.json`). All fields are optional:
+Trains live in `src/data/trains/*.json` (picked up automatically, sorted by `order`). All fields are optional:
 
 | Field | Meaning |
 |---|---|

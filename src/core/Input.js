@@ -119,7 +119,8 @@ export class Input {
   }
 
   pollGamepad() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let pads = [];
+    try { pads = navigator.getGamepads ? navigator.getGamepads() || [] : []; } catch { pads = []; } // blocked in some embedded frames
     const gp = [...pads].find((p) => p && p.connected);
     this.padHeld = new Set();
     if (!gp) { this.look.x = this.look.y = 0; return; }

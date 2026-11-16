@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #0b0e12; --panel: rgba(12, 16, 22, 0.72); --panel-solid: #121820; --line: #263140;
   --text: #e4eaf0; --sub: #8fa1b3; --accent: #ffcc00; --ok: #3cff8a; --warn: #ffb300; --bad: #ff4a3a; --blue: #5ab0ff;
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
@@ -124,3 +125,15 @@ input[type=range] { accent-color: var(--accent); }
 .grade-S, .grade-A { color: var(--ok); } .grade-B, .grade-C { color: var(--accent); } .grade-D, .grade-E, .grade-F { color: var(--bad); }
 .summary .score { text-align: center; font-size: 28px; font-weight: 700; margin: 6px 0 12px; }
 .penalties { font-size: 14px; } .penalties b { color: #ff8a80; }
+
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; z-index: 30; padding: 16px; }
+.modal-box { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; gap: 8px; }
+.modal-box header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.modal-box h3 { margin: 0; }
+.modal-box textarea { width: 100%; min-height: 320px; flex: 1; background: #0b0f14; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 12px/1.45 "Courier New", monospace; resize: vertical; }
+.btn:focus-visible, .line-item:focus-visible, .train-card:focus-visible, .key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .hud-tc { top: 96px; min-width: 0; } .hud-help, .hud-br { display: none; }
+  .selection-card { min-width: 0; width: 100%; } .menu-main { padding: 16px; } .menu-screen { padding: 16px; }
+  .field { grid-template-columns: 1fr 1fr 48px; } .brand h1 { font-size: 32px; }
+}

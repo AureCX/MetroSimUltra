@@ -1,5 +1,6 @@
 {
   "id": "hx6",
+  "order": 3,
   "name": "HX-6 Heavy",
   "description": "Long, heavy high-capacity stock: 4 doors per side, demanding precise stops on 110 m platforms.",
   "cars": 6, "carLength": 16.5, "carGap": 0.9, "width": 2.8, "height": 3.6,

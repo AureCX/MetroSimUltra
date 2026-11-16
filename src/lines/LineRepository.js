@@ -1,59 +1,55 @@
-// Discovers lines and trains. Built-in content is plain JSON under /public, user lines are
-// imported JSON files persisted in IndexedDB. The engine never hardcodes any line.
-import { normalizeLine, LineValidationError } from './LineSchema.js';
+// Discovers lines and trains. Built-in content is plain JSON in src/data (any file dropped
+// there is picked up automatically at build time); user lines are imported JSON files persisted
+// in IndexedDB. The engine itself never hardcodes any line.
+import { normalizeLine, expandServices, LineValidationError } from './LineSchema.js';
 import { AssetStore } from '../core/AssetStore.js';
 import { deriveTrainSpecs } from '../physics/TrainPhysics.js';
 import { slugify } from '../core/util.js';
+import exampleMinimal from '../data/example-minimal.json';
 
-const base = import.meta.env?.BASE_URL ?? './';
+const builtInLines = import.meta.glob('../data/lines/*.json', { eager: true, import: 'default' });
+const builtInTrains = import.meta.glob('../data/trains/*.json', { eager: true, import: 'default' });
 
-async function getJSON(path) {
-  const r = await fetch(`${base}${path}`);
-  if (!r.ok) throw new Error(`Cannot load ${path} (${r.status})`);
-  return r.json();
-}
+export const EXAMPLE_LINE = exampleMinimal;
 
 export class LineRepository {
   constructor() { this.lines = []; this.trains = []; this.errors = []; }
 
+  addSource(raw, sourceId, builtIn) {
+    const services = expandServices({ ...raw, id: raw.id || sourceId });
+    for (const svc of services) this.lines.push(normalizeLine(svc, { id: svc.id || sourceId, builtIn, sourceId }));
+  }
+
   async load() {
     this.lines = []; this.errors = [];
-    try {
-      const idx = await getJSON('lines/index.json');
-      for (const file of idx.lines) {
-        try {
-          const raw = await getJSON(`lines/${file}`);
-          const line = normalizeLine(raw, { id: raw.id || slugify(file.replace(/\.json$/, '')), builtIn: true });
-          line.baseUrl = `${base}lines/`;
-          for (const st of line.stations) if (st.announcement && !/^(https?:|\/|data:)/.test(st.announcement)) st.announcement = `${line.baseUrl}${st.announcement}`;
-          this.lines.push(line);
-        } catch (e) { this.errors.push(`${file}: ${e.message}`); }
-      }
-    } catch (e) { this.errors.push(e.message); }
-    for (const { id, json } of await AssetStore.listLines()) {
-      try { this.lines.push(normalizeLine(json, { id, builtIn: false })); } catch (e) { this.errors.push(`${id}: ${e.message}`); }
+    for (const [file, raw] of Object.entries(builtInLines).sort(([a], [b]) => a.localeCompare(b))) {
+      try { this.addSource(raw, raw.id || slugify(file.split('/').pop().replace(/\.json$/, '')), true); }
+      catch (e) { this.errors.push(`${file}: ${e.message}`); }
     }
-    const tIdx = await getJSON('trains/index.json');
-    this.trains = [];
-    for (const file of tIdx.trains) this.trains.push(deriveTrainSpecs(await getJSON(`trains/${file}`)));
+    for (const { id, json } of await AssetStore.listLines()) {
+      try { this.addSource(json, id, false); } catch (e) { this.errors.push(`${id}: ${e.message}`); }
+    }
+    this.trains = Object.values(builtInTrains).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map(deriveTrainSpecs);
     return this;
   }
 
-  /** Validates and stores a user line. Returns the normalised line. */
+  /** Validates and stores a user line (all its services). Returns the first service. */
   async importLine(text) {
     let raw;
     try { raw = JSON.parse(text); } catch (e) { throw new LineValidationError(`Invalid JSON: ${e.message}`); }
     const id = raw.id ? `custom-${slugify(raw.id)}` : `custom-${slugify(`${raw.network || ''}-${raw.line || raw.name || 'line'}`)}`;
-    const line = normalizeLine(raw, { id, builtIn: false });
+    const services = expandServices({ ...raw, id });
+    const lines = services.map((svc) => normalizeLine(svc, { id: svc.id, builtIn: false, sourceId: id }));
     await AssetStore.putLine(id, raw);
-    this.lines = this.lines.filter((l) => l.id !== id);
-    this.lines.push(line);
-    return line;
+    this.lines = this.lines.filter((l) => l.sourceId !== id);
+    this.lines.push(...lines);
+    return lines[0];
   }
   async deleteLine(id) {
-    await AssetStore.deleteLine(id);
-    for (const k of await AssetStore.listAudioKeys(`${id}/`)) await AssetStore.deleteAudio(k);
-    this.lines = this.lines.filter((l) => l.id !== id);
+    const src = this.line(id)?.sourceId || id;
+    await AssetStore.deleteLine(src);
+    for (const l of this.lines.filter((x) => x.sourceId === src)) for (const k of await AssetStore.listAudioKeys(`${l.id}/`)) await AssetStore.deleteAudio(k);
+    this.lines = this.lines.filter((l) => l.sourceId !== src);
   }
   networks() { return [...new Set(this.lines.map((l) => l.network))]; }
   line(id) { return this.lines.find((l) => l.id === id); }

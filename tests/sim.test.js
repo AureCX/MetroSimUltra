@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { normalizeLine, LineValidationError } from '../src/lines/LineSchema.js';
+import { normalizeLine, expandServices, LineValidationError } from '../src/lines/LineSchema.js';
 import { TrackGeometry } from '../src/lines/TrackGeometry.js';
 import { Route } from '../src/lines/Route.js';
 import { TrainPhysics, deriveTrainSpecs } from '../src/physics/TrainPhysics.js';
@@ -11,18 +11,19 @@ import { StationManager } from '../src/stations/StationManager.js';
 import { Timetable } from '../src/stations/Timetable.js';
 import { EventBus } from '../src/core/EventBus.js';
 
-const read = (p) => JSON.parse(fs.readFileSync(new URL(`../public/${p}`, import.meta.url)));
+const read = (p) => JSON.parse(fs.readFileSync(new URL(`../src/data/${p}`, import.meta.url)));
+const lineFiles = fs.readdirSync(new URL('../src/data/lines/', import.meta.url)).filter((f) => f.endsWith('.json'));
 const train = deriveTrainSpecs(read('trains/mx80-classic.json'));
 const settings = { v: { 'gameplay.atp': true, 'gameplay.vigilance': false, 'gameplay.stopTolerance': 1.5 }, get(k) { return this.v[k]; } };
 
-function setup(file = 'lines/paris-line1-sample.json', dir = 'A') {
-  const line = normalizeLine(read(file));
+function setup(file = 'lines/grandville-a.json', dir = 'A', service = 0) {
+  const line = normalizeLine(expandServices(read(file))[service]);
   const geom = new TrackGeometry(line);
   return { line, geom, route: new Route(line, geom, dir) };
 }
 
 test('minimal example line from the brief imports', () => {
-  const line = normalizeLine(read('lines/example-minimal.json'));
+  const line = normalizeLine(read('example-minimal.json'));
   assert.equal(line.stations.length, 3);
   assert.equal(line.color, '#FFCC00');
   assert.equal(line.stations[1].speedLimit, 60);
@@ -34,8 +35,8 @@ test('invalid lines are rejected with readable errors', () => {
 });
 
 test('all built-in lines build in both directions', () => {
-  for (const f of read('lines/index.json').lines) {
-    const { line, geom } = setup(`lines/${f}`);
+  for (const f of lineFiles) for (let svc = 0; svc < expandServices(read(`lines/${f}`)).length; svc++) {
+    const { line, geom } = setup(`lines/${f}`, 'A', svc);
     for (const d of ['A', 'B']) {
       const r = new Route(line, geom, d);
       assert.equal(r.stops.length, line.stations.length);
@@ -43,6 +44,21 @@ test('all built-in lines build in both directions', () => {
       const tt = new Timetable(r, train, line.startTime);
       for (let k = 1; k < tt.entries.length; k++) assert.ok(tt.entries[k].arr > (tt.entries[k - 1].dep ?? 0));
     }
+  }
+});
+
+test('branching line B expands into two services sharing the trunk', () => {
+  const svcs = expandServices(read('lines/grandville-b.json')).map((r) => normalizeLine(r));
+  assert.deepEqual(svcs.map((l) => l.stations.at(-1).name), ['Bellevue – Centre', 'Aéroport Est']);
+  const [g1, g2] = svcs.map((l) => new TrackGeometry(l));
+  const i = svcs[0].stations.findIndex((s) => s.name === 'Parc Monceau');
+  const p1 = g1.point(g1.stationS[i]), p2 = g2.point(g2.stationS[i]);
+  assert.ok(Math.hypot(p1.x - p2.x, p1.z - p2.z) < 0.01, 'trunk identical');
+  const a = normalizeLine(read('lines/grandville-a.json')), ga = new TrackGeometry(a);
+  for (const name of ['République', 'Gare Centrale']) {
+    const pa = ga.point(ga.stationS[a.stations.findIndex((s) => s.name === name)]);
+    const pb = g1.point(g1.stationS[svcs[0].stations.findIndex((s) => s.name === name)]);
+    assert.ok(Math.hypot(pa.x - pb.x, pa.z - pb.z) < 5, `${name} shared on the map`);
   }
 });
 

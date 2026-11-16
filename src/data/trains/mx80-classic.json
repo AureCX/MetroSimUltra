@@ -1,5 +1,6 @@
 {
   "id": "mx80",
+  "order": 1,
   "name": "MX-80 Classic",
   "description": "1980s-style stock with GTO chopper traction: lively whine, slower brake response.",
   "cars": 5, "carLength": 15.1, "carGap": 0.9, "width": 2.45, "height": 3.5,

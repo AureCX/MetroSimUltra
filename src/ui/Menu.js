@@ -7,6 +7,7 @@ import { formatClock, formatDelta, slugify } from '../core/util.js';
 import { Timetable } from '../stations/Timetable.js';
 import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
+import { EXAMPLE_LINE } from '../lines/LineRepository.js';
 
 export class Menu {
   constructor(root, { repo, settings, save, input, bus, audio }) {
@@ -61,7 +62,7 @@ export class Menu {
       </nav>
       <div class="selection-card">
         ${l ? `<div class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</div>
-        <div><b>${esc(l.name)}</b> · ${esc(l.network)}<br><span class="sub">${esc(l.directions[this.sel.direction].name)} · ${l.stations.length} stations</span><br>
+        <div><b>${esc(l.fullName)}</b> · ${esc(l.network)}<br><span class="sub">${esc(l.directions[this.sel.direction].name)} · ${l.stations.length} stations</span><br>
         <span class="sub">Train: ${esc(t?.name || '-')}</span>
         ${rec ? `<br><span class="sub">Best: ${rec.bestScore} pts (grade ${rec.bestGrade}) · ${rec.runs} run(s)</span>` : ''}</div>` : '<div>No line available. Import one in “Select Line”.</div>'}
       </div>
@@ -82,13 +83,14 @@ export class Menu {
           <div class="row-tools">
             <select id="l-net">${nets.map((n) => `<option ${n === this.network ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
             <label class="btn small">Import line JSON<input type="file" id="l-import" accept=".json,application/json" multiple hidden></label>
-            <a class="btn small ghost" href="${import.meta.env?.BASE_URL ?? './'}lines/example-minimal.json" download>Example file</a>
+            <button class="btn small ghost" id="l-example">Example file</button>
           </div>
           <svg id="l-map" class="network-map" preserveAspectRatio="xMidYMid meet"></svg>
           <div id="l-list" class="line-list"></div>
         </div>
         <div class="detail-col" id="l-detail"></div>
       </div>`, { wide: true });
+    body.querySelector('#l-example').onclick = () => this.showJson('Example line file', EXAMPLE_LINE);
     body.querySelector('#l-net').onchange = (e) => { this.network = e.target.value; const first = this.repo.lines.find((l) => l.network === this.network); if (first) this.sel.lineId = first.id; this.screen_lines(); };
     body.querySelector('#l-import').onchange = async (e) => {
       const msgs = [];
@@ -110,7 +112,7 @@ export class Menu {
     const list = this.root.querySelector('#l-list');
     list.innerHTML = lines.map((l) => `<button class="line-item ${l.id === this.sel.lineId ? 'sel' : ''}" data-id="${l.id}">
       <span class="line-badge" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
-      <span><b>${esc(l.name)}</b><br><span class="sub">${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}</span></span>
+      <span><b>${esc(l.fullName)}</b><br><span class="sub">${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}</span></span>
       ${l.builtIn ? '' : '<span class="tag">custom</span>'}</button>`).join('');
     list.querySelectorAll('.line-item').forEach((b) => (b.onclick = () => select(b.dataset.id)));
     this.renderLineDetail();
@@ -127,7 +129,7 @@ export class Menu {
     const total = l.stations.reduce((a, s) => a + s.distanceToNext, 0);
     el.innerHTML = `
       <div class="detail-head"><span class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
-      <div><h3>${esc(l.name)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km · ${l.stations.length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
+      <div><h3>${esc(l.fullName)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km · ${l.stations.length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
       <div class="dir-toggle">${['A', 'B'].map((d) => `<button class="btn small ${d === this.sel.direction ? 'primary' : ''}" data-dir="${d}">${esc(l.directions[d].name)}</button>`).join('')}</div>
       <div class="table-wrap"><table class="stations">
         <thead><tr><th>#</th><th>Station</th><th>Next</th><th>Limit</th><th>Dwell</th><th>Arr</th><th>Platform</th><th title="Next-station announcement">🔊</th></tr></thead>
@@ -135,7 +137,7 @@ export class Menu {
           const st = s.station, e = tt.entry(k);
           const dist = this.sel.direction === 'A' ? st.distanceToNext : (k < route.stops.length - 1 ? route.stops[k + 1].station.distanceToNext : 0);
           const has = audioKeys.has(st.id);
-          return `<tr><td>${k + 1}</td><td>${esc(st.name)}<span class="sub"> · ${st.style}</span></td><td>${dist ? `${dist} m` : '—'}</td><td>${st.speedLimit}</td><td>${st.stopDuration}s</td>
+          return `<tr><td>${k + 1}</td><td>${esc(st.name)}${st.connections.length ? ` <span class="tag" title="Connections">${st.connections.map(esc).join(', ')}</span>` : ''}<span class="sub"> · ${st.style}</span></td><td>${dist ? `${dist} m` : '—'}</td><td>${st.speedLimit}</td><td>${st.stopDuration}s</td>
           <td>${formatClock(e.arr ?? e.dep, false)}</td><td>${st.platformType} · ${s.doorSide}</td>
           <td class="audio-cell">${has ? `<button class="icon" data-play="${st.id}" title="Play imported MP3">▶</button><button class="icon" data-del="${st.id}" title="Remove MP3">✕</button>` : st.announcement ? '<span class="sub" title="Announcement file referenced by the line">file</span>' : '<span class="sub" title="Speech synthesis">tts</span>'}
           <label class="icon" title="Import MP3 for ${esc(st.name)}">＋<input type="file" accept="audio/mpeg,.mp3" data-up="${st.id}" hidden></label></td></tr>`;
@@ -149,13 +151,8 @@ export class Menu {
       <p class="sub">MP3 files are matched to stations by file name (e.g. <code>${esc(l.stations[1].id)}.mp3</code>, or <code>${esc(l.stations[1].id)}-arrival.mp3</code> for the arrival message).</p>`;
     el.querySelectorAll('[data-dir]').forEach((b) => (b.onclick = () => { this.sel.direction = b.dataset.dir; this.persist(); this.renderLineDetail(); }));
     el.querySelector('#l-use').onclick = () => { this.persist(); this.emit('play', { line: l, train: this.train, direction: this.sel.direction }); };
-    el.querySelector('#l-export').onclick = () => {
-      const blob = new Blob([JSON.stringify(l.raw, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${slugify(l.name)}.json`; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    };
-    el.querySelector('#l-delete')?.addEventListener('click', async () => {
-      if (!confirm(`Delete “${l.name}” and its imported announcements?`)) return;
+    el.querySelector('#l-export').onclick = () => this.showJson(`${l.name} — line file`, l.raw.branches || !l.service ? l.raw : l.raw);
+    this.confirmButton(el.querySelector('#l-delete'), async () => {
       await this.repo.deleteLine(l.id);
       this.sel.lineId = this.repo.lines[0]?.id; this.persist(); this.screen_lines();
     });
@@ -183,6 +180,37 @@ export class Menu {
       if (!blob) return;
       const a = new Audio(URL.createObjectURL(blob)); a.volume = this.settings.get('audio.master'); a.play();
     }));
+  }
+
+  /** Two-step confirmation inside the page (native confirm() dialogs are not available everywhere). */
+  confirmButton(btn, action) {
+    if (!btn) return;
+    const label = btn.textContent;
+    btn.onclick = () => {
+      if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; action(); return; }
+      btn.dataset.armed = '1'; btn.textContent = 'Click again to confirm';
+      setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; } }, 4000);
+    };
+  }
+
+  /** Shows a JSON document with a copy button (file downloads are not available everywhere). */
+  showJson(title, obj) {
+    const text = JSON.stringify(obj, null, 2);
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="modal-box"><header><h3>${esc(title)}</h3><button class="btn small ghost" data-close>Close</button></header>
+      <p class="sub">Copy this into a <code>.json</code> file, edit it, then use “Import line JSON”.</p>
+      <textarea id="json-view" readonly spellcheck="false"></textarea>
+      <div class="row-tools"><button class="btn small primary" data-copy>Copy to clipboard</button><span class="sub" data-status></span></div></div>`;
+    m.querySelector('textarea').value = text;
+    m.querySelector('[data-close]').onclick = () => m.remove();
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
+    m.querySelector('[data-copy]').onclick = async () => {
+      const ta = m.querySelector('textarea'), st = m.querySelector('[data-status]');
+      try { await navigator.clipboard.writeText(text); st.textContent = 'Copied.'; }
+      catch { ta.focus(); ta.select(); st.textContent = 'Selected — press Ctrl+C / ⌘C to copy.'; }
+    };
+    this.root.appendChild(m);
   }
 
   notice(text) {
@@ -254,7 +282,7 @@ export class Menu {
       inp.addEventListener(inp.type === 'range' ? 'input' : 'change', apply);
     });
     body.querySelector('#s-reset').onclick = () => { s.reset(); this.input.loadBindings(); this.screen_settings(); };
-    body.querySelector('#s-wipe').onclick = () => { if (confirm('Erase all records and career totals?')) { this.save.resetAll(); this.notice('Career data cleared.'); } };
+    this.confirmButton(body.querySelector('#s-wipe'), () => { this.save.resetAll(); this.notice('Career data cleared.'); });
   }
 
   // ---------------- Controls ----------------
@@ -311,7 +339,7 @@ export class Menu {
         <div class="grade grade-${r.grade}">${r.grade}</div>
         <div class="score">${r.score} <small>/ 1000</small>${newBest ? ' <span class="tag">new record</span>' : ''}</div>
         ${r.reason ? `<p class="errors">${esc(r.reason)}</p>` : ''}
-        <p class="sub">${esc(r.line.name)} · ${esc(r.line.directions[r.direction].name)} · ${esc(r.train.name)} · ${r.distanceKm.toFixed(2)} km in ${Math.floor(r.seconds / 60)} min ${Math.round(r.seconds % 60)} s · final delay ${formatDelta(r.finalDelay)}</p>
+        <p class="sub">${esc(r.line.fullName)} · ${esc(r.line.directions[r.direction].name)} · ${esc(r.train.name)} · ${r.distanceKm.toFixed(2)} km in ${Math.floor(r.seconds / 60)} min ${Math.round(r.seconds % 60)} s · final delay ${formatDelta(r.finalDelay)}</p>
         <div class="table-wrap"><table class="stations"><thead><tr><th>Station</th><th>Stop error</th><th>Delay</th><th>Accuracy</th><th>Punctuality</th></tr></thead>
         <tbody>${r.stops.map((s) => `<tr><td>${esc(s.name)}</td><td>${s.error >= 0 ? '+' : ''}${s.error.toFixed(2)} m</td><td>${formatDelta(s.delay)}</td><td>${s.acc}</td><td>${s.punct}</td></tr>`).join('') || '<tr><td colspan="5">No stops served</td></tr>'}</tbody></table></div>
         ${r.penalties.length ? `<h3>Penalties (−${r.penaltyTotal})</h3><ul class="penalties">${r.penalties.map((p) => `<li>${esc(p.text)}${p.count > 1 ? ` ×${p.count}` : ''} <b>−${p.points}</b></li>`).join('')}</ul>` : '<p>No penalties — exemplary driving.</p>'}

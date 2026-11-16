@@ -1,0 +1,384 @@
+{
+ "id": "grandville-b",
+ "line": "Line B",
+ "number": "B",
+ "network": "Grandville Métro",
+ "color": "#33E633",
+ "textColor": "#111111",
+ "language": "fr-FR",
+ "maxSpeed": 80,
+ "startTime": "08:10:00",
+ "headway": 240,
+ "tunnel": {
+  "profile": "box"
+ },
+ "map": {
+  "origin": [
+   1191.2,
+   -1729.3
+  ],
+  "heading": 154.76
+ },
+ "defaults": {
+  "platformLength": 110,
+  "platformWidth": 6,
+  "platformType": "island",
+  "style": "pillars",
+  "approachSpeedLimit": 50,
+  "stopDuration": 22
+ },
+ "signaling": {
+  "system": "cbtc",
+  "atpBrakeRate": 0.9
+ },
+ "announcements": {
+  "nextStation": "Prochaine station : {station}.",
+  "arrival": "{station}.",
+  "terminus": "{station}. Terminus du train. Merci de descendre."
+ },
+ "stations": [
+  {
+   "name": "Grandville Nord",
+   "distanceToNext": 800,
+   "speedLimit": 70,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 24,
+   "theme": {
+    "wall": "#28362a",
+    "accent": "#33E633"
+   },
+   "track": [
+    {
+     "length": 300,
+     "gradient": -15
+    },
+    {
+     "length": 250
+    }
+   ]
+  },
+  {
+   "name": "Porte des Lilas",
+   "distanceToNext": 850,
+   "speedLimit": 65,
+   "stopDuration": 20,
+   "style": "pillars",
+   "theme": {
+    "wall": "#c9b7e0",
+    "accent": "#5b2a86"
+   },
+   "track": [
+    {
+     "length": 150
+    },
+    {
+     "length": 393,
+     "radius": 500,
+     "turn": "left",
+     "gradient": -10
+    }
+   ]
+  },
+  {
+   "name": "République",
+   "distanceToNext": 1433,
+   "speedLimit": 60,
+   "stopDuration": 30,
+   "style": "vault",
+   "platformType": "side",
+   "platformWidth": 4.5,
+   "passengers": 34,
+   "theme": {
+    "wall": "#f4f1e8",
+    "accent": "#8B1E8F"
+   },
+   "track": [
+    {
+     "length": 400,
+     "gradient": -12
+    },
+    {
+     "length": 300,
+     "gradient": 8
+    }
+   ]
+  },
+  {
+   "name": "Gare Centrale",
+   "distanceToNext": 800,
+   "speedLimit": 60,
+   "stopDuration": 35,
+   "style": "vault",
+   "platformType": "side",
+   "platformWidth": 5.5,
+   "platformLength": 120,
+   "passengers": 45,
+   "approachSpeedLimit": 45,
+   "theme": {
+    "wall": "#e9e2cf",
+    "accent": "#8B1E8F"
+   },
+   "track": [
+    {
+     "length": 120
+    },
+    {
+     "length": 550,
+     "radius": 420,
+     "turn": "right"
+    }
+   ]
+  },
+  {
+   "name": "Place du Marché",
+   "distanceToNext": 750,
+   "speedLimit": 65,
+   "stopDuration": 20,
+   "style": "pillars",
+   "theme": {
+    "wall": "#e7c36a",
+    "accent": "#8a5a00"
+   },
+   "track": [
+    {
+     "length": 120
+    },
+    {
+     "length": 262,
+     "radius": 500,
+     "turn": "right",
+     "gradient": 15
+    }
+   ]
+  },
+  {
+   "name": "Saint-Augustin",
+   "distanceToNext": 800,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "theme": {
+    "wall": "#efe8d4",
+    "accent": "#1f3c88"
+   },
+   "track": [
+    {
+     "length": 350,
+     "gradient": -10
+    },
+    {
+     "length": 250
+    }
+   ]
+  },
+  {
+   "name": "Parc Monceau",
+   "distanceToNext": null,
+   "speedLimit": 65,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 26,
+   "theme": {
+    "wall": "#24402e",
+    "accent": "#33E633"
+   }
+  }
+ ],
+ "branches": [
+  {
+   "id": "bellevue",
+   "name": "Bellevue – Centre",
+   "link": {
+    "distanceToNext": 1150,
+    "speedLimit": 60,
+    "track": [
+     {
+      "length": 60
+     },
+     {
+      "length": 806,
+      "radius": 330,
+      "turn": "left"
+     }
+    ]
+   },
+   "stations": [
+    {
+     "name": "Mairie de Bellevue",
+     "distanceToNext": 1000,
+     "speedLimit": 75,
+     "stopDuration": 22,
+     "style": "vault",
+     "theme": {
+      "wall": "#f1ede2",
+      "accent": "#b3121b"
+     },
+     "track": [
+      {
+       "length": 400,
+       "gradient": 18
+      },
+      {
+       "length": 300
+      }
+     ]
+    },
+    {
+     "name": "Les Vignes",
+     "distanceToNext": 1100,
+     "speedLimit": 80,
+     "stopDuration": 20,
+     "style": "pillars",
+     "theme": {
+      "wall": "#b7c48a",
+      "accent": "#556b2f"
+     },
+     "track": [
+      {
+       "length": 300
+      },
+      {
+       "length": 400,
+       "radius": 1500,
+       "turn": "left"
+      }
+     ]
+    },
+    {
+     "name": "Université Ouest",
+     "distanceToNext": 1100,
+     "speedLimit": 80,
+     "stopDuration": 20,
+     "style": "modern",
+     "theme": {
+      "wall": "#2b3140",
+      "accent": "#5ab0ff"
+     },
+     "track": [
+      {
+       "length": 300
+      },
+      {
+       "length": 400,
+       "radius": 1500,
+       "turn": "right",
+       "gradient": -12
+      }
+     ]
+    },
+    {
+     "name": "Bellevue – Centre",
+     "distanceToNext": 0,
+     "speedLimit": 60,
+     "stopDuration": 30,
+     "style": "modern",
+     "passengers": 30,
+     "theme": {
+      "wall": "#30283a",
+      "accent": "#33E633"
+     }
+    }
+   ]
+  },
+  {
+   "id": "aeroport",
+   "name": "Aéroport Est",
+   "link": {
+    "distanceToNext": 1500,
+    "speedLimit": 70,
+    "track": [
+     {
+      "length": 80
+     },
+     {
+      "length": 480,
+      "radius": 500,
+      "turn": "right"
+     }
+    ]
+   },
+   "stations": [
+    {
+     "name": "Fort d'Orsay",
+     "distanceToNext": 1900,
+     "speedLimit": 80,
+     "stopDuration": 20,
+     "style": "pillars",
+     "theme": {
+      "wall": "#d6a7a0",
+      "accent": "#7a2e24"
+     },
+     "track": [
+      {
+       "length": 500,
+       "gradient": -15
+      },
+      {
+       "length": 500
+      }
+     ]
+    },
+    {
+     "name": "Cité des Sciences",
+     "distanceToNext": 2000,
+     "speedLimit": 80,
+     "stopDuration": 25,
+     "style": "modern",
+     "passengers": 28,
+     "theme": {
+      "wall": "#1f3b55",
+      "accent": "#00b4d8"
+     },
+     "track": [
+      {
+       "length": 600
+      },
+      {
+       "length": 500,
+       "gradient": 12
+      }
+     ]
+    },
+    {
+     "name": "Parc des Expositions",
+     "distanceToNext": 3175,
+     "speedLimit": 80,
+     "stopDuration": 22,
+     "style": "modern",
+     "passengers": 22,
+     "theme": {
+      "wall": "#3b3f46",
+      "accent": "#ff8c00"
+     },
+     "track": [
+      {
+       "length": 150
+      },
+      {
+       "length": 307,
+       "radius": 900,
+       "turn": "right"
+      }
+     ]
+    },
+    {
+     "name": "Aéroport Est",
+     "distanceToNext": 0,
+     "speedLimit": 60,
+     "stopDuration": 30,
+     "style": "modern",
+     "passengers": 34,
+     "platformWidth": 8,
+     "connections": [
+      "Aéroport International"
+     ],
+     "theme": {
+      "wall": "#20303f",
+      "accent": "#ffc400"
+     }
+    }
+   ]
+  }
+ ]
+}

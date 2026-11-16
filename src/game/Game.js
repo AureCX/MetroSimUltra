@@ -91,7 +91,7 @@ export class Game {
     this.bumpAcc = 0; this.bump = 0;
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
-    this.toast(`${line.name} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
+    this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
   }
 
   applyGraphics() {

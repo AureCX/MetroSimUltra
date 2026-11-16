@@ -31,7 +31,24 @@ function num(v, fallback, { min = -Infinity, max = Infinity } = {}) {
   return Math.min(max, Math.max(min, n));
 }
 
-export function normalizeLine(raw, { id, builtIn = false } = {}) {
+/**
+ * A line file may describe a branching line: a trunk ("stations") plus "branches", each with
+ * the link from the junction (last trunk station) and its own stations. Every branch becomes
+ * one drivable service that shares the trunk alignment.
+ */
+export function expandServices(raw) {
+  if (!raw || !Array.isArray(raw.branches) || !raw.branches.length) return [raw];
+  const baseId = raw.id || slugify(`${raw.network || 'custom'}-${raw.line || raw.name || 'line'}`);
+  return raw.branches.map((b, i) => {
+    const trunk = (raw.stations || []).map((s) => ({ ...s }));
+    if (trunk.length) Object.assign(trunk[trunk.length - 1], b.link || {});
+    const bid = b.id || slugify(b.name || `branch-${i + 1}`);
+    const { branches, ...rest } = raw;
+    return { ...rest, id: `${baseId}-${bid}`, service: b.name || bid, stations: [...trunk, ...(b.stations || [])], directions: b.directions || raw.directions };
+  });
+}
+
+export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}) {
   if (!raw || typeof raw !== 'object') throw new LineValidationError('Line file must contain a JSON object.');
   const stationsRaw = raw.stations;
   if (!Array.isArray(stationsRaw) || stationsRaw.length < 2) throw new LineValidationError('A line needs at least two stations ("stations" array).');
@@ -71,6 +88,8 @@ export function normalizeLine(raw, { id, builtIn = false } = {}) {
       exitSide: s.exitSide || 'both',
       track: Array.isArray(s.track) ? s.track.map((seg, k) => normalizeSegment(seg, k, s.name, errors)) : [],
       stopMarkerOffset: num(s.stopMarkerOffset, d.stopMarkerOffset, { min: 0, max: 50 }),
+      connections: Array.isArray(s.connections) ? s.connections.map(String) : [],
+      services: Array.isArray(s.services) ? s.services.map(String) : [],
     };
     if (st.track.reduce((a, t) => a + (t?.length || 0), 0) > Math.max(0, st.distanceToNext - (st.platformLength / 2) - 60)) {
       // Not fatal: excess layout is clipped by TrackGeometry. Warn only.
@@ -94,10 +113,14 @@ export function normalizeLine(raw, { id, builtIn = false } = {}) {
 
   const lineId = id || raw.id || slugify(`${raw.network || 'custom'}-${name}`);
   const term = (dir) => (dir === 'A' ? stations.at(-1).name : stations[0].name);
+  const service = raw.service ? String(raw.service) : null;
   return {
     id: lineId,
+    sourceId: sourceId || lineId,
     builtIn,
     name,
+    service,
+    fullName: service ? `${name} → ${service}` : name,
     number,
     network: String(raw.network || 'Custom lines'),
     color: raw.color || '#ffcc00',

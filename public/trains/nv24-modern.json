@@ -1,0 +1,15 @@
+{
+  "id": "nv24",
+  "name": "NV-24 Modern",
+  "description": "Contemporary IGBT stock: strong acceleration, quick blended braking, 5-notch traction.",
+  "cars": 6, "carLength": 15.0, "carGap": 0.9, "width": 2.6, "height": 3.5,
+  "doorsPerSide": 3, "doorWidth": 1.4,
+  "massEmpty": 150, "capacity": 760,
+  "maxPower": 2400, "maxTractiveForce": 235, "maxSpeed": 90,
+  "serviceDecel": 1.2, "emergencyDecel": 1.5,
+  "tractionNotches": 5, "brakeNotches": 8,
+  "tractionResponse": 0.8, "brakeResponse": 0.9, "tractionDeadTime": 0.2, "brakeDeadTime": 0.35,
+  "davis": { "a": 10, "b": 0.06, "c": 0.5 },
+  "livery": { "body": "#f2f4f6", "front": "#1b1f24", "doors": "#e0e3e7", "roof": "#9ea4aa" },
+  "sound": { "inverter": "igbt", "motorPitch": 1.15 }
+}

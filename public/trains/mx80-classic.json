@@ -1,0 +1,15 @@
+{
+  "id": "mx80",
+  "name": "MX-80 Classic",
+  "description": "1980s-style stock with GTO chopper traction: lively whine, slower brake response.",
+  "cars": 5, "carLength": 15.1, "carGap": 0.9, "width": 2.45, "height": 3.5,
+  "doorsPerSide": 3, "doorWidth": 1.3,
+  "massEmpty": 135, "capacity": 640,
+  "maxPower": 1500, "maxTractiveForce": 170, "maxSpeed": 80,
+  "serviceDecel": 1.1, "emergencyDecel": 1.4,
+  "tractionNotches": 4, "brakeNotches": 7,
+  "tractionResponse": 1.2, "brakeResponse": 1.3, "tractionDeadTime": 0.35, "brakeDeadTime": 0.6,
+  "davis": { "a": 12, "b": 0.08, "c": 0.6 },
+  "livery": { "body": "#e6e2d8", "front": "#2f6f4f", "stripe": "#2f6f4f", "doors": "#cfc9bc", "roof": "#8b8f93" },
+  "sound": { "inverter": "gto", "motorPitch": 1.0 }
+}

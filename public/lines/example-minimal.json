@@ -1,0 +1,9 @@
+{
+  "line": "Line 1",
+  "color": "#FFCC00",
+  "stations": [
+    { "name": "La Défense", "distanceToNext": 1200, "speedLimit": 70, "stopDuration": 25 },
+    { "name": "Esplanade de La Défense", "distanceToNext": 850, "speedLimit": 60, "stopDuration": 20 },
+    { "name": "Pont de Neuilly", "distanceToNext": 0, "speedLimit": 60, "stopDuration": 20 }
+  ]
+}

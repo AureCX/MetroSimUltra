@@ -1,0 +1,45 @@
+{
+  "id": "paris-line1-sample",
+  "line": "Line 1",
+  "number": "1",
+  "network": "Paris (sample data)",
+  "color": "#FFCC00",
+  "language": "fr-FR",
+  "maxSpeed": 70,
+  "startTime": "07:30:00",
+  "headway": 150,
+  "tunnel": { "profile": "arch" },
+  "map": { "origin": [0, 0], "heading": 70 },
+  "defaults": { "platformLength": 110, "platformWidth": 4.2, "approachSpeedLimit": 50, "approachDistance": 110, "style": "vault" },
+  "signaling": { "system": "fixed-block", "blockLength": 300, "overlap": 40, "atpBrakeRate": 0.85 },
+  "announcements": {
+    "nextStation": "Prochaine station : {station}.",
+    "arrival": "{station}.",
+    "terminus": "{station}. Terminus. Tout le monde descend, s'il vous plaît."
+  },
+  "speedRestrictions": [
+    { "fromStation": "Les Sablons", "start": 200, "length": 260, "limit": 40, "reason": "Track works" }
+  ],
+  "stations": [
+    { "name": "La Défense", "distanceToNext": 1200, "speedLimit": 70, "stopDuration": 25, "style": "modern", "platformType": "island", "passengers": 28,
+      "theme": { "wall": "#3b4149", "accent": "#FFCC00" },
+      "track": [ { "length": 220 }, { "length": 380, "radius": 650, "turn": "left", "gradient": -22 }, { "length": 300, "gradient": -12 } ] },
+    { "name": "Esplanade de La Défense", "distanceToNext": 850, "speedLimit": 60, "stopDuration": 20, "style": "modern", "passengers": 16,
+      "theme": { "wall": "#4a4f57" },
+      "track": [ { "length": 150 }, { "length": 300, "radius": 420, "turn": "right" }, { "length": 200, "gradient": 15 } ] },
+    { "name": "Pont de Neuilly", "distanceToNext": 1000, "speedLimit": 70, "stopDuration": 20, "passengers": 20,
+      "track": [ { "length": 200, "gradient": 20 }, { "length": 420, "radius": 900, "turn": "left" }, { "length": 200 } ] },
+    { "name": "Les Sablons", "distanceToNext": 780, "speedLimit": 70, "stopDuration": 20, "passengers": 14, "theme": { "wall": "#f1ede2" },
+      "track": [ { "length": 300 }, { "length": 260, "radius": 800, "turn": "right", "gradient": -10 } ] },
+    { "name": "Porte Maillot", "distanceToNext": 800, "speedLimit": 60, "stopDuration": 25, "passengers": 26, "theme": { "wall": "#e9e2cf", "accent": "#0b5aa6" },
+      "track": [ { "length": 180 }, { "length": 320, "radius": 520, "turn": "right" }, { "length": 150, "gradient": 18 } ] },
+    { "name": "Argentine", "distanceToNext": 620, "speedLimit": 60, "stopDuration": 18, "passengers": 10,
+      "track": [ { "length": 420, "gradient": 12 } ] },
+    { "name": "Charles de Gaulle – Étoile", "distanceToNext": 700, "speedLimit": 55, "stopDuration": 30, "passengers": 34, "platformLength": 115,
+      "approachSpeedLimit": 45, "theme": { "wall": "#f6f2e6", "accent": "#b3121b" },
+      "track": [ { "length": 100 }, { "length": 280, "radius": 300, "turn": "left" }, { "length": 150, "gradient": -14 } ] },
+    { "name": "George V", "distanceToNext": 520, "speedLimit": 60, "stopDuration": 20, "passengers": 18,
+      "track": [ { "length": 330, "gradient": -8 } ] },
+    { "name": "Franklin D. Roosevelt", "distanceToNext": 0, "speedLimit": 60, "stopDuration": 25, "passengers": 22, "theme": { "accent": "#7a1f8a" } }
+  ]
+}

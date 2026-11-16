@@ -1,0 +1,33 @@
+{
+  "id": "neustadt-u7",
+  "line": "U7 Westpark – Flughafen",
+  "number": "U7",
+  "network": "Neustadt U-Bahn (fictional)",
+  "color": "#8B2FC9",
+  "language": "en-GB",
+  "maxSpeed": 90,
+  "startTime": "17:40:00",
+  "headway": 150,
+  "tunnel": { "profile": "arch" },
+  "map": { "origin": [-145, 1783], "heading": 90 },
+  "defaults": { "platformLength": 115, "platformWidth": 5, "style": "modern", "approachSpeedLimit": 55, "stopDuration": 22 },
+  "signaling": { "system": "cbtc", "atpBrakeRate": 0.9 },
+  "directions": { "A": { "name": "Airport (Flughafen)" }, "B": { "name": "Westpark" } },
+  "announcements": {
+    "nextStation": "The next station is {station}.",
+    "arrival": "This is {station}.",
+    "terminus": "{station}. This train terminates here. Please take all your belongings with you."
+  },
+  "stations": [
+    { "name": "Westpark", "distanceToNext": 1000, "speedLimit": 80, "theme": { "wall": "#2c3a2f", "accent": "#7ccf6a" } },
+    { "name": "Hauptmarkt", "distanceToNext": 1150, "speedLimit": 75, "stopDuration": 30, "passengers": 34, "style": "vault", "platformType": "island", "platformWidth": 7,
+      "theme": { "wall": "#ece6d6", "accent": "#8B2FC9" },
+      "track": [ { "length": 200 }, { "length": 420, "radius": 600, "turn": "right", "gradient": -25 }, { "length": 250, "gradient": 10 } ] },
+    { "name": "Ostkreuz", "distanceToNext": 1400, "speedLimit": 85, "passengers": 26, "style": "pillars", "theme": { "wall": "#c4b8e0", "accent": "#4b2a7a" },
+      "track": [ { "length": 300 }, { "length": 500, "radius": 1500, "turn": "left" }, { "length": 300, "gradient": 18 } ] },
+    { "name": "Messe", "distanceToNext": 1600, "speedLimit": 90, "passengers": 12, "theme": { "wall": "#3b3f46", "accent": "#ff8c00" },
+      "track": [ { "length": 600, "gradient": -12 }, { "length": 500, "radius": 2000, "turn": "right" }, { "length": 200, "gradient": 8 } ] },
+    { "name": "Flughafen", "distanceToNext": 0, "speedLimit": 60, "stopDuration": 30, "passengers": 30, "platformType": "island", "platformWidth": 8,
+      "theme": { "wall": "#20303f", "accent": "#00b4d8" } }
+  ]
+}

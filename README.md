@@ -14,6 +14,14 @@ npm run dev
 
 Open the printed URL (default http://localhost:5173). `npm run build` produces a static site in `dist/` that you can host anywhere. `npm run build:single` also writes `dist/metro-driver.html`, a single self-contained file you can open directly in a browser or host as one page. `npm test` runs the headless simulation tests.
 
+## Hosting (free)
+
+The game is a static site, so any static host works.
+
+- **GitHub Pages** (set up in this repository): in *Settings → Pages*, set *Source* to **GitHub Actions**. Each push to `main` then runs `.github/workflows/deploy.yml`, which tests, builds and publishes the game to `https://<user>.github.io/<repo>/`.
+- **Netlify / Vercel / Cloudflare Pages**: import the repository, set the build command to `npm run build` and the output directory to `dist`.
+- **itch.io**: run `npm run build`, zip the *contents* of `dist/`, and upload the zip as an HTML game. Alternatively, upload `dist/metro-driver.html` on its own.
+
 ## How to drive a run
 
 1. You start at the first platform. The controller is in **B7**, the doors are locked and the clock reads 50 s before departure.

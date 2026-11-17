@@ -182,7 +182,7 @@ export class StationView {
       s.scale.x = 1;
     }
     // Direction & exit signs hanging over platforms.
-    const termA = this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
+    const termA = this.loopLabel() || this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
     const spans = this.platformSpans();
     const hangY = this.island ? Math.min(this.H - 0.6, 3.6) : Math.min(this.H - 0.3, PLATFORM_Y + 2.55);
     this.exits = [];
@@ -257,6 +257,13 @@ export class StationView {
     }
   }
 
+  /** Outbound platforms of a loop line's trunk lead to the loop, not to a terminus. */
+  loopLabel(short = false) {
+    const L = this.line.loop;
+    if (!L || this.index > L.junctionIndex) return null;
+    return short ? `Boucle ${L.stations.at(-1)}` : `Boucle ${L.stations[0]} – ${L.stations.at(-1)}`;
+  }
+
   buildPIDs() {
     const spans = this.platformSpans();
     const routes = this.island ? [['A', -1], ['B', 1]] : [['A', -1], ['B', 1]];
@@ -285,7 +292,7 @@ export class StationView {
     this.lastPid = sec;
     for (const p of this.pids) {
       const g = p.ctx, etas = etaProvider ? etaProvider(this.index, p.dir) : [];
-      const term = this.line.directions[p.dir].terminus;
+      const term = (p.dir === 'A' && this.loopLabel(true)) || this.line.directions[p.dir].terminus;
       g.fillStyle = '#050505'; g.fillRect(0, 0, 512, 128);
       g.fillStyle = this.line.color; g.fillRect(10, 12, 56, 46);
       g.fillStyle = this.line.textColor; g.font = 'bold 30px Arial'; g.textAlign = 'center'; g.fillText(this.line.number, 38, 46);
@@ -579,7 +586,7 @@ StationView.prototype.buildOutdoorSigns = function buildOutdoorSigns() {
     }
   }
   this.exits = [];
-  const termA = this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
+  const termA = this.loopLabel() || this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
   const mat = new THREE.MeshBasicMaterial({ map: Textures.label(this.island ? `⬅ ${termB}   |   ${termA} ➜` : `Direction ${termA}`, { w: 1024, h: 96, bg: '#f5f5f0', fg: '#1a1a1a', font: 'bold 46px Arial', border: accent }) });
   const g = new THREE.Group(); g.position.set(this.island ? 0 : -(this.e + this.W) / 2, this.H - 0.6, 0);
   this.plane(3.6, 0.34, mat, 0, 0, 0.02, 0, g); this.plane(3.6, 0.34, mat, 0, 0, -0.02, Math.PI, g);

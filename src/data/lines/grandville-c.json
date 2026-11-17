@@ -96,7 +96,7 @@
   },
   {
    "name": "Place des Nations",
-   "distanceToNext": 2165.1,
+   "distanceToNext": 2165,
    "speedLimit": 70,
    "stopDuration": 20,
    "style": "vault",
@@ -109,7 +109,7 @@
      "length": 10
     },
     {
-     "length": 1208,
+     "length": 1207.8,
      "radius": 450,
      "turn": "left"
     }
@@ -117,7 +117,7 @@
   },
   {
    "name": "République",
-   "distanceToNext": 1678.6,
+   "distanceToNext": 1663.1,
    "speedLimit": 70,
    "stopDuration": 20,
    "style": "vault",
@@ -128,18 +128,23 @@
    },
    "track": [
     {
-     "length": 10
+     "length": 597.3,
+     "radius": 360,
+     "turn": "right"
     },
     {
-     "length": 711,
-     "radius": 450,
-     "turn": "right"
+     "length": 608
+    },
+    {
+     "length": 292.8,
+     "radius": 360,
+     "turn": "left"
     }
    ]
   },
   {
    "name": "Gare Centrale",
-   "distanceToNext": 1150,
+   "distanceToNext": 1069.7,
    "speedLimit": 70,
    "stopDuration": 20,
    "style": "vault",
@@ -152,22 +157,18 @@
    },
    "track": [
     {
-     "length": 150
+     "length": 588
     },
     {
-     "length": 611,
-     "radius": 1400,
+     "length": 314.2,
+     "radius": 200,
      "turn": "left"
-    },
-    {
-     "length": 200,
-     "gradient": 12
     }
    ]
   },
   {
    "name": "Palais Royal",
-   "distanceToNext": 1350,
+   "distanceToNext": 1209.2,
    "speedLimit": 70,
    "stopDuration": 20,
    "style": "grand",
@@ -181,15 +182,12 @@
    },
    "track": [
     {
-     "length": 80
+     "length": 354
     },
     {
-     "length": 785,
-     "radius": 300,
+     "length": 392.7,
+     "radius": 250,
      "turn": "left"
-    },
-    {
-     "length": 150
     }
    ],
    "connections": [
@@ -198,7 +196,7 @@
   },
   {
    "name": "Opéra",
-   "distanceToNext": 0,
+   "distanceToNext": 1693.5,
    "speedLimit": 70,
    "stopDuration": 20,
    "style": "vault",
@@ -206,7 +204,46 @@
    "theme": {
     "wall": "#f3eee0",
     "accent": "#b3121b"
-   }
+   },
+   "track": [
+    {
+     "length": 101.7,
+     "radius": 420,
+     "turn": "left"
+    },
+    {
+     "length": 1179
+    },
+    {
+     "length": 252.8,
+     "radius": 420,
+     "turn": "left"
+    }
+   ]
+  }
+ ],
+ "loop": {
+  "junction": "République"
+ },
+ "directions": {
+  "A": {
+   "name": "Boucle Opéra · Direction Grandville Nord"
+  }
+ },
+ "speedRestrictions": [
+  {
+   "fromStation": "Gare Centrale",
+   "start": 633,
+   "length": 374,
+   "limit": 45,
+   "reason": "Boucle de retournement"
+  },
+  {
+   "fromStation": "Palais Royal",
+   "start": 397,
+   "length": 453,
+   "limit": 50,
+   "reason": "Boucle de retournement"
   }
  ]
 }

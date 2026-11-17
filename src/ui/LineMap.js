@@ -12,7 +12,20 @@ export function buildLineMapModel(line, services, network, direction) {
   const add = (st, col, row) => { const key = `${row}:${st.name}`; if (!nodes.has(key)) nodes.set(key, { key, st, name: st.name, col, row }); return key; };
   const rowsFor = svcs.length === 1 ? [0] : svcs.map((_, i) => (svcs.length === 2 ? (i === 0 ? -1 : 1) : i - (svcs.length - 1) / 2));
   const paths = new Map();
-  svcs.forEach((s, i) => {
+  if (line.loop && svcs.length === 1) {
+    // Terminal loop: trunk on the middle row, the loop drawn as a ring (outbound side below, return side above);
+    // the return run reuses the trunk nodes.
+    // Outbound side of the ring below (first half of the loop stations), return side above; the far end of
+    // the ring is drawn as a half circle beyond the last column.
+    const iJ = line.loop.junctionIndex, m = line.loop.returnIndex - iJ - 1, low = Math.floor(m / 2);
+    const keys = line.stations.map((st, k) => {
+      if (st.mirrorOf != null) return `0:${line.stations[st.mirrorOf].name}`;
+      if (k <= iJ) return add(st, k, 0);
+      const j = k - iJ - 1;
+      return j < low ? add(st, iJ + 1 + j, 1) : add(st, iJ + 1 + (m - 1 - j), -1);
+    });
+    paths.set(line.id, keys);
+  } else svcs.forEach((s, i) => {
     const keys = s.stations.map((st, k) => (k < T ? add(st, k, 0) : add(st, k, rowsFor[i])));
     paths.set(s.id, direction === 'A' ? keys : keys.reverse());
   });
@@ -33,7 +46,8 @@ export function buildLineMapModel(line, services, network, direction) {
   const ends = new Set();
   for (const p of paths.values()) { ends.add(p[0]); ends.add(p.at(-1)); }
   for (const n of nodes.values()) n.terminus = ends.has(n.key);
-  return { line, nodes, paths, maxCol, branched: svcs.length > 1, rows: [...new Set(rowsFor)], direction, termini: svcs.map((s) => (direction === 'A' ? s.stations.at(-1).name : s.stations[0].name)) };
+  if (line.loop) for (const n of nodes.values()) n.terminus = n.key === paths.get(line.id)[0];
+  return { line, nodes, paths, maxCol, branched: svcs.length > 1 || !!line.loop, loop: line.loop && svcs.length === 1 ? line.loop : null, rows: [...new Set(rowsFor)], direction, termini: svcs.map((s) => (direction === 'A' ? s.stations.at(-1).name : s.stations[0].name)) };
 }
 
 /**
@@ -56,46 +70,82 @@ export function drawLineMap(g, W, H, model, state) {
   g.textAlign = 'left'; g.font = `bold ${Math.round(R * 0.42)}px Arial`; g.fillStyle = '#5a6475';
   if (state.directionName) g.fillText(state.directionName, 20, 36 + R * 2.25);
 
-  const x0 = 24 + R * 4.9, x1 = W - Math.max(180, W * 0.13);
+  const x0 = 24 + R * 4.9, x1 = W - Math.max(180, W * 0.13) - (model.loop ? H * 0.2 : 0);
   const dx = (x1 - x0) / Math.max(1, model.maxCol);
-  const yTrunk = model.branched ? H * 0.64 : H * 0.7;
-  const rowGap = H * 0.2;
+  const yTrunk = model.loop ? H * 0.58 : model.branched ? H * 0.64 : H * 0.7;
+  const rowGap = model.loop ? H * 0.16 : H * 0.2;
   const pos = (n) => ({ x: x0 + n.col * dx, y: yTrunk + n.row * rowGap });
   const nodeAt = (key) => model.nodes.get(key);
   const lw = Math.max(8, H * 0.035);
 
+  // Point at u ∈ [0, 1] along the drawn section between nodes a and b.
+  const segFn = (a, b) => {
+    const p = pos(a), q = pos(b);
+    if (p.y === q.y) return (u) => ({ x: p.x + (q.x - p.x) * u, y: p.y });
+    if (model.loop && a.row === 1 && b.row === -1) {
+      // Far end of the loop: on along the bottom, half circle round, back along the top.
+      const R = (p.y - q.y) / 2, xe = Math.max(p.x, q.x) + dx * 0.35, cy = (p.y + q.y) / 2;
+      const L1 = xe - p.x, L2 = Math.PI * R, L3 = xe - q.x, L = L1 + L2 + L3;
+      return (u) => {
+        let d = u * L;
+        if (d <= L1) return { x: p.x + d, y: p.y };
+        d -= L1;
+        if (d <= L2) { const th = Math.PI / 2 - d / R; return { x: xe + R * Math.cos(th), y: cy + R * Math.sin(th) }; }
+        return { x: xe - (d - L2), y: q.y };
+      };
+    }
+    const mx = (p.x + q.x) / 2;
+    return (u) => ({ x: (1 - u) ** 3 * p.x + 3 * (1 - u) ** 2 * u * mx + 3 * (1 - u) * u * u * mx + u ** 3 * q.x, y: (1 - u) ** 3 * p.y + 3 * (1 - u) ** 2 * u * p.y + 3 * (1 - u) * u * u * q.y + u ** 3 * q.y });
+  };
+  const traceSeg = (f, upto) => { for (let u = 0.025; u < upto; u += 0.025) { const b = f(u); g.lineTo(b.x, b.y); } const b = f(upto); g.lineTo(b.x, b.y); return b; };
   const drawPath = (keys, color, alpha) => {
     g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath();
     keys.forEach((k, i) => {
       const p = pos(nodeAt(k));
       if (i === 0) { g.moveTo(p.x, p.y); return; }
-      const q = pos(nodeAt(keys[i - 1]));
-      if (q.y !== p.y) { const mx = (q.x + p.x) / 2; g.bezierCurveTo(mx, q.y, mx, p.y, p.x, p.y); } else g.lineTo(p.x, p.y);
+      traceSeg(segFn(nodeAt(keys[i - 1]), nodeAt(k)), 1);
     });
     g.stroke(); g.globalAlpha = 1;
   };
   const activePath = model.paths.get(state.activeId) || [...model.paths.values()][0];
   for (const [id, keys] of model.paths) if (keys !== activePath) drawPath(keys, line.color, 0.4);
   drawPath(activePath, line.color, 1);
+  if (model.loop) {
+    // One-way arrows on each section of the loop.
+    const { junctionIndex: a, returnIndex: b } = model.loop;
+    for (let i = a; i < b; i++) {
+      const f = segFn(nodeAt(activePath[i]), nodeAt(activePath[i + 1]));
+      const m0 = f(0.48), m1 = f(0.52), mx = (m0.x + m1.x) / 2, my = (m0.y + m1.y) / 2;
+      const ang = Math.atan2(m1.y - m0.y, m1.x - m0.x);
+      const L = lw * 0.9;
+      g.save(); g.translate(mx, my); g.rotate(ang);
+      g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, lw * 0.28); g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(-L * 0.45, -L * 0.6); g.lineTo(L * 0.35, 0); g.lineTo(-L * 0.45, L * 0.6); g.stroke();
+      g.restore();
+    }
+  }
 
   // Passed part of the journey in grey.
   const k = Math.max(0, Math.min(activePath.length - 1, state.k ?? 0));
   const t = state.t ?? 0;
-  const passed = activePath.slice(0, k + 1);
+  // On a loop line the trunk is served twice: on the way back only the current lap is greyed out.
+  const lapStart = model.loop && k >= model.loop.returnIndex ? model.loop.junctionIndex : 0;
+  const passed = activePath.slice(lapStart, k + 1);
   if (passed.length > 1) drawPath(passed, '#b9bec7', 1);
   const pa = pos(nodeAt(activePath[k])), pb = pos(nodeAt(activePath[Math.min(k + 1, activePath.length - 1)]));
   const train = { x: pa.x + (pb.x - pa.x) * t, y: pa.y + (pb.y - pa.y) * t };
   if (t > 0.01 && !state.standing) {
     g.strokeStyle = '#b9bec7'; g.lineWidth = lw; g.lineCap = 'round';
     g.beginPath(); g.moveTo(pa.x, pa.y);
-    if (pa.y !== pb.y) { const mx = (pa.x + pb.x) / 2; const bez = (u) => ({ x: (1 - u) ** 3 * pa.x + 3 * (1 - u) ** 2 * u * mx + 3 * (1 - u) * u * u * mx + u ** 3 * pb.x, y: (1 - u) ** 3 * pa.y + 3 * (1 - u) ** 2 * u * pa.y + 3 * (1 - u) * u * u * pb.y + u ** 3 * pb.y }); for (let u = 0.05; u <= t; u += 0.05) { const b = bez(u); g.lineTo(b.x, b.y); } const b = bez(t); train.x = b.x; train.y = b.y; g.lineTo(b.x, b.y); }
-    else g.lineTo(train.x, train.y);
+    const b = traceSeg(segFn(nodeAt(activePath[k]), nodeAt(activePath[Math.min(k + 1, activePath.length - 1)])), t);
+    train.x = b.x; train.y = b.y;
     g.stroke();
   }
 
   // Stations.
-  const passedSet = new Set(activePath.slice(0, k + (state.standing ? 0 : 1)));
+  const upto = k + (state.standing ? 0 : 1);
+  const passedSet = new Set(activePath.filter((key, i) => i < upto && activePath.lastIndexOf(key) < upto));
   const nextKey = activePath[state.nextK ?? k + 1];
   const curKey = state.standing ? activePath[k] : null;
   const fs = Math.max(13, Math.round(H * 0.058));
@@ -159,6 +209,7 @@ export function drawLineMap(g, W, H, model, state) {
   const tw = Math.max(22, H * 0.09), th = tw * 0.55;
   g.save();
   g.translate(train.x, train.y + lw * 2.1);
+  if (pb.x < pa.x || (pb.x === pa.x && pb.y < pa.y)) g.scale(-1, 1); // heading left on the map (return side of a loop)
   g.fillStyle = '#d0021b'; g.strokeStyle = '#fff'; g.lineWidth = 3;
   g.beginPath(); g.moveTo(-tw / 2, -th / 2); g.lineTo(tw / 2 - th / 2, -th / 2); g.lineTo(tw / 2, 0); g.lineTo(tw / 2 - th / 2, th / 2); g.lineTo(-tw / 2, th / 2); g.closePath();
   g.fill(); g.stroke();

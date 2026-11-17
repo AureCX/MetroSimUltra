@@ -38,6 +38,7 @@ export class Game {
   start({ line, train, direction, services, network }) {
     this.dispose();
     const bus = this.bus;
+    if (line.loop) direction = 'A'; // a terminal loop is one-way: every train runs the whole circuit
     this.line = line; this.specs = train; this.direction = direction;
     this.planned = line; // destination chosen in the menu
     const scene = this.scene = new THREE.Scene();
@@ -53,7 +54,7 @@ export class Game {
     this.svc = new Map();
     for (const l of services && services.length > 1 ? services : [line]) {
       const g = new TrackGeometry(l);
-      this.svc.set(l.id, { line: l, geom: g, routes: { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') }, tt: {} });
+      this.svc.set(l.id, { line: l, geom: g, routes: l.loop ? { A: new Route(l, g, 'A') } : { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') }, tt: {} });
     }
     const main = this.svc.get(line.id);
     this.geom = main.geom;
@@ -70,15 +71,19 @@ export class Game {
     this.stations = new StationManager(route, this.timetable, this.player, bus, this.settings);
     this.signals = new SignalSystem(route, line, bus);
     this.traffic = new TrafficManager({ line, routes: this.routes, specs: train, playerRoute: route, playerTimetable: this.timetable, startClock: this.clock, bus });
+    this.traffic.player = () => ({ front: this.player.front, rear: this.player.rear });
 
     const q = this.settings.get('graphics.quality');
     const J = this.junction;
-    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junction: J && { divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain } }).build();
+    const LP = this.geom.loop;
+    const junctions = J ? [{ divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain }]
+      : LP ? [{ divergeS: LP.J, wallS: LP.J + LP.chamber, inner: LP.inner }, { divergeS: LP.Jr - LP.chamber, wallS: LP.Jr, inner: LP.inner }] : [];
+    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions }).build();
     this.worlds = new Map([[line.id, this.world]]);
     for (const [id, d] of this.svc) {
       if (id === line.id) continue;
       this.worlds.set(id, new WorldBuilder(scene, d.line, d.geom, d.routes, q, {
-        fromS: J.divergeS, firstStation: J.index + 1, junction: { divergeS: J.divergeS, wallS: J.wallS, inner: -J.innerMain },
+        fromS: J.divergeS, firstStation: J.index + 1, junctions: [{ divergeS: J.divergeS, wallS: J.wallS, inner: -J.innerMain }],
         lightPool: this.world.lights, tunnelPool: this.world.tunnelLights, offset: true, fallback: this.world,
       }).build());
     }
@@ -281,10 +286,21 @@ export class Game {
   }
 
   /** Scheduled arrivals for a station of a service the player is not on (passenger displays). */
+  /** Stop index on the route serving platform `dir` of station `index` (loop lines: the return platform is a later stop). */
+  stopIndexFor(line, index, dir) {
+    if (line.loop) {
+      if (dir !== 'B') return index;
+      const twin = line.stations.findIndex((s) => s.mirrorOf === index);
+      return twin >= 0 ? twin : index;
+    }
+    return dir === 'A' ? index : line.stations.length - 1 - index;
+  }
+
   etasScheduled(d, index, dir) {
+    if (d.line.loop) dir = 'A';
     const route = d.routes[dir];
     const tt = d.tt[dir] ??= new Timetable(route, this.specs, d.line.startTime);
-    const k = dir === 'A' ? index : d.line.stations.length - 1 - index;
+    const k = this.stopIndexFor(d.line, index, dir);
     const e = tt.entry(k);
     const base = e.arr ?? e.dep, h = d.line.headway;
     const n = Math.ceil((this.clock - base) / h);
@@ -576,8 +592,8 @@ export class Game {
 
   /** Estimated seconds until the next trains reach station `index` in direction `dir` (passenger displays). */
   etas(index, dir) {
-    const route = this.routes[dir];
-    const k = dir === 'A' ? index : this.line.stations.length - 1 - index;
+    const route = this.routes[dir] || this.routes.A;
+    const k = this.stopIndexFor(this.line, index, dir);
     const out = [];
     for (const t of this.traffic.trains) {
       if (t.route !== route || t.mode === 'done' || t.k > k) continue;

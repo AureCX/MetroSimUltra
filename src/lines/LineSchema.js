@@ -48,9 +48,32 @@ export function expandServices(raw) {
   });
 }
 
+/**
+ * A line may end in a one-way terminal loop ("raquette"): "loop": { "junction": "<station>" }.
+ * Trains run out along the trunk, round the loop through the stations listed after the junction
+ * station, and back along the other track of the trunk. The loop is expanded here into one
+ * circuit: trunk, loop stations, then the trunk stations again in reverse (`mirrorOf` = index of
+ * the outbound station they share a platform pair with). The last loop station's distanceToNext
+ * is the run back to the junction station.
+ */
+export function expandLoop(raw) {
+  const list = raw.stations;
+  const iJ = list.findIndex((s) => s && (s.name === raw.loop.junction || s.id === raw.loop.junction));
+  if (iJ < 0) throw new LineValidationError(`"loop.junction" must name a station of the line (got "${raw.loop.junction}").`);
+  if (iJ >= list.length - 1) throw new LineValidationError('A loop needs at least one station after its junction station.');
+  if (!(Number(list.at(-1).distanceToNext) >= 150)) throw new LineValidationError(`Loop: the last station ("${list.at(-1).name}") needs "distanceToNext" (≥ 150 m) back to "${list[iJ].name}".`);
+  const back = [];
+  for (let j = iJ; j >= 0; j--) {
+    const { track, ...rest } = list[j];
+    back.push({ ...rest, mirrorOf: j, distanceToNext: j > 0 ? list[j - 1].distanceToNext : 0 });
+  }
+  return { stations: [...list, ...back], junctionIndex: iJ, returnIndex: list.length };
+}
+
 export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}) {
   if (!raw || typeof raw !== 'object') throw new LineValidationError('Line file must contain a JSON object.');
-  const stationsRaw = raw.stations;
+  const loop = raw.loop && typeof raw.loop === 'object' && Array.isArray(raw.stations) ? expandLoop(raw) : null;
+  const stationsRaw = loop ? loop.stations : raw.stations;
   if (!Array.isArray(stationsRaw) || stationsRaw.length < 2) throw new LineValidationError('A line needs at least two stations ("stations" array).');
 
   const name = String(raw.line ?? raw.name ?? 'Unnamed line');
@@ -91,6 +114,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
       connections: Array.isArray(s.connections) ? s.connections.map(String) : [],
       landmark: s.landmark && typeof s.landmark === 'object' ? { type: String(s.landmark.type), side: s.landmark.side === 'left' ? 'left' : 'right', offset: num(s.landmark.offset, 50, { min: 0, max: 400 }), along: num(s.landmark.along, 0), ground: s.landmark.ground != null ? num(s.landmark.ground, 12, { min: 4, max: 80 }) : null } : null,
       services: Array.isArray(s.services) ? s.services.map(String) : [],
+      mirrorOf: Number.isInteger(s.mirrorOf) ? s.mirrorOf : null,
     };
     if (st.track.reduce((a, t) => a + (t?.length || 0), 0) > Math.max(0, st.distanceToNext - (st.platformLength / 2) - 60)) {
       // Not fatal: excess layout is clipped by TrackGeometry. Warn only.
@@ -138,7 +162,11 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
     mapOrigin: Array.isArray(raw.map?.origin) ? raw.map.origin.map(Number) : [0, 0],
     signaling: sig,
     speedRestrictions: restrictions,
-    directions: {
+    loop: loop ? { junctionIndex: loop.junctionIndex, returnIndex: loop.returnIndex, junction: stations[loop.junctionIndex].name, stations: stations.slice(loop.junctionIndex + 1, loop.returnIndex).map((s) => s.name) } : null,
+    directions: loop ? {
+      A: { name: raw.directions?.A?.name || `Boucle ${stations[loop.returnIndex - 1].name} · Direction ${term('A')}`, terminus: term('A') },
+      B: { name: raw.directions?.A?.name || `Boucle ${stations[loop.returnIndex - 1].name} · Direction ${term('A')}`, terminus: term('A') },
+    } : {
       A: { name: raw.directions?.A?.name || `Direction ${term('A')}`, terminus: term('A') },
       B: { name: raw.directions?.B?.name || `Direction ${term('B')}`, terminus: term('B') },
     },

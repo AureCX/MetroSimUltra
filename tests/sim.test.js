@@ -160,3 +160,29 @@ test('a junction with no route set holds the movement authority before the point
   sig.update([], { front: 5000, rear: 4900 });
   assert.ok(sig.authority > 5770);
 });
+
+test('Line C: one-way terminal loop closes on itself and returns on the other track', async () => {
+  const fs = await import('node:fs');
+  const raw = JSON.parse(fs.readFileSync(new URL('../src/data/lines/grandville-c.json', import.meta.url)));
+  const line = normalizeLine(raw);
+  assert.ok(line.loop, 'loop expanded');
+  const names = line.stations.map((s) => s.name);
+  assert.deepEqual(names.slice(4, 9), ['République', 'Gare Centrale', 'Palais Royal', 'Opéra', 'République']);
+  assert.equal(names.at(-1), 'Grandville Nord');
+  const g = new TrackGeometry(line);
+  const route = new Route(line, g, 'A');
+  // The return platform of every trunk station is the twin of its outbound one: same place, other track.
+  for (const s of line.stations.filter((x) => x.mirrorOf != null)) {
+    const a = g.point(g.stationS[s.mirrorOf]), b = g.point(g.stationS[s.index]);
+    assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 0.5, `${s.name} twin`);
+    const ra = route.point(route.stops[s.mirrorOf].centerR), rb = route.point(route.stops[s.index].centerR);
+    const d = Math.hypot(ra.x - rb.x, ra.z - rb.z);
+    assert.ok(d > 3 && d < 12, `${s.name}: tracks ${d.toFixed(2)} m apart`);
+  }
+  // The circuit is continuous (no jumps along the train's path).
+  let max = 0;
+  for (let r = 1; r < route.length; r += 1) { const p = route.point(r - 1), q = route.point(r); max = Math.max(max, Math.abs(Math.hypot(p.x - q.x, p.z - q.z) - 1)); }
+  assert.ok(max < 0.08, `max step error ${max.toFixed(3)}`);
+  assert.equal(route.stops.at(-1).name, 'Grandville Nord');
+  assert.ok(g.loop.closure < 3, `closure ${g.loop.closure}`);
+});

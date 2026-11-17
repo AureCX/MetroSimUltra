@@ -93,7 +93,7 @@ export class OutdoorBuilder {
     this.sites = [];
     this.line.stations.forEach((st, i) => {
       const lm = st.landmark;
-      if (!lm || lm.ground == null || i < this.w.opts.firstStation || !LANDMARKS[lm.type] || this.geom.outdoorAt(this.geom.stationS[i])) return;
+      if (!lm || st.mirrorOf != null || lm.ground == null || i < this.w.opts.firstStation || !LANDMARKS[lm.type] || this.geom.outdoorAt(this.geom.stationS[i])) return;
       const G = this.geom.point(this.geom.stationS[i]).y + lm.ground;
       const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 0);
       const site = LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line, this.geom, i);
@@ -107,7 +107,7 @@ export class OutdoorBuilder {
       this.landmarks = [];
       this.line.stations.forEach((st, i) => {
         const lm = st.landmark;
-        if (!lm || lm.ground != null || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
+        if (!lm || st.mirrorOf != null || lm.ground != null || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
         const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 50);
         this.landmarks.push(LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line));
       });

@@ -57,17 +57,29 @@ export class TrafficManager {
     this.trains = [];
     this.specs = specs;
     this.line = line;
+    this.player = null;              // optional () => { front, rear } of the player train (set by the game)
+    this.playerStart = playerTimetable.start;
     const h = line.headway;
     const startT = playerTimetable.start;
     const runTime = playerTimetable.end - playerTimetable.start;
     let id = 0;
+    const other = routes[playerRoute.dir === 'A' ? 'B' : 'A'];
+    if (!other) {
+      // One-way circuit (terminal loop): the other track is the same route further on, so the whole circuit is
+      // filled with trains ahead of the player, and trains keep following it (they never pass the player).
+      const n = Math.min(40, Math.ceil(runTime / h) + 1);
+      for (let k = -n; k <= n; k++) if (k) this.trains.push(new AITrain(playerRoute, specs, this._shifted(playerTimetable, k * h, playerRoute), id++));
+      this.pending = this.trains;
+      this.clock = Math.min(...this.trains.map((t) => t.tt.start)) - 1;
+      this.advanceTo(startClock);
+      return;
+    }
     // Same direction: two trains ahead of the player.
     for (let n = 1; n <= 2; n++) {
       const tt = this._shifted(playerTimetable, -n * h, playerRoute);
       this.trains.push(new AITrain(playerRoute, specs, tt, id++));
     }
     // Opposite direction: enough departures to fill the whole run.
-    const other = routes[playerRoute.dir === 'A' ? 'B' : 'A'];
     const base = new Timetable(other, specs, line.startTime);
     const otherRun = base.end - base.start;
     const first = startT - otherRun - 60, last = startT + runTime + 600;
@@ -96,17 +108,26 @@ export class TrafficManager {
   }
 
   /** Trains on a given route that are currently on the line. */
-  activeOn(route) { return this.trains.filter((t) => t.route === route && t.mode !== 'done' && (t.mode !== 'waiting' || t.tt.start - this.clock < 90)); }
+  activeOn(route) {
+    const p = this.player?.();
+    return this.trains.filter((t) => t.route === route && t.mode !== 'done' && (t.mode !== 'waiting' || (t.tt.start - this.clock < 90
+      // A follower waiting at the first platform appears only once the player has left it.
+      && !(p && route === this.playerRoute && t.tt.start > this.playerStart && p.rear < t.front + 40))));
+  }
 
   step(dt, clock) {
     this.clock = clock;
     for (const route of Object.values(this.routes)) {
       const list = this.trains.filter((t) => t.route === route && t.mode !== 'done').sort((a, b) => b.s - a.s);
+      const p = route === this.playerRoute ? this.player?.() : null;
       for (let i = 0; i < list.length; i++) {
         const t = list[i];
         if (t.mode === 'waiting' && clock < t.tt.start - 90) continue;
+        // Followers of the player keep their distance from it (and wait at the first platform until it has left).
+        if (p && t.tt.start > this.playerStart && t.mode === 'waiting' && p.rear < t.front + 40) { t.dwellUntil = Math.max(t.dwellUntil, clock + 1); continue; }
         const ahead = list[i - 1];
-        const authority = ahead && ahead.s > t.s ? ahead.rear - 60 : null;
+        let authority = ahead && ahead.s > t.s ? ahead.rear - 60 : null;
+        if (p && p.rear > t.s && (authority == null || p.rear - 60 < authority)) authority = p.rear - 60;
         t.step(dt, clock, authority);
       }
     }

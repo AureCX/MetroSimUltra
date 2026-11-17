@@ -8,8 +8,14 @@ function lineShape(line) {
   const pts = [];
   for (let s = g.stationS[0]; s <= g.stationS.at(-1); s += 25) { const p = g.point(s); pts.push([p.x, p.z]); }
   const p = g.point(g.stationS.at(-1)); pts.push([p.x, p.z]);
-  const stations = line.stations.map((st, i) => { const q = g.point(g.stationS[i]); return { st, x: q.x, y: q.z }; });
-  const out = { pts, stations };
+  const stations = line.stations.map((st, i) => { const q = g.point(g.stationS[i]); return { st, x: q.x, y: q.z }; }).filter((x) => x.st.mirrorOf == null);
+  // One-way terminal loop: arrows along the loop show the direction of travel.
+  const arrows = [];
+  if (g.loop) {
+    const { J, Jr } = g.loop;
+    for (const f of [0.18, 0.5, 0.82]) { const s = J + (Jr - J) * f, q = g.point(s); arrows.push({ x: q.x, y: q.z, h: g.heading(s) }); }
+  }
+  const out = { pts, stations, arrows };
   cache.set(line, out);
   return out;
 }
@@ -52,8 +58,13 @@ export function renderNetworkMap(svg, lines, selectedId, onSelect) {
       const dy = (i % 2 ? 26 : -18) * k;
       if (sel || inter) html += `<text x="${st.x + 10 * k}" y="${st.y + dy}" font-size="${(sel ? 15 : 13) * k}" fill="${sel ? '#fff' : '#aab4bf'}" font-weight="${sel ? 600 : 400}" paint-order="stroke" stroke="#0f141b" stroke-width="${3 * k}">${escapeXml(st.st.name)}</text>`;
     });
+    for (const ar of s.arrows) {
+      const L = 26 * k, W = 15 * k, dx = Math.sin(ar.h), dy = -Math.cos(ar.h), nx = -dy, ny = dx;
+      const tip = [ar.x + dx * L * 0.6, ar.y + dy * L * 0.6], b1 = [ar.x - dx * L * 0.4 + nx * W, ar.y - dy * L * 0.4 + ny * W], b2 = [ar.x - dx * L * 0.4 - nx * W, ar.y - dy * L * 0.4 - ny * W];
+      html += `<path d="M${b1.join(',')}L${tip.join(',')}L${b2.join(',')}" stroke="#fff" stroke-width="${4 * k}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${sel ? 1 : 0.6}"/>`;
+    }
     const a = s.stations[0], b = s.stations.at(-1);
-    for (const e of [a, b]) html += `<g><circle cx="${e.x - 22 * k}" cy="${e.y}" r="${14 * k}" fill="${s.l.color}"/><text x="${e.x - 22 * k}" y="${e.y + 5 * k}" font-size="${14 * k}" text-anchor="middle" font-weight="700" fill="${s.l.textColor}">${escapeXml(s.l.number)}</text></g>`;
+    for (const e of s.l.loop ? [a] : [a, b]) html += `<g><circle cx="${e.x - 22 * k}" cy="${e.y}" r="${14 * k}" fill="${s.l.color}"/><text x="${e.x - 22 * k}" y="${e.y + 5 * k}" font-size="${14 * k}" text-anchor="middle" font-weight="700" fill="${s.l.textColor}">${escapeXml(s.l.number)}</text></g>`;
     html += '</g>';
   }
   svg.innerHTML = html;

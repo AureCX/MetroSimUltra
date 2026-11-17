@@ -15,13 +15,17 @@ export class WorldBuilder {
    * opts (all optional) — used to add the second branch of a branching line to the same world:
    *  fromS        build only from this chainage on (the shared trunk is built by the main builder)
    *  firstStation build stations from this index on
-   *  junction     { divergeS, wallS, inner } — between divergeS and wallS the wall on the `inner`
+   *  junctions    [{ divergeS, wallS, inner }] — between divergeS and wallS the wall on the `inner`
    *               side (+1 right / −1 left, direction A) is left out so both tunnels form one chamber
+   *               (branch junctions, and both ends of a terminal loop)
    *  lightPool / tunnelPool  pools of the main builder to share
    *  offset       draw the chamber surfaces with a polygon offset (avoids z-fighting with the twin tunnel)
    */
   constructor(scene, line, geom, routes, quality = 'high', opts = {}) {
-    this.opts = { fromS: 0, firstStation: 0, junction: null, ...opts };
+    this.opts = { fromS: 0, firstStation: 0, junctions: [], ...opts };
+    // Terminal loop: the return run beyond Jr is the trunk again (other track), already built.
+    this.loop = geom.loop || null;
+    this.endS = this.loop ? this.loop.Jr : geom.length;
     this.scene = scene;
     this.line = line;
     this.geom = geom;
@@ -51,12 +55,12 @@ export class WorldBuilder {
     this.buildBuffers();
     this.outdoor = new OutdoorBuilder(this).build();
     this.line.stations.forEach((st, i) => {
-      if (i < this.opts.firstStation) return;
+      if (i < this.opts.firstStation || st.mirrorOf != null) return;
       const sv = new StationView(this.line, this.geom, this.routes, st, i, this.quality);
       this.group.add(sv.group);
       this.stations.push(sv);
     });
-    const zones = this.geom.zones.filter((z) => z.index >= this.opts.firstStation && !this.geom.outdoorAt(z.center));
+    const zones = this.geom.zones.filter((z) => z.index >= this.opts.firstStation && this.line.stations[z.index].mirrorOf == null && !this.geom.outdoorAt(z.center));
     if (this.opts.lightPool) { this.opts.lightPool.addSource(this.geom, this.line, zones); }
     else { this.lights = new StationLightPool(this.scene); this.lights.addSource(this.geom, this.line, zones); }
     if (this.opts.tunnelPool) this.opts.tunnelPool.positions.push(...this.lampPositions);
@@ -66,14 +70,15 @@ export class WorldBuilder {
 
   /** Is [a, b] inside the junction chamber? Returns the inner side (+1/−1) or 0. */
   innerSide(a, b) {
-    const j = this.opts.junction;
-    return j && a >= j.divergeS - 0.01 && b <= j.wallS + 0.01 ? j.inner : 0;
+    for (const j of this.opts.junctions) if (a >= j.divergeS - 0.01 && b <= j.wallS + 0.01) return j.inner;
+    return 0;
   }
   /** Splits [a, b] into chunks no longer than CHUNK, also cutting at the junction boundaries. */
   chunk(a, b) {
     const cuts = [a, b];
-    const j = this.opts.junction;
-    if (j) for (const c of [j.divergeS, j.wallS]) if (c > a && c < b) cuts.push(c);
+    const extra = this.opts.junctions.flatMap((j) => [j.divergeS, j.wallS]);
+    if (this.loop) extra.push(this.loop.J);
+    for (const c of extra) if (c > a && c < b) cuts.push(c);
     cuts.sort((x, y) => x - y);
     const out = [];
     for (let i = 0; i < cuts.length - 1; i++) for (let s = cuts[i]; s < cuts[i + 1] - 0.5; s += CHUNK) out.push([s, Math.min(cuts[i + 1], s + CHUNK)]);
@@ -86,6 +91,7 @@ export class WorldBuilder {
     let cur = 0;
     for (const z of this.geom.zones) { if (z.start > cur) out.push([cur, z.start]); cur = z.end; }
     if (cur < this.geom.length) out.push([cur, this.geom.length]);
+    for (let i = out.length - 1; i >= 0; i--) { if (out[i][0] >= this.endS) out.splice(i, 1); else out[i][1] = Math.min(out[i][1], this.endS); }
     // Remove open-air runs.
     for (const [oa, ob] of this.geom.outdoorRuns()) {
       for (let i = out.length - 1; i >= 0; i--) {
@@ -150,12 +156,12 @@ export class WorldBuilder {
   buildTrack() {
     const g = this.geom;
     const sleeperGeo = new THREE.BoxGeometry(2.5, 0.14, 0.24);
-    for (const [a, b] of this.chunk(this.opts.fromS, g.length)) {
+    for (const [a, b] of this.chunk(this.opts.fromS, this.endS)) {
       const o = this.origin(a);
       const railGeos = [], topGeos = [], cond = [];
       const inner = this.innerSide(a, b);
-      for (const route of Object.values(this.routes)) {
-        const sg = route.sign;
+      const sides = this.trackSides(a);
+      for (const sg of sides) {
         for (const r of [-GAUGE_HALF, GAUGE_HALF]) {
           railGeos.push(sweep(g, a, b, 3, (s) => {
             const c = sg * g.halfSpacingAt(s) + r;
@@ -180,7 +186,7 @@ export class WorldBuilder {
       const m = new THREE.Matrix4();
       let i = 0;
       for (let s = a; s < b - 0.01 && i < count; s += 0.75) {
-        for (const sg of [-1, 1]) {
+        for (const sg of sides) {
           if (i >= count) break;
           const p = g.point(s, sg * g.halfSpacingAt(s), -0.24);
           m.makeRotationY(-g.heading(s));
@@ -193,6 +199,12 @@ export class WorldBuilder {
       sl.computeBoundingSphere();
       this.group.add(sl);
     }
+  }
+
+  /** Track sides present at chainage a: both on a double-track line, only the loop track beyond the loop junction. */
+  trackSides(a) {
+    if (this.loop) return a >= this.loop.J - 0.01 ? [1] : [-1, 1];
+    return Object.values(this.routes).map((r) => r.sign);
   }
 
   /** Lineside speed boards at every limit change and stop markers at each platform. */
@@ -258,7 +270,7 @@ export class WorldBuilder {
       this.group.add(grp);
       this.buffers.push({ route: route.dir, group: grp, base: grp.position.clone(), rot: grp.rotation.clone(), fwd: new THREE.Vector3(q.x - p.x, 0, q.z - p.z).normalize() });
     }
-    for (const s of [0.05, this.geom.length - 0.05]) {
+    for (const s of this.loop ? [0.05] : [0.05, this.geom.length - 0.05]) {
       if (s < this.opts.fromS || this.geom.outdoorAt(s)) continue;
       const hw = this.geom.tunnelHalfWidthAt(s);
       const p = this.geom.point(s, 0, 2.4);
@@ -273,7 +285,8 @@ export class WorldBuilder {
   envelope(trackS) {
     if (this.geom.outdoorAt(trackS)) return { maxLat: 40, ceil: () => 30 };
     const z = this.geom.stationZoneAt(trackS);
-    const sv = z && this.stations.find((x) => x.index === z.index);
+    const zi = z && (this.line.stations[z.index].mirrorOf ?? z.index);
+    const sv = z && this.stations.find((x) => x.index === zi);
     if (z && !sv && this.opts.fallback) return this.opts.fallback.envelope(trackS);
     if (sv) {
       return { maxLat: sv.W - 0.4, ceil: (lat) => (sv.style === 'vault' ? sv.H + sv.vaultRise * Math.sqrt(Math.max(0, 1 - (lat / sv.W) ** 2)) : sv.H) - 0.35 };
@@ -288,7 +301,8 @@ export class WorldBuilder {
   update(trackS, clock, etaProvider, viewPos) {
     if (viewPos) this.lights?.update(viewPos);
     if (viewPos) this.tunnelLights?.update(viewPos);
-    for (const sv of this.stations) if (Math.abs(sv.centerS - trackS) < 500) sv.updatePIDs(clock, etaProvider);
+    const t = this.geom.mirrorS(trackS);
+    for (const sv of this.stations) if (Math.abs(sv.centerS - t) < 500) sv.updatePIDs(clock, etaProvider);
   }
 
   dispose() {

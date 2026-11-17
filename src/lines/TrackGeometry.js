@@ -29,13 +29,15 @@ export class TrackGeometry {
     this.stationS = [];
     let acc = LEAD_IN;
     for (let i = 0; i < st.length; i++) { this.stationS.push(acc); acc += st[i].distanceToNext; }
-    this.length = this.stationS.at(-1) + LEAD_OUT;
+    const loop = line.loop;
+    // A loop line ends where it started (the return track at the first station), so its lead-out mirrors the lead-in.
+    this.length = this.stationS.at(-1) + (loop ? LEAD_IN : LEAD_OUT);
     const N = Math.ceil(this.length) + 2;
     this.N = N;
 
     const curvT = new Float32Array(N), gradT = new Float32Array(N);
     this.portals = []; // { s, type: 'exit' | 'enter' } in direction A
-    for (let i = 0; i < st.length - 1; i++) {
+    for (let i = 0; i < (loop ? loop.returnIndex : st.length - 1); i++) {
       const begin = this.stationS[i] + st[i].platformLength / 2 + PLATFORM_PAD;
       const end = this.stationS[i + 1] - st[i + 1].platformLength / 2 - PLATFORM_PAD;
       let cur = begin;
@@ -60,6 +62,8 @@ export class TrackGeometry {
       y += this.grad[i] / 1000;
       h += this.curv[i];
     }
+
+    if (loop) this.buildLoop(loop);
 
     // Surface sections: outdoor between an 'exit' portal and the next 'enter' portal (direction A).
     // Ground level of a surface section = track level at its portal + 5.5 m (tunnel roof + cover).
@@ -98,7 +102,74 @@ export class TrackGeometry {
         this.hs[k] = Math.max(this.hs[k], base + (target - base) * w);
       }
     });
+    if (loop) this.taperLoop(base);
   }
+
+  /**
+   * Terminal loop: [J, Jr] is the single-track loop (integrated from the track data), J being the
+   * end of the junction station's platform pad and Jr the same point reached again in the other
+   * direction. Beyond Jr the circuit runs back over the trunk on the other track: those samples
+   * are the trunk mirrored (s ↔ M − s), heading reversed.
+   */
+  buildLoop(loop) {
+    const st = this.line.stations, S = this.stationS, N = this.N;
+    const jst = st[loop.junctionIndex];
+    const J = S[loop.junctionIndex] + jst.platformLength / 2 + PLATFORM_PAD;
+    const M = S[loop.junctionIndex] + S[loop.returnIndex];
+    const Jr = M - J;
+    const smp = (arr, s) => this.sample(arr, s);
+    // 1. Close the loop: the integrated alignment must come back to J, heading reversed.
+    const tx = smp(this.px, J), ty = smp(this.py, J), tz = smp(this.pz, J);
+    const ex = tx - smp(this.px, Jr), ey = ty - smp(this.py, Jr), ez = tz - smp(this.pz, Jr);
+    const B = Math.min(700, (Jr - J) / 2);
+    const i0 = Math.ceil(J), i1 = Math.min(N - 1, Math.floor(Jr) + 1);
+    for (let i = Math.floor(Jr - B); i <= i1; i++) {
+      const w = smoothstep(Jr - B, Jr, i);
+      this.px[i] += ex * w; this.py[i] += ey * w; this.pz[i] += ez * w;
+    }
+    // Headings / curvature from the corrected positions.
+    for (let i = Math.floor(Jr - B); i <= i1; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1);
+      let h = Math.atan2(this.px[b] - this.px[a], -(this.pz[b] - this.pz[a]));
+      h += Math.round((this.hd[i - 1] - h) / (2 * Math.PI)) * 2 * Math.PI;
+      this.hd[i] = h;
+    }
+    for (let i = Math.floor(Jr - B); i < i1; i++) this.curv[i] = this.hd[i + 1] - this.hd[i];
+    // 2. Mirror the trunk for the return run. Keep the heading continuous (offset = an odd multiple of π).
+    let off = smp(this.hd, Jr) - smp(this.hd, J) - Math.PI;
+    off = Math.PI + Math.round(off / (2 * Math.PI)) * 2 * Math.PI;
+    for (let i = Math.ceil(Jr); i < N; i++) {
+      const j = Math.max(0, M - i);
+      this.px[i] = smp(this.px, j); this.py[i] = smp(this.py, j); this.pz[i] = smp(this.pz, j);
+      this.hd[i] = smp(this.hd, j) + off;
+      this.curv[i] = -smp(this.curv, j); this.grad[i] = -smp(this.grad, j);
+    }
+    // Which side the return branch lies on, seen from the outbound one (+1 right / −1 left): its inner wall.
+    const p = this.point(J + 60), q = this.point(Jr - 60), h = this.heading(J + 60);
+    const side = Math.sign((q.x - p.x) * Math.cos(h) + (q.z - p.z) * Math.sin(h)) || -1;
+    this.loop = { J, Jr, M, inner: side, closure: Math.hypot(ex, ez), junctionIndex: loop.junctionIndex, returnIndex: loop.returnIndex };
+  }
+
+  /** The loop is single track: its centreline moves onto the track (spacing → 0) over the first/last metres. */
+  taperLoop(base) {
+    const { J, Jr } = this.loop, RAMP = 70;
+    for (let i = Math.ceil(J); i <= Math.floor(Jr); i++) {
+      const w = smoothstep(0, RAMP, Math.min(i - J, Jr - i));
+      const h = this.hd[i], sh = this.hs[i] * w;
+      this.px[i] += Math.cos(h) * sh; this.pz[i] += Math.sin(h) * sh;
+      this.hs[i] -= sh;
+    }
+    // Length of the shared chamber where the two branches' tunnels still overlap.
+    let d = 0;
+    for (; d < Math.min(400, (Jr - J) / 2); d += 1) {
+      const a = this.point(J + d), b = this.point(Jr - d);
+      if (Math.hypot(a.x - b.x, a.z - b.z) >= this.tunnelHalfWidthAt(J + d) + this.tunnelHalfWidthAt(Jr - d)) break;
+    }
+    this.loop.chamber = d;
+  }
+
+  /** Chainage of the outbound twin of a point on the return run (loop lines). */
+  mirrorS(s) { return this.loop && s > this.loop.Jr ? this.loop.M - s : s; }
 
   _idx(s) {
     const c = Math.min(Math.max(s, 0), this.N - 1.001);

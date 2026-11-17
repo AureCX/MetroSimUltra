@@ -34,12 +34,14 @@ export class TrackGeometry {
     this.N = N;
 
     const curvT = new Float32Array(N), gradT = new Float32Array(N);
+    this.portals = []; // { s, type: 'exit' | 'enter' } in direction A
     for (let i = 0; i < st.length - 1; i++) {
       const begin = this.stationS[i] + st[i].platformLength / 2 + PLATFORM_PAD;
       const end = this.stationS[i + 1] - st[i + 1].platformLength / 2 - PLATFORM_PAD;
       let cur = begin;
       for (const seg of st[i].track) {
         if (!seg || cur >= end) break;
+        if (seg.portal) this.portals.push({ s: cur, type: seg.portal });
         const b = Math.min(end, cur + seg.length);
         for (let k = Math.floor(cur); k < Math.floor(b); k++) { curvT[k] = seg.curvature; gradT[k] = seg.gradient; }
         cur = b;
@@ -57,6 +59,27 @@ export class TrackGeometry {
       x += Math.sin(hm); z -= Math.cos(hm);
       y += this.grad[i] / 1000;
       h += this.curv[i];
+    }
+
+    // Surface sections: outdoor between an 'exit' portal and the next 'enter' portal (direction A).
+    // Ground level of a surface section = track level at its portal + 5.5 m (tunnel roof + cover).
+    this.outdoor = new Uint8Array(N);
+    this.ground = new Float32Array(N).fill(NaN);
+    const cover = 5.5;
+    const ev = [...this.portals].sort((a, b) => a.s - b.s);
+    let out = false, g = NaN, e = 0;
+    for (let i = 0; i < N; i++) {
+      while (e < ev.length && ev[e].s <= i) {
+        out = ev[e].type === 'exit';
+        g = this.py[Math.min(N - 1, Math.round(ev[e].s))] + cover;
+        e++;
+      }
+      if (out) { this.outdoor[i] = 1; this.ground[i] = g; }
+    }
+    // Ground also extends over the tunnel near each portal (so the landscape has no hole behind it).
+    for (const p of ev) {
+      const gg = this.py[Math.min(N - 1, Math.round(p.s))] + cover;
+      for (let i = Math.max(0, Math.floor(p.s - 260)); i < Math.min(N, p.s + 260); i++) if (Number.isNaN(this.ground[i])) this.ground[i] = gg;
     }
 
     // Track half-spacing: widened at island platforms.
@@ -98,6 +121,19 @@ export class TrackGeometry {
     out.y = this.sample(this.py, s) + height;
     out.z = this.sample(this.pz, s) + Math.sin(h) * lateral;
     return out;
+  }
+
+  outdoorAt(s) { const i = Math.min(this.N - 1, Math.max(0, Math.round(s))); return this.outdoor[i] === 1; }
+  groundAt(s) { const i = Math.min(this.N - 1, Math.max(0, Math.round(s))); return this.ground[i]; }
+  /** [start, end] chainage runs that are open-air. */
+  outdoorRuns() {
+    const runs = []; let a = null;
+    for (let i = 0; i < this.N; i++) {
+      if (this.outdoor[i] && a == null) a = i;
+      if (!this.outdoor[i] && a != null) { runs.push([a, i]); a = null; }
+    }
+    if (a != null) runs.push([a, this.N - 1]);
+    return runs;
   }
 
   stationZoneAt(s) {

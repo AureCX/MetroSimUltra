@@ -158,7 +158,8 @@ function normalizeSegment(seg, k, stationName, errors) {
   if (!(length > 0)) errors.push(`Track segment #${k + 1} after "${stationName}" needs a positive "length".`);
   const radius = seg.radius ? num(seg.radius, 0, { min: 60 }) : 0;
   const turn = seg.turn === 'left' ? -1 : 1;
-  return { length, curvature: radius ? turn / radius : 0, radius, gradient: num(seg.gradient, 0, { min: -60, max: 60 }) };
+  const portal = seg.portal === 'exit' || seg.portal === 'enter' ? seg.portal : null;
+  return { length, curvature: radius ? turn / radius : 0, radius, gradient: num(seg.gradient, 0, { min: -60, max: 60 }), portal };
 }
 
 function pickTextColor(hex) {

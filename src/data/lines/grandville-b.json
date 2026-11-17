@@ -220,11 +220,19 @@
      },
      "track": [
       {
-       "length": 400,
-       "gradient": 18
+       "length": 120
       },
       {
-       "length": 300
+       "length": 300,
+       "gradient": 40
+      },
+      {
+       "length": 160,
+       "gradient": 40,
+       "portal": "exit"
+      },
+      {
+       "length": 150
       }
      ]
     },
@@ -233,9 +241,9 @@
      "distanceToNext": 1100,
      "speedLimit": 80,
      "stopDuration": 20,
-     "style": "pillars",
+     "style": "modern",
+     "passengers": 22,
      "theme": {
-      "wall": "#b7c48a",
       "accent": "#556b2f"
      },
      "track": [
@@ -255,8 +263,8 @@
      "speedLimit": 80,
      "stopDuration": 20,
      "style": "modern",
+     "passengers": 26,
      "theme": {
-      "wall": "#2b3140",
       "accent": "#5ab0ff"
      },
      "track": [
@@ -266,8 +274,7 @@
       {
        "length": 400,
        "radius": 1500,
-       "turn": "right",
-       "gradient": -12
+       "turn": "right"
       }
      ]
     },

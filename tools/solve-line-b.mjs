@@ -39,9 +39,9 @@ const raw = {
     { id: 'bellevue', name: 'Bellevue – Centre',
       link: { distanceToNext: 1150, speedLimit: 60, track: [st(60), c(arc(140, 330), 330, 'left')] },
       stations: [
-        S('Mairie de Bellevue', 1000, 75, 22, 'vault', { theme: { wall: '#f1ede2', accent: '#b3121b' } }, [st(400, 18), st(300)]),
-        S('Les Vignes', 1100, 80, 20, 'pillars', { theme: { wall: '#b7c48a', accent: '#556b2f' } }, [st(300), c(400, 1500, 'left')]),
-        S('Université Ouest', 1100, 80, 20, 'modern', { theme: { wall: '#2b3140', accent: '#5ab0ff' } }, [st(300), c(400, 1500, 'right', -12)]),
+        S('Mairie de Bellevue', 1000, 75, 22, 'vault', { theme: { wall: '#f1ede2', accent: '#b3121b' } }, [st(120), st(300, 40), { length: 160, gradient: 40, portal: 'exit' }, st(150)]),
+        S('Les Vignes', 1100, 80, 20, 'modern', { passengers: 22, theme: { accent: '#556b2f' } }, [st(300), c(400, 1500, 'left')]),
+        S('Université Ouest', 1100, 80, 20, 'modern', { passengers: 26, theme: { accent: '#5ab0ff' } }, [st(300), c(400, 1500, 'right')]),
         S('Bellevue – Centre', 0, 60, 30, 'modern', { passengers: 30, theme: { wall: '#30283a', accent: '#33E633' } }),
       ] },
     { id: 'aeroport', name: 'Aéroport Est',

@@ -127,6 +127,11 @@ over to the next platform is straight and level. Platforms are always straight a
 
 * `radius` (m, ≥ 60) and `turn` (`left`/`right`, direction A) make a curve. Transition curves are
   generated automatically. Tight curves add curve resistance and flange squeal.
+* `portal`: `"exit"` (leave the tunnel at the start of this segment) or `"enter"` (go underground).
+  Between an exit and the next enter portal the line runs in the open air: ground level is the
+  track level at the portal + 5.5 m, so climb out with a gradient (e.g. 40 ‰ over 160 m) after the
+  portal to reach the surface. Cuttings, embankments, portal headwalls, fences, a road, buildings,
+  trees, daylight and open-air canopy stations are generated automatically.
 * `gradient` in ‰, positive = uphill in direction A. Vertical curves are smoothed automatically.
   Gradients act on the train physics (it will roll back on an up-grade if you release the brake).
 

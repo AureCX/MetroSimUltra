@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { sweep, tunnelProfile, tunnelProfilePartial, FLOOR_Y, ARCH_SPRING, ARCH_RISE, BOX_HEIGHT } from './Sweep.js';
 import { Textures } from './Textures.js';
 import { StationView } from './StationBuilder.js';
+import { OutdoorBuilder } from './Outdoor.js';
 
 const GAUGE_HALF = 0.7175;
 const CHUNK = 100;
@@ -48,13 +49,14 @@ export class WorldBuilder {
     this.buildTrack();
     this.buildBoards();
     this.buildBuffers();
+    this.outdoor = new OutdoorBuilder(this).build();
     this.line.stations.forEach((st, i) => {
       if (i < this.opts.firstStation) return;
       const sv = new StationView(this.line, this.geom, this.routes, st, i, this.quality);
       this.group.add(sv.group);
       this.stations.push(sv);
     });
-    const zones = this.geom.zones.filter((z) => z.index >= this.opts.firstStation);
+    const zones = this.geom.zones.filter((z) => z.index >= this.opts.firstStation && !this.geom.outdoorAt(z.center));
     if (this.opts.lightPool) { this.opts.lightPool.addSource(this.geom, this.line, zones); }
     else { this.lights = new StationLightPool(this.scene); this.lights.addSource(this.geom, this.line, zones); }
     if (this.opts.tunnelPool) this.opts.tunnelPool.positions.push(...this.lampPositions);
@@ -84,6 +86,17 @@ export class WorldBuilder {
     let cur = 0;
     for (const z of this.geom.zones) { if (z.start > cur) out.push([cur, z.start]); cur = z.end; }
     if (cur < this.geom.length) out.push([cur, this.geom.length]);
+    // Remove open-air runs.
+    for (const [oa, ob] of this.geom.outdoorRuns()) {
+      for (let i = out.length - 1; i >= 0; i--) {
+        const [a, b] = out[i];
+        if (b <= oa || a >= ob) continue;
+        const parts = [];
+        if (a < oa) parts.push([a, oa]);
+        if (b > ob) parts.push([ob, b]);
+        out.splice(i, 1, ...parts);
+      }
+    }
     const from = this.opts.fromS;
     return out.filter(([, b]) => b > from).flatMap(([a, b]) => this.chunk(Math.max(a, from), b));
   }
@@ -231,20 +244,22 @@ export class WorldBuilder {
     const mat = new THREE.MeshLambertMaterial({ map: Textures.label(' ', { w: 64, h: 64, bg: '#c62828', fg: '#fff' }) });
     const stripe = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const wall = new THREE.MeshLambertMaterial({ map: Textures.concrete('#55524d'), side: THREE.DoubleSide });
+    this.buffers = [];
     for (const route of Object.values(this.routes)) {
       const r = route.length - 8;
       if (route.toTrack(r) < this.opts.fromS) continue;
-      const p = route.point(r, 0, 0.6);
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.5), mat);
-      beam.position.set(p.x, p.y, p.z);
-      beam.rotation.y = -this.geom.heading(route.toTrack(r));
-      this.group.add(beam);
-      const st = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.52, 0.52), stripe);
-      st.position.copy(beam.position); st.rotation.copy(beam.rotation);
-      this.group.add(st);
+      const p = route.point(r, 0, 0.6), q = route.point(r + 1, 0, 0.6);
+      const grp = new THREE.Group();
+      grp.position.set(p.x, p.y, p.z);
+      grp.rotation.y = -this.geom.heading(route.toTrack(r));
+      grp.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.5), mat));
+      grp.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.52, 0.52), stripe));
+      for (const sx of [-0.9, 0.9]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.5, 12), stripe); b.rotation.x = Math.PI / 2; b.position.set(sx, 0.15, -0.4 * route.sign); grp.add(b); }
+      this.group.add(grp);
+      this.buffers.push({ route: route.dir, group: grp, base: grp.position.clone(), rot: grp.rotation.clone(), fwd: new THREE.Vector3(q.x - p.x, 0, q.z - p.z).normalize() });
     }
     for (const s of [0.05, this.geom.length - 0.05]) {
-      if (s < this.opts.fromS) continue;
+      if (s < this.opts.fromS || this.geom.outdoorAt(s)) continue;
       const hw = this.geom.tunnelHalfWidthAt(s);
       const p = this.geom.point(s, 0, 2.4);
       const cap = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, 6), wall);
@@ -256,6 +271,7 @@ export class WorldBuilder {
 
   /** Free space at a chainage (used to keep exterior cameras inside tunnels and stations). */
   envelope(trackS) {
+    if (this.geom.outdoorAt(trackS)) return { maxLat: 40, ceil: () => 30 };
     const z = this.geom.stationZoneAt(trackS);
     const sv = z && this.stations.find((x) => x.index === z.index);
     if (z && !sv && this.opts.fallback) return this.opts.fallback.envelope(trackS);

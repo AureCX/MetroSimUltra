@@ -130,9 +130,9 @@ export class AudioSystem {
     this.set(c.invGain.gain, effort > 0.02 && vk > 0.3 ? (0.012 + effort * 0.03) * (vk < 70 ? 1 : 0.5) * ext : 0, 0.05);
     // Rolling, wind, flange.
     this.set(c.rollLP.frequency, 140 + vk * 22);
-    this.set(c.rollGain.gain, Math.min(1, vk / 30) * (0.18 + vk / 220) * ext);
+    this.set(c.rollGain.gain, Math.min(1, vk / 30) * (0.18 + vk / 220) * ext * (st.outdoor ? 0.65 : 1), 0.4);
     this.set(c.windBP.frequency, 300 + vk * 9);
-    this.set(c.windGain.gain, Math.pow(vk / 80, 2) * (st.inStation ? 0.12 : 0.45) * ext);
+    this.set(c.windGain.gain, Math.pow(vk / 80, 2) * (st.outdoor ? 0.08 : st.inStation ? 0.12 : 0.45) * ext, 0.4);
     const curve = st.radius < 450 && vk > 12 ? (1 - st.radius / 450) * Math.min(1, (vk - 12) / 25) : 0;
     this.set(c.flGain.gain, curve * 0.09 * ext, 0.25);
     const squeal = st.brake > 0.15 && v > 0.05 && v < 4 ? (1 - v / 4) * st.brake : 0;
@@ -205,6 +205,32 @@ export class AudioSystem {
   refuse() { this.tone(330, 0.25, { type: 'square', gain: 0.06 }); this.tone(260, 0.3, { type: 'square', gain: 0.06, at: 0.27 }); }
   ding() { this.tone(1568, 0.25, { gain: 0.07 }); }
   jingle() { [659, 784, 988].forEach((f, i) => this.tone(f, 0.38, { at: i * 0.32, gain: 0.07, dest: this.voice, type: 'sine', attack: 0.02 })); }
+
+  /** Collision: impact boom, tearing metal, breaking glass. slow = replay version (lower, longer). */
+  crash(k = 1, slow = false) {
+    if (!this.started) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01, st = slow ? 3.2 : 1, pf = slow ? 0.45 : 1;
+    const g = Math.min(1, 0.45 + k * 0.35);
+    // Boom.
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(90 * pf, t); o.frequency.exponentialRampToValueAtTime(28 * pf, t + 0.9 * st);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.9 * g, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.2 * st);
+    o.connect(og).connect(this.fx); o.start(t); o.stop(t + 1.3 * st);
+    const boom = ctx.createBufferSource(); boom.buffer = this.brown;
+    const bl = this.filter('lowpass', 900 * pf, 0.7); const bg = ctx.createGain();
+    bg.gain.setValueAtTime(1.2 * g, t); bg.gain.exponentialRampToValueAtTime(0.0001, t + 1.6 * st);
+    boom.connect(bl).connect(bg).connect(this.fx); boom.start(t); boom.stop(t + 1.7 * st);
+    // Tearing metal: resonant noise bands sweeping down.
+    for (const [f, d] of [[2400, 1.4], [3300, 1.1], [1700, 1.9], [4600, 0.8]]) {
+      const n = ctx.createBufferSource(); n.buffer = this.noise;
+      const bp = this.filter('bandpass', f * pf, 22);
+      bp.frequency.setValueAtTime(f * pf, t + 0.05); bp.frequency.exponentialRampToValueAtTime(f * 0.55 * pf, t + d * st);
+      const ng = ctx.createGain(); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.35 * g, t + 0.05); ng.gain.exponentialRampToValueAtTime(0.0001, t + d * st);
+      n.connect(bp).connect(ng).connect(this.fx); n.start(t, Math.random()); n.stop(t + d * st + 0.1);
+    }
+    // Glass.
+    for (let i = 0; i < 9; i++) this.hiss(0.08 * st, { gain: 0.25 * g, freq: (5000 + Math.random() * 4000) * pf, at: 0.05 + Math.random() * 0.35 * st });
+    this.hiss(2.5 * st, { gain: 0.18, freq: 500, type: 'lowpass', at: 0.3 });
+  }
 
   /** Repeating alarm: 'atp' | 'vigilance' | null */
   setAlarm(kind) {

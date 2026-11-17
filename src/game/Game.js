@@ -15,6 +15,7 @@ import { Cabin, CabInteraction } from '../cabin/Cabin.js';
 import { CameraSystem } from '../camera/CameraSystem.js';
 import { Announcer } from '../audio/Announcer.js';
 import { Scoring } from './Scoring.js';
+import { CrashCinematic } from './CrashCinematic.js';
 import { setMaxAnisotropy } from '../world/Textures.js';
 import { buildLineMapModel, drawLineMap, trainMapState } from '../ui/LineMap.js';
 
@@ -44,8 +45,9 @@ export class Game {
     scene.background = new THREE.Color(0x040507);
     scene.fog = new THREE.Fog(0x050608, 25, draw);
     this.camera.far = draw + 50;
-    scene.add(new THREE.HemisphereLight(0x8a8f99, 0x2a241c, 0.55));
-    scene.add(new THREE.AmbientLight(0x404248, 0.35));
+    this.hemi = new THREE.HemisphereLight(0x8a8f99, 0x2a241c, 0.55);
+    this.ambient = new THREE.AmbientLight(0x404248, 0.35);
+    scene.add(this.hemi, this.ambient);
 
     // Every service of the line (several for a branching line) is part of the same world.
     this.svc = new Map();
@@ -81,6 +83,7 @@ export class Game {
       }).build());
     }
     this.mainWorld = this.world;
+    this.buildDaylight();
     this.signalView = new SignalView(scene, this.signals, route, this.geom);
     this.playerModel = new TrainModel(train, line, route.terminus, { player: true });
     scene.add(this.playerModel.group);
@@ -116,6 +119,56 @@ export class Game {
     this.mapModel = buildLineMapModel(line, [...this.svc.values()].map((d) => d.line), network || [], direction);
     this.mapAcc = 1;
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
+  }
+
+  /** Sky dome, sun and haze for lines with open-air sections. */
+  buildDaylight() {
+    this.daylight = null;
+    if (![...this.svc.values()].some((d) => d.geom.portals.length)) return;
+    const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+    const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0, '#3f78c8'); grd.addColorStop(0.42, '#8fb7e6'); grd.addColorStop(0.5, '#dfe9f2'); grd.addColorStop(0.53, '#b9c4b2'); grd.addColorStop(1, '#6f7d64');
+    g.fillStyle = grd; g.fillRect(0, 0, 4, 256);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
+    sky.renderOrder = -10; sky.frustumCulled = false;
+    const sunTex = (() => {
+      const cc = document.createElement('canvas'); cc.width = cc.height = 128;
+      const gg = cc.getContext('2d'); const r = gg.createRadialGradient(64, 64, 0, 64, 64, 64);
+      r.addColorStop(0, 'rgba(255,255,240,1)'); r.addColorStop(0.12, 'rgba(255,250,220,1)'); r.addColorStop(0.3, 'rgba(255,230,170,0.35)'); r.addColorStop(1, 'rgba(255,230,170,0)');
+      gg.fillStyle = r; gg.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(cc);
+    })();
+    const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+    sunDisc.renderOrder = -9; sunDisc.frustumCulled = false;
+    const sun = new THREE.DirectionalLight(0xfff1dc, 0);
+    this.scene.add(sky, sunDisc, sun, sun.target);
+    this.daylight = { sky, sun, sunDisc, dir: new THREE.Vector3(0.45, 0.62, -0.64).normalize(), o: this.geom.outdoorAt(this.route.toTrack(this.player.front)) ? 1 : 0 };
+  }
+
+  updateDaylight(dt, camPos) {
+    const d = this.daylight; if (!d) return;
+    const front = this.player.front;
+    const tr = this.route.toTrack(this.cameraSys.mode === 'cab' ? front : front - 10);
+    const target = this.geom.outdoorAt(tr) ? 1 : 0;
+    d.o += (target - d.o) * Math.min(1, dt * 1.3); // eyes adapting to daylight / tunnel darkness
+    const o = d.o;
+    this.scene.fog.color.setRGB(0.02 + 0.66 * o, 0.024 + 0.74 * o, 0.03 + 0.84 * o);
+    this.scene.background.copy(this.scene.fog.color);
+    const draw = this.settings.get('graphics.drawDistance');
+    this.scene.fog.near = 25 + o * 140;
+    this.scene.fog.far = draw * (1 + 1.2 * o);
+    this.hemi.intensity = 0.55 + 1.1 * o;
+    this.hemi.color.setRGB(0.54 + 0.3 * o, 0.56 + 0.32 * o, 0.6 + 0.35 * o);
+    this.ambient.intensity = 0.35 + 0.25 * o;
+    d.sun.intensity = 2.6 * o;
+    const far = Math.round(draw * (1 + 1.3 * o) + 50);
+    if (Math.abs(this.camera.far - far) > 5) { this.camera.far = far; this.camera.updateProjectionMatrix(); }
+    d.sun.position.copy(camPos).addScaledVector(d.dir, 200);
+    d.sun.target.position.copy(camPos);
+    const R = this.camera.far * 0.85;
+    d.sky.visible = d.sunDisc.visible = o > 0.01;
+    d.sky.position.copy(camPos); d.sky.scale.setScalar(R);
+    d.sunDisc.position.copy(camPos).addScaledVector(d.dir, R * 0.8); d.sunDisc.scale.setScalar(R * 0.16);
   }
 
   /** Locates where the branches part (first chainage where the alignments differ) and where their tunnels separate. */
@@ -339,6 +392,7 @@ export class Game {
 
   finish(completed, reason) {
     if (this.result) return;
+    if (!completed) this.player.physics.v = 0;
     const res = this.scoring.result(completed);
     this.result = {
       ...res, completed, reason,
@@ -351,9 +405,22 @@ export class Game {
     this.bus.emit('game:finished', this.result);
   }
 
+  startCrash(impact) {
+    if (this.crash) return;
+    this.crash = new CrashCinematic(this, impact);
+    document.body.classList.add('cinematic');
+  }
+
   /** Per-frame update. */
   update(dt) {
     if (!this.running) return;
+    if (this.crash) {
+      const acts = this.input.poll(dt);
+      if (acts.length && this.crash.t > 0.6) this.crash.skip();
+      this.crash.update(Math.min(dt, 0.05));
+      this.render();
+      return;
+    }
     const actions = this.input.poll(dt);
     for (const a of actions) this.handleAction(a);
     if (this.paused || this.result) { this.render(); return; }
@@ -415,12 +482,23 @@ export class Game {
     this.clock += dt;
     this.time += dt;
     // Collisions: buffer stop or train ahead.
-    const ahead = others.filter((o) => o.rear > p.front - 1).sort((x, y) => x.rear - y.rear)[0];
-    if (p.front > route.length - 9 || (ahead && ahead.rear - p.front < 0.5)) {
+    const aheadT = this.traffic.activeOn(route).filter((o) => o.rear > p.front - 1).sort((x, y) => x.rear - y.rear)[0];
+    const hitBuffer = p.front > route.length - 9;
+    const hitTrain = aheadT && aheadT.rear - p.front < 0.5;
+    if (hitBuffer || hitTrain) {
+      const v = Math.abs(p.speed);
+      p.physics.s = hitBuffer ? route.length - 9 : aheadT.rear - 0.5;
       p.physics.v = 0;
-      this.toast('COLLISION — the run is over.', 'alarm', 6);
-      this.finish(false, p.front > route.length - 9 ? 'Collision with the buffer stop' : 'Collision with the train ahead');
-    }
+      if (v < 1.7) {
+        // A gentle contact is absorbed by the buffers/couplers: penalised, but the run continues.
+        if (!this.bumped) { this.bumped = true; this.scoring.penalty(120, hitBuffer ? 'Buffer stop struck at low speed' : 'Train ahead struck at low speed'); this.toast(`Impact at ${Math.round(v * 3.6)} km/h — ${hitBuffer ? 'buffer stop' : 'train ahead'} struck.`, 'alarm', 4); this.audio.thunk(0, 0.5); }
+      } else this.startCrash({
+        speed: v, front: p.physics.s, type: hitBuffer ? 'buffer' : 'train',
+        aiModel: hitTrain ? this.aiModels.get(aheadT.id) : null,
+        reason: hitBuffer ? `Collision with the buffer stop at ${Math.round(v * 3.6)} km/h` : `Collision with the train ahead at ${Math.round(v * 3.6)} km/h`,
+        description: hitBuffer ? `${Math.round(v * 3.6)} km/h into the buffer stop beyond ${route.terminus}` : `${Math.round(v * 3.6)} km/h into the rear of the train ahead`,
+      });
+    } else this.bumped = false;
     // Camera bump at rail joints.
     this.bumpAcc += Math.abs(p.speed) * dt;
     if (this.bumpAcc > 18) { this.bumpAcc -= 18; this.bump = Math.min(0.012, Math.abs(p.speed) * 0.0007); }
@@ -455,6 +533,7 @@ export class Game {
     for (const [id, m] of this.aiModels) if (!seen.has(id)) { m.dispose(this.scene); this.aiModels.delete(id); }
 
     this.signalView.update(this.time);
+    this.updateDaylight(dt, camPos);
     const trackS = route.toTrack(p.front - this.specs.length / 2);
     for (const [id, w] of this.worlds) {
       const d = this.svc.get(id);
@@ -472,7 +551,7 @@ export class Game {
     this.audio.update(dt, {
       v: p.speed, traction: p.physics.traction, brake: Math.max(p.physics.brake, p.physics.eb), radius: route.radiusAt(p.front),
       inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab', carLength: this.specs.carLength,
-      doorsOpen: p.doors.anyOpen, motorPitch: this.specs.sound?.motorPitch, inverter: this.specs.sound?.inverter,
+      doorsOpen: p.doors.anyOpen, outdoor: (this.daylight?.o ?? 0) > 0.5, motorPitch: this.specs.sound?.motorPitch, inverter: this.specs.sound?.inverter,
     });
     this.audio.setAlarm(p.safety.overspeed !== 'none' ? 'atp' : p.safety.vigAlarm ? 'vigilance' : null);
     this.bus.emit('hud:update', st);
@@ -564,6 +643,8 @@ export class Game {
     if (!this.scene) return;
     clearTimeout(this.annTimer);
     this.running = false;
+    this.crash?.dispose(); this.crash = null;
+    document.body.classList.remove('cinematic');
     this.subs.forEach((f) => f()); this.subs = [];
     this.scoring?.dispose();
     this.announcer?.stop();

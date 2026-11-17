@@ -32,14 +32,17 @@ export class StationView {
     this.H = st.style === 'vault' ? 3.1 : st.style === 'grand' ? 4.6 : st.style === 'pillars' ? Math.max(4.3, crown + 0.5) : Math.max(5.2, crown + 0.7);
     this.vaultRise = st.style === 'grand' ? Math.max(5.4, crown + 0.6 - this.H) : Math.max(2.9, crown + 0.6 - this.H);
     this.vaulted = st.style === 'vault' || st.style === 'grand';
+    this.outdoor = geom.outdoorAt(this.centerS);
+    if (this.outdoor) { this.H = PLATFORM_Y + 3.3; this.vaulted = false; }
     this.mats();
     this.buildShell();
     this.buildPlatforms();
     this.buildSigns();
     this.buildFurniture();
     this.buildPIDs();
-    this.buildPortals();
-    if (this.style === 'grand') this.buildGrand();
+    if (this.outdoor) this.buildCanopy();
+    else this.buildPortals();
+    if (this.style === 'grand' && !this.outdoor) this.buildGrand();
   }
 
   /** Height of the ceiling above local x. */
@@ -92,6 +95,7 @@ export class StationView {
   }
 
   buildShell() {
+    if (this.outdoor) return; // open air: the landscape builder provides the track bed
     const z0 = -this.Lz / 2, z1 = this.Lz / 2;
     const prof = this.shellProfile();
     const wallUv = this.style === 'modern' ? 0.25 : 0.5;
@@ -144,6 +148,7 @@ export class StationView {
   }
 
   buildSigns() {
+    if (this.outdoor) { this.buildOutdoorSigns(); return; }
     const st = this.st, accent = st.theme.accent || this.line.color;
     const signOpts = this.style === 'grand'
       ? { w: 768, h: 128, bg: '#123524', fg: '#f3dc9a', font: 'bold 60px Georgia, "Times New Roman", serif', border: '#d8b45a' }
@@ -222,7 +227,7 @@ export class StationView {
   buildFurniture() {
     const Lp = this.Lp;
     // Lighting fixtures.
-    if (this.style === 'vault') {
+    if (this.outdoor) { /* canopy lights are built with the canopy */ } else if (this.style === 'vault') {
       for (const [a, b] of this.platformSpans()) {
         const cx = (a + b) / 2;
         for (let z = -Lp / 2 + 4; z < Lp / 2 - 2; z += 8) this.box(0.25, 0.08, 5.5, this.m.light, cx, this.H + 0.55, z);
@@ -476,6 +481,81 @@ StationView.prototype.drawClock = function drawClock(clock) {
   hand((s % 60) / 60, 88, 2, '#b3121b');
   g.fillStyle = '#b3121b'; g.beginPath(); g.arc(128, 128, 6, 0, Math.PI * 2); g.fill();
   this.clockFace.tex.needsUpdate = true;
+};
+
+// ---------------------------------------------------------------------------------------------
+// Open-air stations: platform canopies on steel columns, name totems, railings and glass shelters.
+StationView.prototype.buildCanopy = function buildCanopy() {
+  const Lp = this.Lp, accent = this.st.theme.accent || this.line.color;
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8d969e, metalness: 0.6, roughness: 0.45 });
+  const roof = new THREE.MeshLambertMaterial({ color: 0xd9dcdf, side: THREE.DoubleSide, emissive: 0x222222 });
+  const fascia = new THREE.MeshLambertMaterial({ color: accent, emissive: new THREE.Color(accent).multiplyScalar(0.2) });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xbfd6e2, transparent: true, opacity: 0.28, roughness: 0.1, depthWrite: false, side: THREE.DoubleSide });
+  const len = Lp - 14;
+  for (const [a, b] of this.platformSpans()) {
+    const cx = (a + b) / 2, w = b - a;
+    const y = this.H;
+    this.box(w + 1.2, 0.14, len, roof, cx, y, 0);
+    for (const ex of [a - 0.55, b + 0.55]) this.box(0.12, 0.42, len, fascia, ex, y - 0.08, 0);
+    for (let z = -len / 2 + 4; z <= len / 2 - 3; z += 10) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, y - PLATFORM_Y, 12), steel);
+      col.position.set(cx, (y + PLATFORM_Y) / 2, z); this.group.add(col);
+      const brace = this.box(w * 0.8, 0.1, 0.1, steel, cx, y - 0.35, z); void brace;
+    }
+    for (let z = -len / 2 + 3; z < len / 2; z += 6) this.box(0.18, 0.05, 3.6, this.m.light, cx, y - 0.1, z);
+    // Railings at the back of side platforms.
+    if (!this.island) {
+      const back = a < 0 ? a + 0.05 : b - 0.05;
+      this.box(0.05, 0.05, Lp, steel, back, PLATFORM_Y + 1.1, 0);
+      for (let z = -Lp / 2; z <= Lp / 2; z += 2) this.box(0.04, 1.1, 0.04, steel, back, PLATFORM_Y + 0.55, z);
+    }
+    // Glass shelters with benches.
+    for (const z of [-Lp / 5, Lp / 5]) {
+      const sx = this.island ? cx : cx + (a < 0 ? -1 : 1) * (w / 2 - 1.0);
+      this.box(1.4, 2.2, 0.04, glass, sx, PLATFORM_Y + 1.1, z - 1.6);
+      this.box(1.4, 2.2, 0.04, glass, sx, PLATFORM_Y + 1.1, z + 1.6);
+      this.box(0.04, 2.2, 3.2, glass, sx + (this.island ? 0 : (a < 0 ? -0.7 : 0.7)), PLATFORM_Y + 1.1, z);
+      this.box(0.5, 0.06, 2.6, this.m.wood, sx, PLATFORM_Y + 0.45, z);
+    }
+  }
+  // Platform ramps at both ends.
+  for (const [a, b] of this.platformSpans()) {
+    for (const sz of [-1, 1]) {
+      const ramp = this.box(b - a, 0.08, 6, this.m.floor, (a + b) / 2, PLATFORM_Y - 0.65, sz * (Lp / 2 + 2.8));
+      ramp.rotation.x = sz * -0.22;
+    }
+  }
+};
+
+StationView.prototype.buildOutdoorSigns = function buildOutdoorSigns() {
+  const st = this.st, accent = st.theme.accent || this.line.color;
+  const sign = new THREE.MeshBasicMaterial({ map: Textures.label(st.name, { w: 768, h: 128, bg: '#15181c', fg: '#ffffff', font: '600 62px "Segoe UI", Arial, sans-serif', border: accent }) });
+  // Name boards hanging under the canopy edges, facing each track.
+  const y = this.H - 0.7;
+  for (const [a, b] of this.platformSpans()) {
+    for (const [x, ry] of [[a - 0.5, -Math.PI / 2], [b + 0.5, Math.PI / 2]]) {
+      if (!this.island && ((a < 0 && x < a) || (b > 0 && x > b && a > 0))) continue; // side platform: only the track side
+      for (let z = -this.Lp / 2 + 14; z < this.Lp / 2 - 10; z += 24) this.plane(2.6, 0.44, sign, x, y, z, ry);
+    }
+  }
+  // Totems at the platform ends with the line badge.
+  const badge = new THREE.MeshBasicMaterial({ map: Textures.label(this.line.number, { w: 128, h: 128, bg: this.line.color, fg: this.line.textColor, font: 'bold 72px Arial', radius: 64 }), transparent: true });
+  const pole = new THREE.MeshLambertMaterial({ color: 0x2b2f35 });
+  for (const [a, b] of this.platformSpans()) for (const z of [-this.Lp / 2 + 5, this.Lp / 2 - 5]) {
+    const cx = (a + b) / 2;
+    this.box(0.25, 3.0, 0.25, pole, cx, PLATFORM_Y + 1.5, z);
+    for (const sz of [-1, 1]) {
+      this.plane(0.6, 0.6, badge, cx, PLATFORM_Y + 2.7, z + sz * 0.13, sz > 0 ? 0 : Math.PI);
+      this.plane(1.5, 0.26, sign, cx, PLATFORM_Y + 2.1, z + sz * 0.13, sz > 0 ? 0 : Math.PI);
+    }
+  }
+  this.exits = [];
+  const termA = this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
+  const mat = new THREE.MeshBasicMaterial({ map: Textures.label(this.island ? `⬅ ${termB}   |   ${termA} ➜` : `Direction ${termA}`, { w: 1024, h: 96, bg: '#f5f5f0', fg: '#1a1a1a', font: 'bold 46px Arial', border: accent }) });
+  const g = new THREE.Group(); g.position.set(this.island ? 0 : -(this.e + this.W) / 2, this.H - 0.6, 0);
+  this.plane(3.6, 0.34, mat, 0, 0, 0.02, 0, g); this.plane(3.6, 0.34, mat, 0, 0, -0.02, Math.PI, g);
+  this.box(0.02, 0.6, 0.02, this.m.metal, -1.5, 0.3, 0, g); this.box(0.02, 0.6, 0.02, this.m.metal, 1.5, 0.3, 0, g);
+  this.group.add(g);
 };
 
 export { PLATFORM_Y, EDGE_GAP };

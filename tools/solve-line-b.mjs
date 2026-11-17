@@ -39,7 +39,7 @@ const raw = {
     { id: 'bellevue', name: 'Bellevue – Centre',
       link: { distanceToNext: 1150, speedLimit: 60, track: [st(60), c(arc(140, 330), 330, 'left')] },
       stations: [
-        S('Mairie de Bellevue', 1000, 75, 22, 'vault', { theme: { wall: '#f1ede2', accent: '#b3121b' }, landmark: { type: 'cityHall', side: 'right', offset: 72, along: 640 } }, [st(120), st(300, 40), { length: 160, gradient: 40, portal: 'exit' }, st(150)]),
+        S('Mairie de Bellevue', 1000, 75, 22, 'vault', { theme: { wall: '#f1ede2', accent: '#b3121b' }, landmark: { type: 'cityHall', side: 'right', offset: 80, along: 700 } }, [st(80), st(250, 40), { length: 180, gradient: 40, portal: 'exit' }, st(190, 40), st(100)]),
         S('Les Vignes', 1100, 80, 20, 'modern', { passengers: 22, theme: { accent: '#556b2f' } }, [st(300), c(400, 1500, 'left')]),
         S('Université Ouest', 1100, 80, 20, 'modern', { passengers: 30, theme: { accent: '#5ab0ff' }, landmark: { type: 'university', side: 'left', offset: 44, along: 0 } }, [st(300), c(400, 1500, 'right')]),
         S('Bellevue – Centre', 0, 60, 30, 'modern', { passengers: 30, theme: { wall: '#30283a', accent: '#33E633' } }),

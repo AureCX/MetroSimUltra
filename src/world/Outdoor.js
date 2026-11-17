@@ -10,7 +10,7 @@ import { buildCityHall, buildUniversity, landmarkFrame } from './Landmarks.js';
 
 const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity };
 
-const FAR = 52;        // half width of the rail-corridor verge (the city ground takes over beyond)
+const VIADUCT_CLEAR = 5;  // bed this high above the street (m) or more = viaduct, streets pass underneath
 const CHUNK = 100;
 
 function canvasTex(w, h, draw, repeat = true) {
@@ -45,7 +45,14 @@ function textures() {
         if (k % 2) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x * 64 + 10, y * 64 + 56, 44, 4); }
       }
     }));
-  texCache = { grass, road, facades };
+  const strip = canvasTex(256, 256, (g) => {
+    // planting bed with a gravel footpath along the middle
+    g.fillStyle = '#4f6b34'; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 7000; i++) { g.fillStyle = r() < 0.5 ? `rgba(30,50,20,${0.3 * r()})` : `rgba(120,150,70,${0.25 * r()})`; g.fillRect(r() * 256, r() * 256, 2, 2); }
+    g.fillStyle = '#c9c0ab'; g.fillRect(140, 0, 52, 256);
+    g.fillStyle = '#b9b2a4'; g.fillRect(0, 0, 14, 256);
+  });
+  texCache = { grass, road, facades, strip };
   return texCache;
 }
 
@@ -63,6 +70,8 @@ export class OutdoorBuilder {
       facades: T.facades.map((t) => new THREE.MeshLambertMaterial({ map: t })),
       roof: new THREE.MeshLambertMaterial({ color: 0x4a4744 }),
       fence: new THREE.MeshLambertMaterial({ color: 0x5f6a63 }),
+      deck: new THREE.MeshLambertMaterial({ map: Textures.concrete('#a39d92'), side: THREE.DoubleSide }),
+      strip: new THREE.MeshLambertMaterial({ map: textures().strip, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
       trunk: new THREE.MeshLambertMaterial({ color: 0x5a4030 }),
       leaves: new THREE.MeshLambertMaterial({ color: 0x3f6b2c }),
       leaves2: new THREE.MeshLambertMaterial({ color: 0x55803a }),
@@ -80,7 +89,6 @@ export class OutdoorBuilder {
     const runs = this.runs();
     if (!runs.length && !this.geom.portals.length) return this;
     for (const [a, b] of runs) this.buildGround(a, b);
-    this.buildCover();
     if (runs.length) {
       const G = this.geom.groundAt(runs[0][0] + 1);
       this.landmarks = [];
@@ -98,49 +106,135 @@ export class OutdoorBuilder {
 
   chunks(a, b) { const out = []; for (let s = a; s < b - 0.5; s += CHUNK) out.push([s, Math.min(b, s + CHUNK)]); return out; }
 
-  /** Track bed, cutting walls / embankment sides and the surrounding ground. */
+  /** Height of the track bed above street level at chainage s (negative in a cutting). */
+  bedAbove(s) { return this.geom.point(s).y + FLOOR_Y - this.geom.groundAt(s); }
+  /** Half width of the structure carrying the tracks (wider under side platforms). */
+  deckHalf(s) {
+    const g = this.geom, hwc = g.halfSpacingAt(s) + 2.4;
+    const z = g.stationZoneAt(s);
+    if (!z) return hwc;
+    const st = this.line.stations[z.index];
+    return st.platformType === 'island' ? hwc : Math.max(hwc, g.halfSpacingAt(s) + 1.45 + st.platformWidth + 0.3);
+  }
+
+  /**
+   * Splits an open-air run into a "trench" part (cutting and walled embankment, where the line is
+   * near street level: streets cannot cross) and a "viaduct" part (streets continue underneath).
+   */
+  segmentRun(a, b) {
+    const parts = [];
+    let cur = null;
+    for (let s = Math.floor(a); s <= Math.ceil(b); s += 1) {
+      const kind = this.bedAbove(Math.min(Math.max(s, a), b)) < VIADUCT_CLEAR ? 'trench' : 'viaduct';
+      if (!cur || cur.kind !== kind) { if (cur) { cur.b = s; parts.push(cur); } cur = { kind, a: Math.max(a, s) }; }
+    }
+    if (cur) { cur.b = b; parts.push(cur); }
+    return parts.filter((p) => p.b - p.a > 1);
+  }
+
   buildGround(a, b) {
+    const parts = this.segmentRun(a, b);
+    this.parts = (this.parts || []).concat(parts);
+    for (const p of parts) (p.kind === 'trench' ? this.buildTrench(p.a, p.b) : this.buildViaduct(p.a, p.b));
+  }
+
+  /** Ramp out of the tunnel: track bed between concrete retaining walls, planted strips at street level. */
+  buildTrench(a, b) {
     const g = this.geom;
     const hwc = (s) => g.halfSpacingAt(s) + 2.4;
-    const bedY = (s) => g.point(s).y + FLOOR_Y; // absolute
-    // Heights below are relative to the rail top at s (the sweep adds the track height).
     const rel = (s, yAbs) => yAbs - g.point(s).y;
-    const side = (s) => { const d = bedY(s) - g.groundAt(s); return d < -0.05 ? 0.02 : 1.6 * Math.max(0, d) + 0.3; };
+    const trees = [];
     for (const [s0, s1] of this.chunks(a, b)) {
       const o = this.w.origin(s0);
-      const bed = sweep(g, s0, s1, 4, (s) => [[-hwc(s), FLOOR_Y], [hwc(s), FLOOR_Y]], { origin: o, uScale: 0.3, vScale: 0.3 });
-      this.add(new THREE.Mesh(bed, this.mat.bed), o);
+      this.add(new THREE.Mesh(sweep(g, s0, s1, 4, (s) => [[-hwc(s), FLOOR_Y], [hwc(s), FLOOR_Y]], { origin: o, uScale: 0.3, vScale: 0.3 }), this.mat.bed), o);
       for (const sd of [-1, 1]) {
-        const walls = sweep(g, s0, s1, 4, (s) => (sd < 0
-          ? [[-hwc(s) - side(s), rel(s, g.groundAt(s))], [-hwc(s), FLOOR_Y]]
-          : [[hwc(s), FLOOR_Y], [hwc(s) + side(s), rel(s, g.groundAt(s))]]), { origin: o, uScale: 0.25, vScale: 0.25 });
-        this.add(new THREE.Mesh(walls, this.mat.wall), o);
-        const ground = sweep(g, s0, s1, 4, (s) => (sd < 0
-          ? [[-FAR, rel(s, g.groundAt(s))], [-hwc(s) - side(s), rel(s, g.groundAt(s))]]
-          : [[hwc(s) + side(s), rel(s, g.groundAt(s))], [FAR, rel(s, g.groundAt(s))]]), { origin: o, uScale: 0.08, vScale: 0.08 });
-        this.add(new THREE.Mesh(ground, this.mat.grass), o);
+        // Retaining wall from the lower to the upper level, topped by a 1.1 m parapet.
+        const wall = sweep(g, s0, s1, 4, (s) => {
+          const gy = rel(s, g.groundAt(s));
+          const lo = Math.min(FLOOR_Y, gy), hi = Math.max(FLOOR_Y, gy) + 1.1;
+          return [[sd * hwc(s), lo], [sd * hwc(s), hi], [sd * (hwc(s) + 0.35), hi], [sd * (hwc(s) + 0.35), gy]];
+        }, { origin: o, uScale: 0.25, vScale: 0.25 });
+        this.add(new THREE.Mesh(wall, this.mat.wall), o);
+        // Planted strip with a footpath between the wall and the city blocks.
+        const strip = sweep(g, s0, s1, 4, (s) => {
+          const y = rel(s, g.groundAt(s)) + 0.02;
+          return sd < 0 ? [[-(hwc(s) + 13), y], [-(hwc(s) + 0.35), y]] : [[hwc(s) + 0.35, y], [hwc(s) + 13, y]];
+        }, { origin: o, uScale: 0.077, vScale: 0.25 });
+        this.add(new THREE.Mesh(strip, this.mat.strip), o);
       }
-      // Fences along the line (not at platforms).
-      this.fence(s0, s1, hwc, side);
+      for (let s = Math.ceil(s0 / 12) * 12; s < s1; s += 12) for (const sd of [-1, 1]) trees.push([s, sd * (hwc(s) + 4)]);
+    }
+    this.stripTrees(trees);
+  }
+
+  /** Elevated section: box-girder deck with parapets, on piers down to the street. */
+  buildViaduct(a, b) {
+    const g = this.geom;
+    const piers = [];
+    for (const [s0, s1] of this.chunks(a, b)) {
+      const o = this.w.origin(s0);
+      this.add(new THREE.Mesh(sweep(g, s0, s1, 4, (s) => [[-this.deckHalf(s), FLOOR_Y], [this.deckHalf(s), FLOOR_Y]], { origin: o, uScale: 0.3, vScale: 0.3 }), this.mat.bed), o);
+      const deck = sweep(g, s0, s1, 4, (s) => {
+        const h = this.deckHalf(s);
+        return [[-h + 0.3, FLOOR_Y + 1.1], [-h, FLOOR_Y + 1.1], [-h, FLOOR_Y - 1.5], [-h + 1.2, FLOOR_Y - 1.9], [h - 1.2, FLOOR_Y - 1.9], [h, FLOOR_Y - 1.5], [h, FLOOR_Y + 1.1], [h - 0.3, FLOOR_Y + 1.1]];
+      }, { origin: o, uScale: 0.25, vScale: 0.25 });
+      this.add(new THREE.Mesh(deck, this.mat.deck), o);
+      for (const sd of [-1, 1]) {
+        const inner = sweep(g, s0, s1, 4, (s) => { const h = this.deckHalf(s) * sd; return [[h - sd * 0.3, FLOOR_Y + 1.1], [h - sd * 0.3, FLOOR_Y]]; }, { origin: o });
+        this.add(new THREE.Mesh(inner, this.mat.deck), o);
+      }
+    }
+    for (let s = a + 14; s < b - 4; s += 26) {
+      const under = this.bedAbove(s) - 1.45; // underside of the deck above street level
+      if (under < 2) continue;
+      piers.push([s, under, this.deckHalf(s)]);
+    }
+    this.piers(piers);
+    // Abutment where the walled embankment meets the viaduct.
+    for (const s of [a, b]) {
+      if (s <= this.w.opts.fromS + 1 || s >= this.geom.length - 2) continue;
+      const h = Math.max(0.5, this.bedAbove(s));
+      const p = g.point(s, 0, FLOOR_Y - h / 2 + 0.55);
+      const ab = new THREE.Mesh(new THREE.BoxGeometry(this.deckHalf(s) * 2 + 0.8, h + 1.1, 1.6), this.mat.wall);
+      ab.position.set(p.x, p.y, p.z); ab.rotation.y = -g.heading(s);
+      this.group.add(ab);
     }
   }
 
-  /** Flat ground over the tunnel near portals so the landscape continues behind the headwall. */
-  buildCover() {
-    const g = this.geom, from = this.w.opts.fromS;
-    let a = null;
-    for (let i = Math.max(0, Math.floor(from)); i <= g.N; i++) {
-      const cover = i < g.N && !g.outdoor[i] && !Number.isNaN(g.ground[i]);
-      if (cover && a == null) a = i;
-      if (!cover && a != null) {
-        for (const [s0, s1] of this.chunks(a, i)) {
-          const o = this.w.origin(s0);
-          const m = sweep(g, s0, s1, 5, (s) => { const y = g.groundAt(s) - g.point(s).y; return [[-FAR, y], [FAR, y]]; }, { origin: o, uScale: 0.08, vScale: 0.08 });
-          this.add(new THREE.Mesh(m, this.mat.grass), o);
-        }
-        a = null;
+  piers(list) {
+    if (!list.length) return;
+    const g = this.geom;
+    const col = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.mat.deck, list.length * 2);
+    const head = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.mat.deck, list.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    let i = 0;
+    list.forEach(([s, under, half], k) => {
+      q.setFromAxisAngle(up, -g.heading(s));
+      const G = g.groundAt(s) - g.point(s).y;
+      for (const sd of [-1, 1]) {
+        const c = g.point(s, sd * half * 0.55, G + (under - 1.2) / 2);
+        m.compose(p.set(c.x, c.y, c.z), q, sc.set(1.3, under - 1.2, 1.3)); col.setMatrixAt(i++, m);
       }
-    }
+      const h = g.point(s, 0, G + under - 0.6);
+      m.compose(p.set(h.x, h.y, h.z), q, sc.set(half * 2 - 0.4, 1.2, 1.8)); head.setMatrixAt(k, m);
+    });
+    col.computeBoundingSphere(); head.computeBoundingSphere();
+    this.group.add(col, head);
+  }
+
+  stripTrees(list) {
+    if (!list.length) return;
+    const g = this.geom;
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.22, 3, 5, 1, true), this.mat.trunk, list.length);
+    const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), this.mat.leaves, list.length);
+    const m = new THREE.Matrix4();
+    list.forEach(([s, lat], i) => {
+      const p = g.point(s, lat, g.groundAt(s) - g.point(s).y);
+      m.makeTranslation(p.x, p.y + 1.5, p.z); trunk.setMatrixAt(i, m);
+      m.makeTranslation(p.x, p.y + 4.2, p.z); crown.setMatrixAt(i, m);
+    });
+    trunk.computeBoundingSphere(); crown.computeBoundingSphere();
+    this.group.add(trunk, crown);
   }
 
   buildPortal(p) {
@@ -164,33 +258,6 @@ export class OutdoorBuilder {
       wing.position.set(sx * (hw + 0.6), (top + FLOOR_Y) / 2, p.type === 'exit' ? 9 : -9); grp.add(wing);
     }
     this.group.add(grp);
-  }
-
-  fence(s0, s1, hwc, side) {
-    const g = this.geom, posts = [];
-    for (let s = Math.ceil(s0 / 3) * 3; s < s1; s += 3) {
-      if (g.stationZoneAt(s)) continue;
-      for (const sd of [-1, 1]) {
-        const lat = sd * (hwc(s) + side(s) + 0.6);
-        const p = g.point(s, lat, g.groundAt(s) - g.point(s).y + 0.7);
-        posts.push(p);
-      }
-    }
-    if (!posts.length) return;
-    const geo = new THREE.BoxGeometry(0.06, 1.4, 0.06);
-    const im = new THREE.InstancedMesh(geo, this.mat.fence, posts.length);
-    const m = new THREE.Matrix4();
-    posts.forEach((p, i) => { m.makeTranslation(p.x, p.y, p.z); im.setMatrixAt(i, m); });
-    im.computeBoundingSphere();
-    this.group.add(im);
-    const o = this.w.origin(s0);
-    for (const sd of [-1, 1]) for (const h of [0.45, 1.3]) {
-      const rail = sweep(g, s0, s1, 4, (s) => {
-        const lat = sd * (hwc(s) + side(s) + 0.6), y = g.groundAt(s) - g.point(s).y + h;
-        return g.stationZoneAt(s) ? [[lat, y - 5], [lat, y - 5.01]] : [[lat, y], [lat, y + 0.05]];
-      }, { origin: o });
-      this.add(new THREE.Mesh(rail, this.mat.fence), o);
-    }
   }
 
   /** Animation of traffic and people, only while the viewer is near. */

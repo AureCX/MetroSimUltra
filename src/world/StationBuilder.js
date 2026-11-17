@@ -518,8 +518,37 @@ StationView.prototype.buildCanopy = function buildCanopy() {
       this.box(0.5, 0.06, 2.6, this.m.wood, sx, PLATFORM_Y + 0.45, z);
     }
   }
-  // Platform ramps at both ends.
-  for (const [a, b] of this.platformSpans()) {
+  // Elevated station: glazed stair/lift towers from the street up to the platforms.
+  const elev = this.geom.point(this.centerS).y - this.geom.groundAt(this.centerS);
+  if (elev > 4) {
+    const glassT = new THREE.MeshStandardMaterial({ color: 0x9fbdd0, metalness: 0.4, roughness: 0.15, transparent: true, opacity: 0.55 });
+    const frame = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
+    const mBadge = new THREE.MeshBasicMaterial({ map: Textures.label('M', { w: 128, h: 128, bg: '#ffffff', fg: '#1f3c88', font: 'bold 96px Arial', border: '#1f3c88', radius: 64 }), transparent: true });
+    const gy = -elev; // street level in local coordinates
+    const towers = this.island
+      ? [-1, 1].map((sz) => [0, sz * (Lp / 2 - 14), FLOOR_Y - 1.9])            // under the island stairwells
+      : [-1, 1].map((sx) => [sx * (this.W + 3.2), 0, PLATFORM_Y + 3.0]);       // beside the viaduct, mid-platform
+    for (const [x, z, top] of towers) {
+      const h = top - gy;
+      this.box(4.6, h, 6.6, glassT, x, gy + h / 2, z);
+      for (const dx of [-2.3, 2.3]) for (const dz of [-3.3, 3.3]) this.box(0.18, h, 0.18, frame, x + dx, gy + h / 2, z + dz);
+      for (let y = gy + 3.5; y < top; y += 3.5) this.box(4.7, 0.15, 6.7, frame, x, y, z);
+      this.box(5.2, 0.3, 7.2, frame, x, top + 0.15, z);
+      // Street entrance canopy and totem.
+      this.box(3.4, 0.18, 2.4, frame, x, gy + 3.0, z + (z >= 0 || !this.island ? 4.4 : -4.4));
+      for (const sx of [-1, 1]) {
+        const tx = x + sx * 3.2, tz = z + (z >= 0 || !this.island ? 4 : -4);
+        this.box(0.14, 3.4, 0.14, frame, tx, gy + 1.7, tz);
+        this.plane(0.9, 0.9, mBadge, tx, gy + 3.7, tz + 0.08); this.plane(0.9, 0.9, mBadge, tx, gy + 3.7, tz - 0.08, Math.PI);
+      }
+      if (!this.island) { // walkway to the platform
+        const inner = Math.sign(x) * this.W;
+        this.box(Math.abs(x) - this.W - 2.3, 0.25, 3, frame, (x - Math.sign(x) * 2.3 + inner) / 2, PLATFORM_Y - 0.1, z);
+      }
+    }
+  }
+  // Platform ramps at both ends (at-grade stations only).
+  if (elev <= 4) for (const [a, b] of this.platformSpans()) {
     for (const sz of [-1, 1]) {
       const ramp = this.box(b - a, 0.08, 6, this.m.floor, (a + b) / 2, PLATFORM_Y - 0.65, sz * (Lp / 2 + 2.8));
       ramp.rotation.x = sz * -0.22;

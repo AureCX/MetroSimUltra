@@ -131,7 +131,8 @@ over to the next platform is straight and level. Platforms are always straight a
 * `portal`: `"exit"` (leave the tunnel at the start of this segment) or `"enter"` (go underground).
   Between an exit and the next enter portal the line runs in the open air: ground level is the
   track level at the portal + 5.5 m, so climb out with a gradient (e.g. 40 ‰ over 160 m) after the
-  portal to reach the surface. Cuttings, embankments, portal headwalls, fences, a road, buildings,
+  portal to reach the surface; keep climbing to ~9 m and the line continues on a viaduct (streets pass
+  underneath; below 5 m it runs between retaining walls). Cuttings, embankments, viaducts, portal headwalls, buildings,
   trees, daylight and open-air canopy stations are generated automatically, inside a procedural city (street grid, blocks, towers, parks, traffic) around the surface section.
 * `gradient` in ‰, positive = uphill in direction A. Vertical curves are smoothed automatically.
   Gradients act on the train physics (it will roll back on an up-grade if you release the brake).

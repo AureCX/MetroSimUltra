@@ -252,8 +252,10 @@ export function buildCityHall(parent, f, line) {
   ];
   const people = new Strollers(grp, loops, 12, 99);
   mergeStatic(grp, new Set([w, jet, ...flags]));
+  // Footprint centre (local x ≈ +22 along the line, z ≈ +8) and radius used to keep the city clear.
+  const cx = f.x + Math.cos(f.yaw) * 22 + Math.sin(f.yaw) * 8, cz = f.z - Math.sin(f.yaw) * 22 + Math.cos(f.yaw) * 8;
   return {
-    x: f.x, z: f.z, radius: 120, group: grp,
+    x: cx, z: cz, radius: 78, group: grp,
     people,
     update(dt, t, clockT) {
       clock.draw(clockT);
@@ -323,7 +325,7 @@ export function buildUniversity(parent, f) {
   const people = new Strollers(grp, loops, 18, 314);
   mergeStatic(grp, new Set());
   return {
-    x: f.x - Math.sin(f.yaw) * 60, z: f.z - Math.cos(f.yaw) * 60, radius: 150, group: grp,
+    x: f.x - Math.sin(f.yaw) * 75, z: f.z - Math.cos(f.yaw) * 75, radius: 104, group: grp,
     people,
     update(dt, t, clockT) { clock.draw(clockT); people.update(dt); },
   };

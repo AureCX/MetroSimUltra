@@ -221,24 +221,28 @@
      "landmark": {
       "type": "cityHall",
       "side": "right",
-      "offset": 72,
-      "along": 640
+      "offset": 80,
+      "along": 700
      },
      "track": [
       {
-       "length": 120
+       "length": 80
       },
       {
-       "length": 300,
+       "length": 250,
        "gradient": 40
       },
       {
-       "length": 160,
+       "length": 180,
        "gradient": 40,
        "portal": "exit"
       },
       {
-       "length": 150
+       "length": 190,
+       "gradient": 40
+      },
+      {
+       "length": 100
       }
      ]
     },

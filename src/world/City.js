@@ -25,8 +25,12 @@ export function cityTextures() {
   const px = 1024 / BLOCK; // pixels per metre
   const ground = tex(1024, 1024, (g) => {
     // block interior: light paving
-    g.fillStyle = '#b7b2a8'; g.fillRect(0, 0, 1024, 1024);
-    for (let i = 0; i < 20000; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,255,255'},${0.04 * r()})`; g.fillRect(r() * 1024, r() * 1024, 2, 2); }
+    // block interior: garden courtyard (lawn, planting, gravel paths) — mostly hidden by buildings
+    g.fillStyle = '#5b7440'; g.fillRect(0, 0, 1024, 1024);
+    for (let i = 0; i < 26000; i++) { g.fillStyle = r() < 0.5 ? `rgba(30,50,20,${0.25 * r()})` : `rgba(140,160,90,${0.2 * r()})`; g.fillRect(r() * 1024, r() * 1024, 3, 3); }
+    g.fillStyle = '#bdb5a2';
+    g.fillRect(0, 590, 1024, 26); g.fillRect(590, 0, 26, 1024);
+
     // sidewalks
     g.fillStyle = '#cfcac0';
     g.fillRect(0, 0, 1024, (STREET + WALK) * px); g.fillRect(0, 0, (STREET + WALK) * px, 1024);
@@ -122,15 +126,16 @@ export class City {
     const g = this.geom;
     this.G = g.groundAt(runs[0][0] + 1);
     // Outdoor track samples, bucketed for distance queries.
-    this.buckets = new Map();
+    this.buckets = new Map();   // whole open-air line (viaduct + trench)
+    this.trench = new Map();    // only where the line is near street level (streets cannot cross)
+    const put = (map, x, z) => { const k = `${Math.floor(x / 40)},${Math.floor(z / 40)}`; if (!map.has(k)) map.set(k, []); map.get(k).push(x, z); };
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const [a, b] of runs) for (let s = a; s <= b; s += 5) {
+    for (const [a, b] of runs) for (let s = a; s <= b; s += 4) {
       const p = g.point(s);
-      const k = `${Math.floor(p.x / 40)},${Math.floor(p.z / 40)}`;
-      if (!this.buckets.has(k)) this.buckets.set(k, []);
-      this.buckets.get(k).push(p.x, p.z);
+      put(this.buckets, p.x, p.z);
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
     }
+    for (const part of outdoor.parts || []) if (part.kind === 'trench') for (let s = part.a; s <= part.b; s += 2) { const p = g.point(s); put(this.trench, p.x, p.z); }
     for (const lm of landmarks) { minX = Math.min(minX, lm.x); maxX = Math.max(maxX, lm.x); minZ = Math.min(minZ, lm.z); maxZ = Math.max(maxZ, lm.z); }
     const M = 380;
     this.ox = Math.floor((minX - M) / BLOCK) * BLOCK; this.oz = Math.floor((minZ - M) / BLOCK) * BLOCK;
@@ -154,15 +159,19 @@ export class City {
     this.build();
   }
 
-  distTrack(x, z, maxR = 80) {
+  distTrack(x, z, maxR = 80, map = this.buckets) {
     const bx = Math.floor(x / 40), bz = Math.floor(z / 40), n = Math.ceil(maxR / 40);
     let best = Infinity;
     for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
-      const arr = this.buckets.get(`${bx + i},${bz + j}`); if (!arr) continue;
+      const arr = map.get(`${bx + i},${bz + j}`); if (!arr) continue;
       for (let k = 0; k < arr.length; k += 2) { const d = (arr[k] - x) ** 2 + (arr[k + 1] - z) ** 2; if (d < best) best = d; }
     }
     return Math.sqrt(best);
   }
+  distTrench(x, z, maxR = 80) { return this.distTrack(x, z, maxR, this.trench); }
+  /** Can something of radius r stand here? Clear of the trench walls and of the viaduct piers/deck. */
+  free(x, z, r = 0) { return this.distTrench(x, z) > 17 + r && this.distTrack(x, z) > 7 + r && !this.inLandmark(x, z, r); }
+
   inLandmark(x, z, pad = 0) { return this.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + pad); }
 
   build() {
@@ -172,15 +181,25 @@ export class City {
   }
 
   buildGround() {
-    const { ox, oz, ex, ez, G } = this;
+    const { ox, oz, G } = this;
+    const ex = this.ex + STREET, ez = this.ez + STREET; // close the grid with a perimeter street
     const pos = [], uv = [], idx = [];
-    for (let x = ox; x < ex; x += TILE) for (let z = oz; z < ez; z += TILE) {
-      if (this.distTrack(x + TILE / 2, z + TILE / 2) < 31) continue;
+    const quad = (x, z, sx, sz) => {
       const v = pos.length / 3;
-      for (const [dx, dz] of [[0, 0], [TILE, 0], [TILE, TILE], [0, TILE]]) {
-        pos.push(x + dx, G, z + dz); uv.push((x + dx - ox) / BLOCK, -(z + dz - oz) / BLOCK);
-      }
+      for (const [dx, dz] of [[0, 0], [sx, 0], [sx, sz], [0, sz]]) { pos.push(x + dx, G, z + dz); uv.push((x + dx - ox) / BLOCK, -(z + dz - oz) / BLOCK); }
       idx.push(v, v + 2, v + 1, v, v + 3, v + 2);
+    };
+    for (let x = ox; x < ex; x += TILE) for (let z = oz; z < ez; z += TILE) {
+      const sx = Math.min(TILE, ex - x), sz = Math.min(TILE, ez - z);
+      const d = this.distTrench(x + sx / 2, z + sz / 2);
+      if (d > 40) { quad(x, z, sx, sz); continue; }
+      // Near the open ramp: finer tiles, leaving the walled trench (covered by planted strips) open.
+      const f = sx / 4;
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        const cx = x + (i + 0.5) * f, cz = z + (j + 0.5) * (sz / 4);
+        if (this.distTrench(cx, cz) < 7.2 + f * 0.75) continue;
+        quad(x + i * f, z + j * (sz / 4), f, sz / 4);
+      }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -188,6 +207,11 @@ export class City {
     geo.setIndex(idx); geo.computeVertexNormals();
     this.group.add(new THREE.Mesh(geo, this.mats.ground));
     // Fields beyond the city edge.
+    // Tree belt around the city edge, then fields.
+    const belt = [];
+    for (let x = ox - 10; x <= ex + 10; x += 9) for (const z of [oz - 8 - (x % 2) * 5, ez + 8 + (x % 2) * 5]) belt.push([x, z, 1 + ((x * 7) % 5) / 10]);
+    for (let z = oz - 10; z <= ez + 10; z += 9) for (const x of [ox - 8 - (z % 2) * 5, ex + 8 + (z % 2) * 5]) belt.push([x, z, 1 + ((z * 7) % 5) / 10]);
+    this.beltTrees = belt;
     const F = 5000;
     for (const [x0, z0, x1, z1] of [[ox - F, oz - F, ex + F, oz], [ox - F, ez, ex + F, ez + F], [ox - F, oz, ox, ez], [ex, oz, ex + F, ez]]) {
       const w = x1 - x0, d = z1 - z0;
@@ -207,9 +231,10 @@ export class City {
       batches.get(key).push(geo);
     };
     this.parks = [];
+    this.fillTrees = [];
     const clear = (x, z, w, d) => {
       for (const [cx, cz] of [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x - w / 2, z + d / 2], [x + w / 2, z + d / 2], [x, z]]) {
-        if (this.distTrack(cx, cz) < 24) return false;
+        if (this.distTrench(cx, cz) < 18 || this.distTrack(cx, cz) < 10) return false;
       }
       return !this.inLandmark(x, z, Math.max(w, d) / 2 + 6);
     };
@@ -217,8 +242,8 @@ export class City {
       const x0 = bx + STREET + WALK, z0 = bz + STREET + WALK, S = BLOCK - STREET - 2 * WALK; // 84 m
       const cx = x0 + S / 2, cz = z0 + S / 2;
       const distC = Math.hypot(cx - this.center.x, cz - this.center.y);
-      if (this.inLandmark(cx, cz, 30)) continue;
-      if (r() < 0.08 && this.distTrack(cx, cz) > 50) { this.parks.push([cx, cz, S]); continue; }
+      if (this.inLandmark(cx, cz, -20)) continue; // block entirely inside a landmark site
+      if (r() < 0.05 && this.distTrack(cx, cz) > 50 && !this.inLandmark(cx, cz, 60)) { this.parks.push([cx, cz, S]); continue; }
       const business = distC < 700 && r() < 0.22;
       if (business && clear(cx, cz, 34, 34)) {
         const h = 60 + r() * 80;
@@ -245,6 +270,12 @@ export class City {
           if (clear(x, z, bw, bd)) {
             const mi = r() < 0.7 ? style : Math.floor(r() * this.mats.facades.length);
             add(mi, boxGeo(bw - 0.4, h, bd - 0.4, x, G + h / 2, z, 0, mi === 3 ? 3.5 : 4), x, z);
+          } else if (!this.inLandmark(x, z, 4)) {
+            // Too close to the line for a building: plant the lot instead (tree-lined promenade).
+            for (let k = 0; k < 6; k++) {
+              const tx = x + (r() - 0.5) * bw * 0.8, tz = z + (r() - 0.5) * bd * 0.8;
+              if (this.free(tx, tz, 1.5)) this.fillTrees.push([tx, tz, 0.9 + r() * 0.5]);
+            }
           }
           t += w;
         }
@@ -268,13 +299,13 @@ export class City {
         for (let t = STREET + 8; t < BLOCK - 2; t += 26) {
           for (const off of [-1.5, STREET + 1.5]) {
             const px = k === 0 ? x + off : x + t, pz = k === 0 ? z + t : z + off;
-            if (this.distTrack(px, pz) < 26 || this.inLandmark(px, pz)) continue;
+            if (!this.free(px, pz, 1)) continue;
             if (r() < 0.6) trees.push([px, pz, 0.8 + r() * 0.5]); else if (r() < 0.6) lamps.push([px, pz]);
           }
           for (const lane of [STREET * 0.5 - 4.9, STREET * 0.5 + 4.9]) {
             if (r() > 0.25) continue;
             const px = k === 0 ? x + lane : x + t + 3, pz = k === 0 ? z + t + 3 : z + lane;
-            if (this.distTrack(px, pz) < 26 || this.inLandmark(px, pz)) continue;
+            if (!this.free(px, pz, 2)) continue;
             parked.push([px, pz, k === 0 ? 0 : Math.PI / 2]);
           }
         }
@@ -284,7 +315,7 @@ export class City {
       const lawn = new THREE.Mesh(new THREE.PlaneGeometry(S, S), this.mats.lawn); lawn.rotation.x = -Math.PI / 2; lawn.position.set(cx, G + 0.02, cz); this.group.add(lawn);
       for (let i = 0; i < 14; i++) trees.push([cx + (r() - 0.5) * S * 0.9, cz + (r() - 0.5) * S * 0.9, 0.9 + r() * 0.7]);
     }
-    this.instTrees(trees);
+    this.instTrees([...trees, ...this.beltTrees, ...this.fillTrees]);
     this.instLamps(lamps);
     this.cars(parked);
   }
@@ -355,7 +386,7 @@ export class City {
       c.t += c.v * c.dir * dt;
       if (c.t > c.max) c.t = c.min; if (c.t < c.min) c.t = c.max;
       const x = c.alongX ? c.t : c.line, z = c.alongX ? c.line : c.t;
-      const hide = this.distTrack(x, z, 40) < 22;
+      const hide = this.distTrench(x, z, 40) < 16;
       const yaw = c.alongX ? (c.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (c.dir > 0 ? 0 : Math.PI);
       m.compose(p.set(x, this.G, z), q.setFromAxisAngle(up, yaw), s.setScalar(hide ? 0 : 1));
       this.carBody.setMatrixAt(c.idx, m); this.carCab.setMatrixAt(c.idx, m);

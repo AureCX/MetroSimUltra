@@ -29,8 +29,9 @@ export class StationView {
     this.Lz = st.platformLength + 12;
     const crown = tunnelCrown(line.tunnelProfile);
     this.style = st.style;
-    this.H = st.style === 'vault' ? 3.1 : st.style === 'pillars' ? Math.max(4.3, crown + 0.5) : Math.max(5.2, crown + 0.7);
-    this.vaultRise = Math.max(2.9, crown + 0.6 - this.H);
+    this.H = st.style === 'vault' ? 3.1 : st.style === 'grand' ? 4.6 : st.style === 'pillars' ? Math.max(4.3, crown + 0.5) : Math.max(5.2, crown + 0.7);
+    this.vaultRise = st.style === 'grand' ? Math.max(5.4, crown + 0.6 - this.H) : Math.max(2.9, crown + 0.6 - this.H);
+    this.vaulted = st.style === 'vault' || st.style === 'grand';
     this.mats();
     this.buildShell();
     this.buildPlatforms();
@@ -38,7 +39,11 @@ export class StationView {
     this.buildFurniture();
     this.buildPIDs();
     this.buildPortals();
+    if (this.style === 'grand') this.buildGrand();
   }
+
+  /** Height of the ceiling above local x. */
+  ceilAt(x) { return this.vaulted ? this.H + this.vaultRise * Math.sqrt(Math.max(0, 1 - (x / this.W) ** 2)) : this.H; }
 
   mats() {
     const st = this.st, accent = st.theme.accent || this.line.color;
@@ -46,11 +51,12 @@ export class StationView {
     let wallTex, ceilTex;
     if (this.style === 'vault') { wallTex = Textures.tiles(st.theme.wall || '#f4f1e8', '#b8b2a4', 8, 16); ceilTex = wallTex; }
     else if (this.style === 'pillars') { wallTex = Textures.tiles(st.theme.wall || '#8fbf9f', shade(st.theme.wall || '#8fbf9f', -40), 6, 12); ceilTex = Textures.floor('#e9e6df'); }
+    else if (this.style === 'grand') { wallTex = Textures.marble(st.theme.wall || '#efe6d2', '#b9a27a'); ceilTex = Textures.vaultCoffers(st.theme.vault || '#1b2a4a', '#d8b45a'); }
     else { wallTex = Textures.tiles(st.theme.wall || '#3b4149', '#1f2329', 2, 2, false); ceilTex = Textures.tiles('#2a2e34', '#16181c', 1, 12, false); }
     this.m = {
       wall: emissive(new THREE.MeshLambertMaterial({ map: wallTex, side: THREE.DoubleSide })),
       ceil: emissive(new THREE.MeshLambertMaterial({ map: ceilTex, side: THREE.DoubleSide }), this.style === 'modern' ? 0.15 : 0.3),
-      floor: emissive(new THREE.MeshLambertMaterial({ map: Textures.floor(this.style === 'modern' ? '#b9b6b0' : '#9b968c') }), 0.25),
+      floor: emissive(new THREE.MeshLambertMaterial({ map: this.style === 'grand' ? Textures.marbleFloor('#e8e0cc', '#2f4a3c', '#c9a227') : Textures.floor(this.style === 'modern' ? '#b9b6b0' : '#9b968c') }), 0.25),
       edge: emissive(new THREE.MeshLambertMaterial({ map: Textures.platformEdge() }), 0.3),
       face: new THREE.MeshLambertMaterial({ map: Textures.concrete('#57534c') }),
       pit: new THREE.MeshLambertMaterial({ map: Textures.trackbed() }),
@@ -77,8 +83,9 @@ export class StationView {
   shellProfile() {
     const W = this.W, base = this.island ? FLOOR_Y : PLATFORM_Y;
     const pts = [[-W, base], [-W, this.H]];
-    if (this.style === 'vault') {
-      for (let k = 1; k < 18; k++) { const a = Math.PI - (k / 18) * Math.PI; pts.push([W * Math.cos(a), this.H + this.vaultRise * Math.sin(a)]); }
+    if (this.vaulted) {
+      const n = this.style === 'grand' ? 30 : 18;
+      for (let k = 1; k < n; k++) { const a = Math.PI - (k / n) * Math.PI; pts.push([W * Math.cos(a), this.H + this.vaultRise * Math.sin(a)]); }
     }
     pts.push([W, this.H], [W, base]);
     return pts;
@@ -90,6 +97,10 @@ export class StationView {
     const wallUv = this.style === 'modern' ? 0.25 : 0.5;
     if (this.style === 'vault') {
       this.group.add(new THREE.Mesh(extrude(prof, z0, z1, { uScale: wallUv, vScale: wallUv }), this.m.wall));
+    } else if (this.style === 'grand') {
+      // marble walls, gilded coffered vault
+      for (const w of [prof.slice(0, 2), prof.slice(-2)]) this.group.add(new THREE.Mesh(extrude(w, z0, z1, { uScale: 0.3, vScale: 0.3 }), this.m.wall));
+      this.group.add(new THREE.Mesh(extrude(prof.slice(1, -1), z0, z1, { uScale: 0.22, vScale: 0.22 }), this.m.ceil));
     } else {
       const walls = [prof.slice(0, 2), prof.slice(-2)];
       for (const w of walls) this.group.add(new THREE.Mesh(extrude(w, z0, z1, { uScale: wallUv, vScale: wallUv }), this.m.wall));
@@ -134,7 +145,9 @@ export class StationView {
 
   buildSigns() {
     const st = this.st, accent = st.theme.accent || this.line.color;
-    const signOpts = this.style === 'vault'
+    const signOpts = this.style === 'grand'
+      ? { w: 768, h: 128, bg: '#123524', fg: '#f3dc9a', font: 'bold 60px Georgia, "Times New Roman", serif', border: '#d8b45a' }
+      : this.style === 'vault'
       ? { w: 768, h: 128, bg: '#11316e', fg: '#ffffff', font: 'bold 62px "Helvetica Neue", Arial, sans-serif', border: '#ffffff' }
       : this.style === 'pillars'
         ? { w: 768, h: 128, bg: '#ffffff', fg: '#111111', font: 'bold 64px "DIN Alternate", Arial, sans-serif', border: accent }
@@ -150,7 +163,7 @@ export class StationView {
         if (n % 2 === 0) {
           this.plane(3.8, 0.64, signMat, x, y, z, ry);
         } else {
-          const frame = this.box(0.06, 2.05, 2.75, this.style === 'vault' ? new THREE.MeshLambertMaterial({ color: 0x9c7b3c }) : this.m.metal, x + (x < 0 ? 0.0 : 0.0), y + 0.2, z);
+          const frame = this.box(0.06, 2.05, 2.75, this.style === 'vault' || this.style === 'grand' ? new THREE.MeshLambertMaterial({ color: 0x9c7b3c }) : this.m.metal, x + (x < 0 ? 0.0 : 0.0), y + 0.2, z);
           frame.position.x = x;
           const pm = new THREE.MeshLambertMaterial({ map: Textures.poster(Math.floor(this.rand() * 1000)), emissive: 0xaaaaaa });
           pm.emissiveMap = pm.map;
@@ -176,8 +189,9 @@ export class StationView {
         g.position.set(cx, hangY, z);
         this.plane(2.2, 0.42, exitMat, 0, 0, 0.02, 0, g);
         this.plane(2.2, 0.42, exitMat, 0, 0, -0.02, Math.PI, g);
-        this.box(0.02, Math.max(0.1, this.H - hangY), 0.02, this.m.metal, -0.9, (this.H - hangY) / 2, 0, g);
-        this.box(0.02, Math.max(0.1, this.H - hangY), 0.02, this.m.metal, 0.9, (this.H - hangY) / 2, 0, g);
+        const top = this.ceilAt(cx) - hangY;
+        this.box(0.02, Math.max(0.1, top), 0.02, this.m.metal, -0.9, top / 2, 0, g);
+        this.box(0.02, Math.max(0.1, top), 0.02, this.m.metal, 0.9, top / 2, 0, g);
         this.group.add(g);
         this.exits.push({ x: this.island ? cx : (a < 0 ? a + 0.6 : b - 0.6), z });
       }
@@ -223,7 +237,7 @@ export class StationView {
         this.box(0.45, ph, 0.45, pillarMat, x, PLATFORM_Y + ph / 2, z);
         if (Math.round(z) % 2 === 0) for (const sx of [-0.23, 0.23]) this.plane(1.4, 0.26, name, x + sx, 2.4, z, sx < 0 ? -Math.PI / 2 : Math.PI / 2);
       }
-    } else {
+    } else if (this.style === 'modern') {
       for (const x of [-this.W + 1, -this.e - 0.3, this.e + 0.3, this.W - 1]) this.box(0.08, 0.04, this.Lz, this.m.light, x, this.H - 0.05, 0);
       for (let z = -this.Lz / 2; z < this.Lz / 2; z += 1.2) this.box(this.W * 2, 0.08, 0.12, this.m.dark, 0, this.H - 0.15, z);
     }
@@ -253,7 +267,7 @@ export class StationView {
         this.box(1.95, 0.55, 0.12, this.m.dark, 0, 0, 0, g);
         this.plane(1.85, 0.46, mat, 0, 0, 0.065, 0, g);
         this.plane(1.85, 0.46, mat, 0, 0, -0.065, Math.PI, g);
-        this.box(0.03, this.H - y, 0.03, this.m.metal, 0, (this.H - y) / 2, 0, g);
+        this.box(0.03, this.ceilAt(x) - y, 0.03, this.m.metal, 0, (this.ceilAt(x) - y) / 2, 0, g);
         this.group.add(g);
         this.pids.push({ dir, c, ctx: c.getContext('2d'), tex });
       }
@@ -281,6 +295,7 @@ export class StationView {
       if (txt[1]) { g.textAlign = 'right'; g.fillText(txt[1], 492, 104); }
       p.tex.needsUpdate = true;
     }
+    this.drawClock?.(clock);
   }
 
   /** End walls with tunnel mouths. */
@@ -299,5 +314,168 @@ export class StationView {
     }
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// "grand" style: a cathedral-like hall — ribbed coffered vault with a stained-glass skylight,
+// chandeliers, marble pilasters, a mezzanine balustrade, lantern posts, mosaic murals and a clock.
+StationView.prototype.buildGrand = function buildGrand() {
+  const W = this.W, H = this.H, rise = this.vaultRise, Lz = this.Lz, Lp = this.Lp;
+  const base = this.island ? FLOOR_Y : PLATFORM_Y;
+  const accent = this.st.theme.accent || this.line.color;
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd8b45a, metalness: 0.85, roughness: 0.3, emissive: 0x2a1e06 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x1d2420, metalness: 0.6, roughness: 0.5 });
+  const darkMarble = new THREE.MeshLambertMaterial({ map: Textures.marble('#4d7a63', '#cfe3d5'), emissive: 0x555555 });
+  darkMarble.emissiveMap = darkMarble.map;
+  const glow = new THREE.MeshBasicMaterial({ color: 0xfff0c8 });
+  const crown = H + rise;
+
+  // Dark marble dado along the walls.
+  for (const sx of [-1, 1]) {
+    const d = this.box(0.04, 1.3, Lz, darkMarble, sx * (W - 0.03), base + 0.65, 0);
+    d.material.map.repeat.set(Lz / 6, 1);
+  }
+  // Transverse ribs with pilasters beneath.
+  const arc = [];
+  for (let k = 0; k <= 40; k++) { const a = Math.PI - (k / 40) * Math.PI; arc.push(new THREE.Vector3((W - 0.1) * Math.cos(a), H + (rise - 0.1) * Math.sin(a), 0)); }
+  const ribGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(arc), 60, 0.13, 8, false);
+  const step = 7.5;
+  for (let z = -Lz / 2 + 3.75; z < Lz / 2 - 1; z += step) {
+    const rib = new THREE.Mesh(ribGeo, gold); rib.position.z = z; this.group.add(rib);
+    for (const sx of [-1, 1]) {
+      this.box(0.36, H - base, 0.6, darkMarble, sx * (W - 0.18), (H + base) / 2, z);
+      this.box(0.5, 0.25, 0.8, gold, sx * (W - 0.24), H - 0.1, z);
+      this.box(0.46, 0.18, 0.74, gold, sx * (W - 0.22), base + 0.09, z);
+    }
+  }
+  // Mezzanine galleries with balustrades.
+  const balGeo = new THREE.CylinderGeometry(0.035, 0.05, 0.8, 8);
+  const balusters = [];
+  for (const sx of [-1, 1]) {
+    const x = sx * (W - 0.55);
+    this.box(1.1, 0.22, Lz, gold, sx * (W - 0.55), H + 0.11, 0);
+    this.box(0.08, 0.08, Lz, gold, sx * (W - 1.08), H + 1.1, 0);
+    this.box(0.12, 0.06, Lz, gold, sx * (W - 1.08), H + 0.25, 0);
+    for (let z = -Lz / 2 + 0.2; z < Lz / 2; z += 0.32) balusters.push([sx * (W - 1.08), H + 0.66, z]);
+    void x;
+  }
+  const bal = new THREE.InstancedMesh(balGeo, gold, balusters.length);
+  const m4 = new THREE.Matrix4();
+  balusters.forEach(([x, y, z], i) => { m4.makeTranslation(x, y, z); bal.setMatrixAt(i, m4); });
+  bal.computeBoundingSphere();
+  this.group.add(bal);
+
+  // Stained-glass skylight along the crown, with soft light shafts.
+  const glassMat = new THREE.MeshBasicMaterial({ map: Textures.stainedGlass(this.index + 3), side: THREE.DoubleSide });
+  glassMat.map.wrapT = THREE.RepeatWrapping; glassMat.map.repeat.set(1, Lz / 12);
+  const sky = new THREE.Mesh(new THREE.PlaneGeometry(2.6, Lz - 2), glassMat);
+  sky.rotation.x = Math.PI / 2; sky.position.y = crown - 0.06;
+  this.group.add(sky);
+  this.box(3.0, 0.1, Lz - 1.6, gold, 0, crown - 0.02, 0);
+  const shaftTex = (() => {
+    const c = document.createElement('canvas'); c.width = 16; c.height = 256;
+    const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0, 'rgba(255,225,160,0.55)'); grd.addColorStop(1, 'rgba(255,225,160,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 16, 256);
+    return new THREE.CanvasTexture(c);
+  })();
+  const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  for (let z = -Lp / 2 + 12; z < Lp / 2 - 6; z += 14) {
+    const shaft = new THREE.Mesh(new THREE.PlaneGeometry(2.4, crown - base - 0.2), shaftMat);
+    shaft.position.set(0, (crown + base) / 2, z); shaft.rotation.z = 0.12; this.group.add(shaft);
+    const s2 = shaft.clone(); s2.rotation.y = Math.PI / 2; this.group.add(s2);
+  }
+
+  // Chandeliers hanging from the vault.
+  const sphere = new THREE.SphereGeometry(0.11, 12, 8);
+  const ringGeo = new THREE.TorusGeometry(0.95, 0.04, 8, 32);
+  const glowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'); const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,240,200,1)'); grd.addColorStop(0.3, 'rgba(255,220,150,0.45)'); grd.addColorStop(1, 'rgba(255,220,150,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
+  })();
+  const xs = this.island ? [-(this.e + 1.45), this.e + 1.45] : [-(this.e + W) / 2, (this.e + W) / 2];
+  for (let z = -Lp / 2 + 8; z < Lp / 2 - 4; z += 15) for (const cx of xs) {
+    const top = this.ceilAt(cx);
+    const y = Math.max(base + 3.4, top - 3.2);
+    const g = new THREE.Group(); g.position.set(cx, y, z);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, top - y), gold); rod.position.y = (top - y) / 2; g.add(rod);
+    for (const [r, dy] of [[0.95, 0], [0.6, 0.45]]) {
+      const ring = new THREE.Mesh(ringGeo, gold); ring.rotation.x = Math.PI / 2; ring.scale.setScalar(r / 0.95); ring.position.y = dy; g.add(ring);
+      const n = r > 0.8 ? 10 : 6;
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        const b = new THREE.Mesh(sphere, glow); b.position.set(Math.cos(a) * r, dy + 0.12, Math.sin(a) * r); g.add(b);
+      }
+    }
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), glow); core.position.y = -0.15; g.add(core);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
+    halo.scale.set(3.6, 3.6, 1); halo.position.y = 0.1; g.add(halo);
+    this.group.add(g);
+  }
+
+  // Lantern posts along the platform centre line.
+  const posts = this.island ? [0] : [-(this.e + W) / 2 + 1.2, (this.e + W) / 2 - 1.2];
+  for (const px of posts) for (let z = -Lp / 2 + 10; z < Lp / 2 - 8; z += 12) {
+    if (Math.abs(z) < 3) continue;
+    this.box(0.4, 0.3, 0.4, iron, px, PLATFORM_Y + 0.15, z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 3.0, 10), iron); pole.position.set(px, PLATFORM_Y + 1.6, z); this.group.add(pole);
+    for (const [dx, dz] of [[0.35, 0], [-0.35, 0], [0, 0.35], [0, -0.35]]) {
+      const arm = this.box(Math.abs(dx) + 0.02, 0.03, Math.abs(dz) + 0.02, iron, px + dx / 2, PLATFORM_Y + 2.9, z + dz / 2);
+      void arm;
+      const globe = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), glow); globe.position.set(px + dx, PLATFORM_Y + 2.98, z + dz); this.group.add(globe);
+    }
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), glow); top.position.set(px, PLATFORM_Y + 3.25, z); this.group.add(top);
+  }
+
+  // Planters at the platform ends.
+  const leaf = new THREE.MeshLambertMaterial({ color: 0x2f6b35, emissive: 0x0c1f0e });
+  for (const px of posts) for (const z of [-Lp / 2 + 4, Lp / 2 - 4]) {
+    this.box(0.9, 0.6, 0.9, darkMarble, px, PLATFORM_Y + 0.3, z);
+    for (let k = 0; k < 5; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.28 + k * 0.03, 10, 8), leaf); b.position.set(px + Math.cos(k * 1.3) * 0.2, PLATFORM_Y + 0.8 + k * 0.12, z + Math.sin(k * 1.3) * 0.2); this.group.add(b); }
+  }
+
+  // Mosaic murals above both tunnel mouths, framed in gold.
+  const mural = new THREE.MeshBasicMaterial({ map: Textures.mosaic(this.st.name, accent) });
+  const mw = Math.min(2 * W * 0.62, 11), mh = mw / 2;
+  const my = Math.min(crown - mh / 2 - 0.6, 5.2 + mh / 2);
+  for (const sz of [-1, 1]) {
+    const z = sz * (Lz / 2 - 0.06);
+    this.plane(mw, mh, mural, 0, my, z, sz < 0 ? 0 : Math.PI);
+    this.box(mw + 0.3, 0.16, 0.12, gold, 0, my + mh / 2 + 0.08, z);
+    this.box(mw + 0.3, 0.16, 0.12, gold, 0, my - mh / 2 - 0.08, z);
+    this.box(0.16, mh + 0.3, 0.12, gold, mw / 2 + 0.08, my, z);
+    this.box(0.16, mh + 0.3, 0.12, gold, -mw / 2 - 0.08, my, z);
+  }
+
+  // Double-faced station clock at the centre of the hall (shows the real game time).
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  this.clockFace = { c, tex: new THREE.CanvasTexture(c) };
+  this.clockFace.tex.colorSpace = THREE.SRGBColorSpace;
+  const cm = new THREE.MeshBasicMaterial({ map: this.clockFace.tex });
+  const cy = PLATFORM_Y + 3.6, cx = posts[0];
+  const cg = new THREE.Group(); cg.position.set(cx, cy, 0);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.16, 32), gold); disc.rotation.x = Math.PI / 2; cg.add(disc);
+  for (const sz of [1, -1]) { const f = new THREE.Mesh(new THREE.CircleGeometry(0.55, 32), cm); f.position.z = sz * 0.085; if (sz < 0) f.rotation.y = Math.PI; cg.add(f); }
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, cy - 0.6 - PLATFORM_Y, 10), iron); pole.position.y = -(cy - PLATFORM_Y) / 2 - 0.3; cg.add(pole);
+  this.group.add(cg);
+  this.drawClock(0);
+};
+
+StationView.prototype.drawClock = function drawClock(clock) {
+  if (!this.clockFace) return;
+  const g = this.clockFace.c.getContext('2d');
+  g.fillStyle = '#f7f1e1'; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = '#1c1c1c'; g.lineWidth = 6; g.beginPath(); g.arc(128, 128, 118, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#1c1c1c'; g.font = 'bold 26px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let h = 1; h <= 12; h++) { const a = (h / 12) * Math.PI * 2 - Math.PI / 2; g.fillText(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][h - 1], 128 + Math.cos(a) * 92, 128 + Math.sin(a) * 92); }
+  const s = ((clock % 43200) + 43200) % 43200;
+  const hand = (frac, len, w, col) => { const a = frac * Math.PI * 2 - Math.PI / 2; g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + Math.cos(a) * len, 128 + Math.sin(a) * len); g.stroke(); };
+  hand(s / 43200, 55, 9, '#1c1c1c');
+  hand((s % 3600) / 3600, 82, 6, '#1c1c1c');
+  hand((s % 60) / 60, 88, 2, '#b3121b');
+  g.fillStyle = '#b3121b'; g.beginPath(); g.arc(128, 128, 6, 0, Math.PI * 2); g.fill();
+  this.clockFace.tex.needsUpdate = true;
+};
 
 export { PLATFORM_Y, EDGE_GAP };

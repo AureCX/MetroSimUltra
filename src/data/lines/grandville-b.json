@@ -156,11 +156,15 @@
    "name": "Saint-Augustin",
    "distanceToNext": 800,
    "speedLimit": 70,
-   "stopDuration": 20,
-   "style": "vault",
+   "stopDuration": 30,
+   "style": "grand",
+   "platformLength": 120,
+   "platformWidth": 8,
+   "passengers": 40,
    "theme": {
-    "wall": "#efe8d4",
-    "accent": "#1f3c88"
+    "wall": "#efe6d2",
+    "accent": "#33E633",
+    "vault": "#1b2a4a"
    },
    "track": [
     {

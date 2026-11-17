@@ -39,6 +39,7 @@ export class Cabin {
     this.buildShell(W, zf);
     this.buildDesk(W, zf);
     this.buildLever(W, zf);
+    this.buildLineMap(W, zf);
     this.light = new THREE.PointLight(0xfff0d8, 0, 4, 2);
     this.light.position.set(0, 3.25, zf - 1.1);
     this.group.add(this.light);
@@ -215,6 +216,23 @@ export class Cabin {
       highlight: knob,
     });
     this.leverAngle = 0;
+  }
+
+  /** Line diagram panel hung across the top of the windshield (drawn by the game every half second). */
+  buildLineMap(W, zf) {
+    const c = document.createElement('canvas'); c.width = 2048; c.height = 400;
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    this.lineMap = { c, tex: t };
+    const w = Math.min(1.45, W - 0.7), h = w * (400 / 2048);
+    const g = new THREE.Group();
+    g.position.set(0, 3.06, zf - 0.3);
+    g.rotation.set(0.42, Math.PI, 0, 'YXZ');
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.05, h + 0.05, 0.03), this.m.black); frame.position.z = -0.018; g.add(frame);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, color: 0xdddddd }));
+    g.add(face);
+    for (const sx of [-1, 1]) { const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.4), this.m.metal); rod.position.set(sx * (w / 2 - 0.08), h / 2 + 0.18, -0.03); g.add(rod); }
+    this.group.add(g);
+    this.register(face, 'Line map — click to enlarge (M)', { click: () => this.actions.lineMap() });
   }
 
   notchPlate() {

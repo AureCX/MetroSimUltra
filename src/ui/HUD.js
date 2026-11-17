@@ -34,9 +34,11 @@ export class HUD {
       <div class="hud-alarm" id="h-alarm"></div>
       <div class="toasts" id="h-toasts"></div>
       <div class="tooltip" id="h-tip"></div>
-      <div class="hud-help" id="h-help"></div>`;
+      <div class="hud-help" id="h-help"></div>
+      <div class="hud-map" id="h-map" hidden><canvas id="h-mapcanvas" width="2400" height="560"></canvas><div class="sub">Click or press <b id="h-mapkey">M</b> to close</div></div>`;
     this.el = Object.fromEntries([...root.querySelectorAll('[id]')].map((e) => [e.id.slice(2), e]));
     this.acc = 1;
+    this.el.map.addEventListener('click', () => this.bus.emit('ui:lineMap'));
     bus.on('hud:update', (st) => this.update(st));
     bus.on('hud:toast', (t) => this.toast(t));
     bus.on('cab:hover', (label) => { this.el.tip.textContent = label || ''; this.el.tip.style.opacity = label ? 1 : 0; });
@@ -44,6 +46,10 @@ export class HUD {
     bus.on('settings:changed', () => this.applyVisibility());
     this.applyVisibility();
   }
+  setMapOpen(open) { this.el.map.hidden = !open; this.el.mapkey.textContent = this.input.labelFor('lineMap'); }
+  get mapOpen() { return !this.el.map.hidden; }
+  get mapCanvas() { return this.el.mapcanvas; }
+
   applyVisibility() { this.root.classList.toggle('hidden-hud', !this.settings.get('gameplay.showHud')); }
   show(v) { this.root.style.display = v ? '' : 'none'; }
 

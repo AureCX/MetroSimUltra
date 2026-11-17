@@ -141,3 +141,8 @@ input[type=range] { accent-color: var(--accent); }
 .hud-junction { display: none; margin-top: 4px; font-size: 12px; font-weight: 700; }
 .hud-junction.ok { color: var(--ok); } .hud-junction.warn { color: var(--warn); } .hud-junction.bad { color: var(--bad); }
 .branch-toggle { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; }
+
+.hud-map { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(96vw, 1500px); pointer-events: auto; cursor: pointer;
+  background: #fff; border-radius: 10px; padding: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+.hud-map canvas { width: 100%; height: auto; display: block; }
+.hud-map .sub { text-align: right; color: #5a6475; padding: 2px 6px 0; }

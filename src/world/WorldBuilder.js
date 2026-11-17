@@ -310,7 +310,7 @@ class StationLightPool {
     const st = line.stations[z.index];
     const hs = geom.halfSpacingAt(z.center);
     const lat = st.platformType === 'island' ? [0, 0] : [hs + 1.45 + st.platformWidth / 2, -(hs + 1.45 + st.platformWidth / 2)];
-    const color = st.style === 'modern' ? 0xe8f0ff : st.style === 'pillars' ? 0xfff6e6 : 0xffe9c4;
+    const color = st.style === 'modern' ? 0xe8f0ff : st.style === 'pillars' ? 0xfff6e6 : st.style === 'grand' ? 0xffd9a0 : 0xffe9c4;
     const zs = [-st.platformLength / 3, 0, st.platformLength / 3];
     let i = 0;
     for (const side of lat) for (const dz of zs) {
@@ -318,7 +318,7 @@ class StationLightPool {
       const l = this.lights[i++];
       l.position.set(p.x, p.y, p.z);
       l.color.setHex(color);
-      l.intensity = st.platformType === 'island' ? 26 : 22;
+      l.intensity = (st.platformType === 'island' ? 26 : 22) * (st.style === 'grand' ? 1.4 : 1);
     }
   }
   dispose() { for (const l of this.lights) this.scene.remove(l); }

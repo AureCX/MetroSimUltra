@@ -56,10 +56,11 @@ async function boot() {
 function startSession(sel) {
   audio.init();
   lastSession = sel;
+  hud.setMapOpen(false); game.mapTarget = null;
   menu.showLoading(`Building ${sel.line.name}…`);
   setTimeout(() => {
     try {
-      game.start({ ...sel, services: repo.lines.filter((l) => l.sourceId === sel.line.sourceId) });
+      game.start({ ...sel, services: repo.lines.filter((l) => l.sourceId === sel.line.sourceId), network: repo.lines.filter((l) => l.network === sel.line.network) });
       game.applyGraphics();
       resize();
       menu.hide();
@@ -83,6 +84,7 @@ function setPaused(p) {
 }
 
 function quitToMenu() {
+  hud.setMapOpen(false); game.mapTarget = null;
   game.setPaused(false);
   game.dispose();
   hud.show(false);
@@ -91,6 +93,13 @@ function quitToMenu() {
   menu.show('main');
 }
 
+bus.on('ui:lineMap', () => {
+  if (state !== 'playing') return;
+  const open = !hud.mapOpen;
+  hud.setMapOpen(open);
+  game.mapTarget = open ? hud.mapCanvas : null;
+  game.mapAcc = 1;
+});
 bus.on('game:pauseToggle', () => {
   if (state === 'playing') setPaused(true);
   else if (state === 'paused') {

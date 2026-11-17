@@ -16,6 +16,7 @@ export const ACTIONS = {
   headlights:     { label: 'Headlights high / low',             keys: ['KeyL'], pad: [] },
   cabLight:       { label: 'Cab light',                         keys: ['KeyK'], pad: [] },
   routeSelect:    { label: 'Set route at junction',             keys: ['KeyJ'], pad: [14, 15] },
+  lineMap:        { label: 'Show / hide the line map',          keys: ['KeyM'], pad: [] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };

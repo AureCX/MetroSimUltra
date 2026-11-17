@@ -21,7 +21,7 @@ export const LINE_DEFAULTS = {
   signaling: { system: 'fixed-block', blockLength: 320, overlap: 40, atpBrakeRate: 0.85 },
 };
 
-const STYLES = ['vault', 'pillars', 'modern'];
+const STYLES = ['vault', 'pillars', 'modern', 'grand'];
 
 export class LineValidationError extends Error {}
 
@@ -81,7 +81,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
       platformWidth: num(s.platformWidth, d.platformWidth, { min: 2.5, max: 10 }),
       platformType: (s.platformType || d.platformType) === 'island' ? 'island' : 'side',
       style: STYLES.includes(s.style) ? s.style : (STYLES.includes(d.style) ? d.style : 'vault'),
-      theme: { wall: s.theme?.wall || null, accent: s.theme?.accent || raw.color || '#ffcc00', sign: s.theme?.sign || null },
+      theme: { wall: s.theme?.wall || null, accent: s.theme?.accent || raw.color || '#ffcc00', sign: s.theme?.sign || null, vault: s.theme?.vault || null },
       passengers: num(s.passengers, 18, { min: 0, max: 60 }),
       announcement: s.announcement || null,        // path/URL or imported key
       announcementText: s.announcementText || null,

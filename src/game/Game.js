@@ -16,6 +16,7 @@ import { CameraSystem } from '../camera/CameraSystem.js';
 import { Announcer } from '../audio/Announcer.js';
 import { Scoring } from './Scoring.js';
 import { setMaxAnisotropy } from '../world/Textures.js';
+import { buildLineMapModel, drawLineMap, trainMapState } from '../ui/LineMap.js';
 
 const STEP = 1 / 120;
 
@@ -33,7 +34,7 @@ export class Game {
   }
 
   /** Builds the whole session. */
-  start({ line, train, direction, services }) {
+  start({ line, train, direction, services, network }) {
     this.dispose();
     const bus = this.bus;
     this.line = line; this.specs = train; this.direction = direction;
@@ -112,6 +113,8 @@ export class Game {
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
     if (J && direction === 'A') this.buildRouteIndicator();
+    this.mapModel = buildLineMapModel(line, [...this.svc.values()].map((d) => d.line), network || [], direction);
+    this.mapAcc = 1;
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
   }
 
@@ -257,6 +260,7 @@ export class Game {
       headlights: () => { p().headlightsHigh = !p().headlightsHigh; this.audio.click(); },
       cabLight: () => { p().cabLight = !p().cabLight; this.audio.click(); },
       routeSelect: () => this.selectRoute(),
+      lineMap: () => this.bus.emit('ui:lineMap'),
     };
   }
 
@@ -377,6 +381,7 @@ export class Game {
       case 'headlights': A.headlights(); break;
       case 'cabLight': A.cabLight(); break;
       case 'routeSelect': A.routeSelect(); break;
+      case 'lineMap': A.lineMap(); break;
       case 'toggleHud': this.settings.set('gameplay.showHud', !this.settings.get('gameplay.showHud')); break;
       case 'lookBack': this.cameraSys.resetView(); break;
       default: break;
@@ -471,6 +476,16 @@ export class Game {
     });
     this.audio.setAlarm(p.safety.overspeed !== 'none' ? 'atp' : p.safety.vigAlarm ? 'vigilance' : null);
     this.bus.emit('hud:update', st);
+    // Line map: cab panel and (if open) the full-size overlay, twice per second.
+    this.mapAcc += dt;
+    if (this.mapAcc > 0.5) {
+      this.mapAcc = 0;
+      const ms = { ...trainMapState(route, p.front, this.stations), activeId: this.line.id, plannedId: this.planned.id, directionName: route.directionName };
+      const lm = this.cabin.lineMap;
+      drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
+      lm.tex.needsUpdate = true;
+      if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
+    }
   }
 
   /** Estimated seconds until the next trains reach station `index` in direction `dir` (passenger displays). */

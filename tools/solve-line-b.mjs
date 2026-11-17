@@ -32,7 +32,7 @@ const raw = {
     S('République', Math.round(dist(rep, gc)), 60, 30, 'vault', { platformType: 'side', platformWidth: 4.5, passengers: 34, theme: { wall: '#f4f1e8', accent: '#8B1E8F' } }, [st(400, -12), st(300, 8)]),
     S('Gare Centrale', 800, 60, 35, 'vault', { platformType: 'side', platformWidth: 5.5, platformLength: 120, passengers: 45, approachSpeedLimit: 45, theme: { wall: '#e9e2cf', accent: '#8B1E8F' } }, [st(120), c(arc(75, 420), 420, 'right')]),
     S('Place du Marché', 750, 65, 20, 'pillars', { theme: { wall: '#e7c36a', accent: '#8a5a00' } }, [st(120), c(arc(30, 500), 500, 'right', 15)]),
-    S('Saint-Augustin', 800, 70, 20, 'vault', { theme: { wall: '#efe8d4', accent: '#1f3c88' } }, [st(350, -10), st(250)]),
+    S('Saint-Augustin', 800, 70, 30, 'grand', { platformLength: 120, platformWidth: 8, passengers: 40, theme: { wall: '#efe6d2', accent: '#33E633', vault: '#1b2a4a' } }, [st(350, -10), st(250)]),
     S('Parc Monceau', null, 65, 25, 'modern', { passengers: 26, theme: { wall: '#24402e', accent: '#33E633' } }),
   ],
   branches: [

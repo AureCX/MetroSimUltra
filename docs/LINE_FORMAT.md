@@ -104,8 +104,8 @@ for both directions. Lineside warning and execution boards are generated automat
 | `platformWidth` | m | 4.5 | Platform width. |
 | `platformType` | `side` \| `island` | `side` | Side platforms (doors right) or island (tracks spread around it, doors left). |
 | `stopMarkerOffset` | m | 4 | Stop marker distance from the far platform end. |
-| `style` | `vault` \| `pillars` \| `modern` | `vault` | Architecture: tiled vault, flat ceiling with columns, or contemporary. |
-| `theme.wall` / `theme.accent` | hex | style / line colour | Wall tile colour, accent stripe & pillar colour. |
+| `style` | `vault` \| `pillars` \| `modern` \| `grand` | `vault` | Architecture: tiled vault, flat ceiling with columns, contemporary, or a grand hall (ribbed coffered vault, stained-glass skylight, chandeliers, marble, mezzanine, mosaic murals, clock). |
+| `theme.wall` / `theme.accent` / `theme.vault` | hex | style / line colour | Wall colour, accent colour, and (grand style) vault colour. |
 | `passengers` | 0–60 | 18 | Waiting passengers per platform. |
 | `announcement` | path / URL | — | MP3 played as next-station announcement (relative to the line file). |
 | `announcementText` | string | — | Custom speech text for this station. |

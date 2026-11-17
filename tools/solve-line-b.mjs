@@ -50,7 +50,7 @@ const raw = {
         S("Fort d'Orsay", 1900, 80, 20, 'pillars', { theme: { wall: '#d6a7a0', accent: '#7a2e24' } }, [st(500, -15), st(500)]),
         S('Cité des Sciences', 2000, 80, 25, 'modern', { passengers: 28, theme: { wall: '#1f3b55', accent: '#00b4d8' } }, [st(600), st(500, 12)]),
         S('Parc des Expositions', 1600, 80, 22, 'modern', { passengers: 22, theme: { wall: '#3b3f46', accent: '#ff8c00' } }, []),
-        S('Aéroport Est', 0, 60, 30, 'modern', { passengers: 34, platformWidth: 8, connections: ['Aéroport International'], theme: { wall: '#20303f', accent: '#ffc400' } }),
+        S('Aéroport Est', 0, 60, 30, 'modern', { passengers: 34, platformWidth: 8, connections: ['Aéroport International'], landmark: { type: 'airport', side: 'left', offset: 0, along: 0, ground: 14 }, theme: { wall: '#20303f', accent: '#ffc400' } }),
       ] },
   ],
 };

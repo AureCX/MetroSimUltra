@@ -405,6 +405,11 @@ export class Game {
     this.bus.emit('game:finished', this.result);
   }
 
+  /** Shows/hides surface sites built above underground stations (e.g. the airport). */
+  showSurfaceSites(on = true) {
+    for (const w of this.worlds.values()) for (const s of w.outdoor?.sites || []) s.group.visible = on;
+  }
+
   startCrash(impact) {
     if (this.crash) return;
     this.crash = new CrashCinematic(this, impact);
@@ -495,6 +500,7 @@ export class Game {
       } else this.startCrash({
         speed: v, front: p.physics.s, type: hitBuffer ? 'buffer' : 'train',
         aiModel: hitTrain ? this.aiModels.get(aheadT.id) : null,
+        aiTrain: hitTrain ? aheadT : null,
         reason: hitBuffer ? `Collision with the buffer stop at ${Math.round(v * 3.6)} km/h` : `Collision with the train ahead at ${Math.round(v * 3.6)} km/h`,
         description: hitBuffer ? `${Math.round(v * 3.6)} km/h into the buffer stop beyond ${route.terminus}` : `${Math.round(v * 3.6)} km/h into the rear of the train ahead`,
       });

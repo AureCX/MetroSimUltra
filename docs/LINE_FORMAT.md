@@ -110,7 +110,7 @@ for both directions. Lineside warning and execution boards are generated automat
 | `announcement` | path / URL | — | MP3 played as next-station announcement (relative to the line file). |
 | `announcementText` | string | — | Custom speech text for this station. |
 | `track` | array | straight & level | Alignment between this station and the next (see below). |
-| `landmark` | object | — | Landmark built on the surface next to the station (surface lines only): `{ "type": "cityHall" \| "university", "side": "left" \| "right", "offset": 50, "along": 0 }` (metres from the track / along the line). |
+| `landmark` | object | — | Landmark built on the surface next to the station: `{ "type": "cityHall" \| "university" \| "airport", "side": "left" \| "right", "offset": 50, "along": 0 }` (metres from the track / along the line). For an underground station add `"ground"`: street level in metres above the rails (e.g. `14`); such surface sites are built but hidden until a view of them exists (`game.showSurfaceSites(true)` shows them). |
 | `connections` | array of names | `[]` | Walking connections to stations with another name (drawn dashed on the map), e.g. `["Aéroport International"]`. Stations with the same name on different lines are interchanges automatically. |
 
 ### `track` segments

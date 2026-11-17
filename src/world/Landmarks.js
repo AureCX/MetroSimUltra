@@ -170,7 +170,8 @@ class Strollers {
 
 export function landmarkFrame(geom, stationIndex, lateral, along, G) {
   const s = geom.stationS[stationIndex] + along;
-  const p = geom.point(s, lateral, 0), q = geom.point(s, 0, 0);
+  const p = geom.point(s, lateral, 0), q = geom.point(s, Math.abs(lateral) < 1 ? 1 : 0, 0);
+  // +z of the landmark faces the line (or, when built right above it, the right-hand side).
   return { x: p.x, z: p.z, y: G, yaw: Math.atan2(q.x - p.x, q.z - p.z) };
 }
 

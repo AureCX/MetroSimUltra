@@ -89,7 +89,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
       track: Array.isArray(s.track) ? s.track.map((seg, k) => normalizeSegment(seg, k, s.name, errors)) : [],
       stopMarkerOffset: num(s.stopMarkerOffset, d.stopMarkerOffset, { min: 0, max: 50 }),
       connections: Array.isArray(s.connections) ? s.connections.map(String) : [],
-      landmark: s.landmark && typeof s.landmark === 'object' ? { type: String(s.landmark.type), side: s.landmark.side === 'left' ? 'left' : 'right', offset: num(s.landmark.offset, 50, { min: 20, max: 400 }), along: num(s.landmark.along, 0) } : null,
+      landmark: s.landmark && typeof s.landmark === 'object' ? { type: String(s.landmark.type), side: s.landmark.side === 'left' ? 'left' : 'right', offset: num(s.landmark.offset, 50, { min: 0, max: 400 }), along: num(s.landmark.along, 0), ground: s.landmark.ground != null ? num(s.landmark.ground, 12, { min: 4, max: 80 }) : null } : null,
       services: Array.isArray(s.services) ? s.services.map(String) : [],
     };
     if (st.track.reduce((a, t) => a + (t?.length || 0), 0) > Math.max(0, st.distanceToNext - (st.platformLength / 2) - 60)) {

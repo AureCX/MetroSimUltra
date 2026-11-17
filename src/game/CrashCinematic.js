@@ -102,29 +102,54 @@ export class CrashCinematic {
     setTimeout(() => this.g.finish(false, this.impact.reason), 400);
   }
 
-  /** Train pose during the replay with progressive deformation after contact. */
+  /**
+   * Train pose during the replay with progressive deformation after contact. Every frame starts from
+   * the clean on-track pose, so nothing accumulates. Cars telescope, rise and yaw slightly, but each
+   * car's lateral swing is limited to the free space inside the tunnel / structure.
+   */
   poseTrain(front, deform) {
     const g = this.g, model = g.playerModel, sp = g.specs, k = this.k * deform;
     model.setPose(g.route, front);
     let push = 0;
     model.cars.forEach((car, c) => {
-      push += c === 0 ? 0 : Math.min(sp.carGap + 1.6, (sp.carGap + 2.4) * k * Math.pow(0.8, c - 1));
+      car.scale.set(1, 1, 1);
+      if (k <= 0) return;
+      push += c === 0 ? 0 : Math.min(sp.carGap + 1.4, (sp.carGap + 2.2) * k * Math.pow(0.78, c - 1));
+      const mid = front - c * (sp.carLength + sp.carGap) - sp.carLength / 2 + push;
+      // Free space towards the other track (inner side) and towards the outer wall.
+      const tr = g.route.toTrack(mid);
+      const env = g.world.envelope(tr);
+      const lat = g.route.trackLateral(mid);
+      const towardCentre = -Math.sign(lat) * g.route.sign || 1;             // driver-frame direction of the centre line
+      const room = Math.max(0, env.maxLat - Math.abs(lat) - sp.width / 2 - 0.25);
+      const side = c % 2 ? towardCentre : -towardCentre;
+      const swing = Math.min(0.06 * k * Math.min(c, 3), 0.07);             // yaw (rad)
+      const endSwing = Math.sin(swing) * sp.carLength / 2;
+      const maxLat = side === towardCentre ? 0.9 : Math.max(0, room - endSwing);
+      const shift = Math.min(0.3 * k * Math.min(c, 2), maxLat);
       car.translateZ(push * 0.9);
-      const side = c % 2 ? 1 : -1;
-      car.translateX(side * 0.35 * k * Math.min(c, 3) * 0.6);
-      car.rotateY(side * 0.07 * k * Math.min(c, 3));
-      car.rotateZ(side * 0.04 * k * (c > 0 ? 1 : 0.3));
-      if (c === 0) { car.rotateX(-0.05 * k); car.scale.z = 1 - 0.12 * k; car.translateY(0.25 * k); }
+      car.translateX(-side * shift); // car local +x is the driver's left
+      car.rotateY(-side * (side === towardCentre ? swing : Math.min(swing, Math.max(0, room) / (sp.carLength / 2))));
+      car.rotateZ(side * 0.035 * k * (c > 0 ? 1 : 0.3));
+      if (c === 0) { car.rotateX(-0.045 * k); car.scale.z = 1 - 0.1 * k; car.translateY(0.22 * k); }
+      else if (c === 1) car.translateY(0.12 * k);
     });
     const b = g.mainWorld.buffers?.find((x) => x.route === g.route.dir);
     if (b && this.impact.type === 'buffer') {
-      b.group.position.copy(b.base).addScaledVector(b.fwd, 1.4 * k);
-      b.group.rotation.copy(b.rot); b.group.rotateX(0.5 * k);
+      b.group.position.copy(b.base).addScaledVector(b.fwd, 1.2 * k);
+      b.group.rotation.copy(b.rot); b.group.rotateX(0.45 * Math.min(k, 1));
     }
-    if (this.impact.aiModel) {
-      const ai = this.impact.aiModel;
+    // The train that was hit: reset to its on-track pose, then shove it forward and crumple its last car.
+    const ai = this.impact.aiModel, at = this.impact.aiTrain;
+    if (ai && at) {
+      const shove = 1.6 * k;
+      ai.setPose(at.route, at.front + shove);
+      ai.cars.forEach((car) => car.scale.set(1, 1, 1));
       const last = ai.cars.at(-1);
-      last.rotateY(0.05 * k); last.translateZ(0.8 * k);
+      last.translateZ(-0.6 * k); last.scale.z = 1 - 0.08 * k;
+      last.rotateX(0.03 * k); last.translateY(0.15 * k);
+      const prev = ai.cars.at(-2);
+      if (prev) prev.translateZ(-0.25 * k);
     }
   }
 

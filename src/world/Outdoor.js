@@ -7,8 +7,9 @@ import { Textures } from './Textures.js';
 import { seededRandom, hashString } from '../core/util.js';
 import { City } from './City.js';
 import { buildCityHall, buildUniversity, landmarkFrame } from './Landmarks.js';
+import { buildAirport } from './Airport.js';
 
-const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity };
+const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity, airport: buildAirport };
 
 const VIADUCT_CLEAR = 5;  // bed this high above the street (m) or more = viaduct, streets pass underneath
 const CHUNK = 100;
@@ -87,6 +88,18 @@ export class OutdoorBuilder {
 
   build() {
     const runs = this.runs();
+    // Surface sites above underground stations (e.g. the airport): modelled now, hidden until the
+    // line offers a way to see them. Their ground level is given in the line file ("ground").
+    this.sites = [];
+    this.line.stations.forEach((st, i) => {
+      const lm = st.landmark;
+      if (!lm || lm.ground == null || i < this.w.opts.firstStation || !LANDMARKS[lm.type] || this.geom.outdoorAt(this.geom.stationS[i])) return;
+      const G = this.geom.point(this.geom.stationS[i]).y + lm.ground;
+      const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 0);
+      const site = LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line, this.geom, i);
+      site.group.visible = false;
+      this.sites.push(site);
+    });
     if (!runs.length && !this.geom.portals.length) return this;
     for (const [a, b] of runs) this.buildGround(a, b);
     if (runs.length) {
@@ -94,7 +107,7 @@ export class OutdoorBuilder {
       this.landmarks = [];
       this.line.stations.forEach((st, i) => {
         const lm = st.landmark;
-        if (!lm || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
+        if (!lm || lm.ground != null || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
         const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 50);
         this.landmarks.push(LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line));
       });

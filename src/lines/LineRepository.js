@@ -48,9 +48,11 @@ export class LineRepository {
   async deleteLine(id) {
     const src = this.line(id)?.sourceId || id;
     await AssetStore.deleteLine(src);
-    for (const l of this.lines.filter((x) => x.sourceId === src)) for (const k of await AssetStore.listAudioKeys(`${l.id}/`)) await AssetStore.deleteAudio(k);
+    for (const k of await AssetStore.listAudioKeys(`${src}/`)) await AssetStore.deleteAudio(k);
     this.lines = this.lines.filter((l) => l.sourceId !== src);
   }
+  /** All services of the same line (one for a simple line, one per branch for a branching line). */
+  services(line) { return this.lines.filter((l) => l.sourceId === line.sourceId); }
   networks() { return [...new Set(this.lines.map((l) => l.network))]; }
   line(id) { return this.lines.find((l) => l.id === id); }
   train(id) { return this.trains.find((t) => t.id === id); }

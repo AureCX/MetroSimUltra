@@ -45,8 +45,12 @@ shown by the **Example file** button):
 ### Branching lines (`branches`)
 
 A line that forks (like Line B) lists its trunk in `stations` and each branch in `branches`.
-Each branch becomes a separate drivable service that shares the trunk alignment, shown as
-`Line B → Bellevue – Centre` and `Line B → Aéroport Est`.
+The line appears once in the menu. Before starting you pick the destination (direction A) or
+the branch you start from (direction B). All branches are built into the same world, with a
+junction chamber where the tunnels part. Driving towards the branches, the driver must set the
+route at the junction (key **J** or the cab **ROUTE** button): until a route is set, the
+signal/movement authority protecting the points stays at danger. If the wrong branch is set, the
+train really takes it and the run continues on that branch with a penalty.
 
 ```json
 "stations": [ …trunk…, { "name": "Parc Monceau", "speedLimit": 65 } ],

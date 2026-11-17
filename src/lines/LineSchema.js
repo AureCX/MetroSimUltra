@@ -44,7 +44,7 @@ export function expandServices(raw) {
     if (trunk.length) Object.assign(trunk[trunk.length - 1], b.link || {});
     const bid = b.id || slugify(b.name || `branch-${i + 1}`);
     const { branches, ...rest } = raw;
-    return { ...rest, id: `${baseId}-${bid}`, service: b.name || bid, stations: [...trunk, ...(b.stations || [])], directions: b.directions || raw.directions };
+    return { ...rest, id: `${baseId}-${bid}`, service: b.name || bid, branchId: bid, trunkLength: trunk.length, stations: [...trunk, ...(b.stations || [])], directions: b.directions || raw.directions };
   });
 }
 
@@ -120,6 +120,8 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
     builtIn,
     name,
     service,
+    branchId: raw.branchId || null,
+    trunkLength: raw.trunkLength || null,
     fullName: service ? `${name} → ${service}` : name,
     number,
     network: String(raw.network || 'Custom lines'),

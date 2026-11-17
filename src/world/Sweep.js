@@ -74,4 +74,15 @@ export function tunnelProfile(hw, type) {
   pts.push([hw, ARCH_SPRING], [hw, 1.0], [hw, FLOOR_Y]);
   return pts;
 }
+/** Tunnel profile without the wall on one side (inner = +1 right, −1 left) for junction chambers. */
+export function tunnelProfilePartial(hw, type, inner) {
+  const full = tunnelProfile(hw, type);
+  const ext = hw + 0.6;
+  if (type === 'box') {
+    // keep the flat roof and extend it a little past the missing wall so both roofs overlap
+    const keep = full.filter(([x, y]) => (inner > 0 ? x < 0 : x > 0) || y >= BOX_HEIGHT - 0.01);
+    return inner > 0 ? [...keep, [ext, BOX_HEIGHT]] : [[-ext, BOX_HEIGHT], ...keep];
+  }
+  return inner > 0 ? full.filter(([x, y]) => x < 0 || y > ARCH_SPRING) : full.filter(([x, y]) => x > 0 || y > ARCH_SPRING);
+}
 export const tunnelCrown = (type) => (type === 'box' ? BOX_HEIGHT : ARCH_SPRING + ARCH_RISE);

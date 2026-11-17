@@ -66,7 +66,7 @@ export class TrainModel {
     this.headMat = new THREE.MeshBasicMaterial({ color: 0xfffbe8 });
     this.tailMat = new THREE.MeshBasicMaterial({ color: 0x330000 });
     const destTex = destinationTexture(line, terminus);
-    const destMat = new THREE.MeshBasicMaterial({ map: destTex });
+    const destMat = this.destMat = new THREE.MeshBasicMaterial({ map: destTex });
     const wheel = new THREE.CylinderGeometry(0.42, 0.42, 0.14, 16);
     const glow = glowTexture();
     this.glows = [];
@@ -153,6 +153,12 @@ export class TrainModel {
       this.cars.push(car);
     }
     this.setLights('forward');
+  }
+
+  setDestination(line, terminus) {
+    this.destMat.map?.dispose();
+    this.destMat.map = destinationTexture(line, terminus);
+    this.destMat.needsUpdate = true;
   }
 
   /** Front of train at route chainage `front` (m). */

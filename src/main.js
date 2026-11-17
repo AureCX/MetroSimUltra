@@ -59,7 +59,7 @@ function startSession(sel) {
   menu.showLoading(`Building ${sel.line.name}…`);
   setTimeout(() => {
     try {
-      game.start(sel);
+      game.start({ ...sel, services: repo.lines.filter((l) => l.sourceId === sel.line.sourceId) });
       game.applyGraphics();
       resize();
       menu.hide();

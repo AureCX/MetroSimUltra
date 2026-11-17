@@ -13,7 +13,8 @@ export class HUD {
       <div class="hud-tc panel">
         <div class="line-badge" id="h-badge"></div>
         <div><div class="lbl" id="h-stoplbl">Next stop</div><div class="hud-station" id="h-station"></div>
-        <div class="sub"><span id="h-dist"></span> · doors <span id="h-doorside"></span></div></div>
+        <div class="sub"><span id="h-dist"></span> · doors <span id="h-doorside"></span></div>
+        <div class="hud-junction" id="h-junction"></div></div>
       </div>
       <div class="hud-tr panel">
         <div class="hud-clock" id="h-clock"></div>
@@ -65,6 +66,12 @@ export class HUD {
     e.station.textContent = st.stationName;
     e.dist.textContent = st.standing ? `${st.stopDistance >= 0 ? '' : '+'}${Math.abs(st.stopDistance).toFixed(1)} m from marker` : formatDistance(st.stopDistance);
     e.doorside.textContent = st.doorSide === 'left' ? '◀ left' : 'right ▶';
+    const j = st.junction;
+    if (j && j.distance < 2500) {
+      e.junction.style.display = 'block';
+      e.junction.className = `hud-junction ${!j.set ? 'warn' : j.ok ? 'ok' : 'bad'}`;
+      e.junction.textContent = `Junction ${formatDistance(j.distance)} · route ${j.set ? `${j.side === 'left' ? '◀' : '▶'} ${j.set}` : `not set — ${this.input.labelFor('routeSelect')}`} · train for ${j.destination}`;
+    } else e.junction.style.display = 'none';
     e.clock.textContent = formatClock(st.clock);
     e.sched.textContent = st.standing ? (st.schedDep != null ? `Sched. dep ${formatClock(st.schedDep)}` : 'Terminus') : `Sched. arr ${st.schedArr != null ? formatClock(st.schedArr) : '--'}`;
     const d = st.delay;

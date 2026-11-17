@@ -11,7 +11,7 @@ export class Announcer {
   async loadBuffer(key, url) {
     if (this.cache.has(key)) return this.cache.get(key);
     let data = null;
-    const blob = await AssetStore.getAudio(`${this.line.id}/${key}`);
+    const blob = await AssetStore.getAudio(`${this.line.sourceId || this.line.id}/${key}`);
     if (blob) data = await blob.arrayBuffer();
     else if (url) {
       try { const r = await fetch(url); if (r.ok) data = await r.arrayBuffer(); } catch { /* fall back to speech */ }

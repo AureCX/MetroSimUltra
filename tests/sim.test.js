@@ -148,3 +148,15 @@ test('speed limits rise only when the tail clears', () => {
   assert.equal(route.permittedFor(r + 10, 80), L[r - 1]);
   assert.equal(route.permittedFor(r + 81, 80), Math.min(...Array.from(L.slice(r, r + 82))));
 });
+
+test('a junction with no route set holds the movement authority before the points', () => {
+  const line = normalizeLine(expandServices(read('lines/grandville-b.json'))[0]);
+  const route = new Route(line, new TrackGeometry(line), 'A');
+  const sig = new SignalSystem(route, line, new EventBus());
+  sig.hold = 5770;
+  sig.update([], { front: 5000, rear: 4900 });
+  assert.equal(sig.authority, 5770);
+  sig.hold = null;
+  sig.update([], { front: 5000, rear: 4900 });
+  assert.ok(sig.authority > 5770);
+});

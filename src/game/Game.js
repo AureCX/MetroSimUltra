@@ -33,10 +33,11 @@ export class Game {
   }
 
   /** Builds the whole session. */
-  start({ line, train, direction }) {
+  start({ line, train, direction, services }) {
     this.dispose();
     const bus = this.bus;
     this.line = line; this.specs = train; this.direction = direction;
+    this.planned = line; // destination chosen in the menu
     const scene = this.scene = new THREE.Scene();
     const draw = this.settings.get('graphics.drawDistance');
     scene.background = new THREE.Color(0x040507);
@@ -45,8 +46,16 @@ export class Game {
     scene.add(new THREE.HemisphereLight(0x8a8f99, 0x2a241c, 0.55));
     scene.add(new THREE.AmbientLight(0x404248, 0.35));
 
-    this.geom = new TrackGeometry(line);
-    this.routes = { A: new Route(line, this.geom, 'A'), B: new Route(line, this.geom, 'B') };
+    // Every service of the line (several for a branching line) is part of the same world.
+    this.svc = new Map();
+    for (const l of services && services.length > 1 ? services : [line]) {
+      const g = new TrackGeometry(l);
+      this.svc.set(l.id, { line: l, geom: g, routes: { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') }, tt: {} });
+    }
+    const main = this.svc.get(line.id);
+    this.geom = main.geom;
+    this.routes = main.routes;
+    this.junction = this.svc.size > 1 ? this.findJunction(main) : null;
     const route = this.route = this.routes[direction];
     this.timetable = new Timetable(route, train, line.startTime);
     this.clock = this.timetable.start - 50;
@@ -59,7 +68,18 @@ export class Game {
     this.signals = new SignalSystem(route, line, bus);
     this.traffic = new TrafficManager({ line, routes: this.routes, specs: train, playerRoute: route, playerTimetable: this.timetable, startClock: this.clock, bus });
 
-    this.world = new WorldBuilder(scene, line, this.geom, this.routes, this.settings.get('graphics.quality')).build();
+    const q = this.settings.get('graphics.quality');
+    const J = this.junction;
+    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junction: J && { divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain } }).build();
+    this.worlds = new Map([[line.id, this.world]]);
+    for (const [id, d] of this.svc) {
+      if (id === line.id) continue;
+      this.worlds.set(id, new WorldBuilder(scene, d.line, d.geom, d.routes, q, {
+        fromS: J.divergeS, firstStation: J.index + 1, junction: { divergeS: J.divergeS, wallS: J.wallS, inner: -J.innerMain },
+        lightPool: this.world.lights, tunnelPool: this.world.tunnelLights, offset: true, fallback: this.world,
+      }).build());
+    }
+    this.mainWorld = this.world;
     this.signalView = new SignalView(scene, this.signals, route, this.geom);
     this.playerModel = new TrainModel(train, line, route.terminus, { player: true });
     scene.add(this.playerModel.group);
@@ -91,7 +111,128 @@ export class Game {
     this.bumpAcc = 0; this.bump = 0;
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
+    if (J && direction === 'A') this.buildRouteIndicator();
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
+  }
+
+  /** Locates where the branches part (first chainage where the alignments differ) and where their tunnels separate. */
+  findJunction(main) {
+    const others = [...this.svc.values()].filter((d) => d !== main);
+    const o = others[0];
+    const index = main.line.trunkLength - 1;
+    const pm = {}, po = {};
+    let divergeS = null, wallS = null;
+    for (let s = main.geom.stationS[index]; s < Math.min(main.geom.length, o.geom.length); s += 0.5) {
+      main.geom.point(s, 0, 0, pm); o.geom.point(s, 0, 0, po);
+      const sep = Math.hypot(pm.x - po.x, pm.z - po.z);
+      if (divergeS == null && sep > 0.03) divergeS = s;
+      if (divergeS != null && sep >= main.geom.tunnelHalfWidthAt(s) + o.geom.tunnelHalfWidthAt(s)) { wallS = s; break; }
+    }
+    if (divergeS == null) return null;
+    wallS ??= divergeS + 150;
+    const s = divergeS + 40, h = main.geom.heading(s);
+    main.geom.point(s, 0, 0, pm); o.geom.point(s, 0, 0, po);
+    const innerMain = Math.sign((po.x - pm.x) * Math.cos(h) + (po.z - pm.z) * Math.sin(h)) || 1;
+    const sideOf = (d) => (d === main ? (innerMain > 0 ? 'left' : 'right') : innerMain > 0 ? 'right' : 'left');
+    const options = [...this.svc.values()].map((d) => ({ id: d.line.id, name: d.line.service, side: sideOf(d) }))
+      .sort((a, b) => (a.side === 'left' ? -1 : 1) - (b.side === 'left' ? -1 : 1));
+    const diverging = this.direction === 'A';
+    return { index, divergeS, wallS, innerMain, options, set: diverging ? null : main.line.id, passed: !diverging, warned: false };
+  }
+
+  /** Lineside route indicator at the junction, showing the branch the points are set for. */
+  buildRouteIndicator() {
+    const J = this.junction, route = this.routes.A;
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    this.routeIndicator = { c, tex: new THREE.CanvasTexture(c) };
+    this.routeIndicator.tex.colorSpace = THREE.SRGBColorSpace;
+    const r = J.divergeS - 35;
+    const p = route.point(r, 1.75, 3.0);
+    const g = new THREE.Group();
+    g.position.set(p.x, p.y, p.z);
+    g.rotation.y = -this.geom.heading(r);
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.56, 0.12), new THREE.MeshLambertMaterial({ color: 0x111111 })));
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.46), new THREE.MeshBasicMaterial({ map: this.routeIndicator.tex }));
+    face.position.z = 0.065;
+    g.add(face);
+    this.scene.add(g);
+    this.drawRouteIndicator();
+  }
+  drawRouteIndicator() {
+    const ri = this.routeIndicator; if (!ri) return;
+    const g = ri.c.getContext('2d'), J = this.junction;
+    g.fillStyle = '#050505'; g.fillRect(0, 0, 256, 128);
+    const opt = J.options.find((o) => o.id === J.set);
+    if (opt && !(this.direction === 'B')) {
+      g.fillStyle = '#ffffff'; g.font = 'bold 72px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(opt.side === 'left' ? '◀' : '▶', 52, 66);
+      g.font = 'bold 30px Arial';
+      const words = opt.name.split(/\s+/);
+      g.fillText(words[0].toUpperCase().slice(0, 9), 160, words.length > 1 ? 46 : 66);
+      if (words.length > 1) g.fillText(words.slice(1).join(' ').replace(/^[–-]\s*/, '').toUpperCase().slice(0, 9), 160, 88);
+    }
+    ri.tex.needsUpdate = true;
+  }
+
+  selectRoute() {
+    const J = this.junction;
+    if (!J || this.direction !== 'A') { this.toast('No junction to set on this route.', 'info', 2); return; }
+    if (J.passed) { this.toast('The junction is already behind the train.', 'info', 2); return; }
+    if (J.divergeS - this.player.front < 60) { this.toast('Points locked: the train is too close to the junction.', 'warn', 2.5); this.audio.refuse(); return; }
+    const i = J.options.findIndex((o) => o.id === J.set);
+    J.set = J.options[(i + 1) % J.options.length].id;
+    const opt = J.options.find((o) => o.id === J.set);
+    this.audio.click();
+    this.drawRouteIndicator();
+    const ok = J.set === this.planned.id;
+    this.toast(`Route set: ${opt.side === 'left' ? '◀' : '▶'} ${opt.name}${ok ? '' : ` — this train is for ${this.planned.service}!`}`, ok ? 'ok' : 'warn', 3);
+  }
+
+  /** Called when the train runs over the points. */
+  passJunction() {
+    const J = this.junction;
+    J.passed = true;
+    const taken = J.set ?? J.options[0].id;
+    this.signals.hold = null;
+    if (taken === this.line.id) { this.toast(`Junction: correct route towards ${this.line.service}.`, 'ok', 3); return; }
+    const to = this.svc.get(taken).line;
+    this.scoring.penalty(250, `Wrong route at the junction: train diverted towards ${to.service}`);
+    this.toast(`Wrong route! The train is diverted towards ${to.service}.`, 'alarm', 6);
+    this.divert(taken);
+  }
+
+  /** Re-attaches every route-dependent system to another service (same chainage on the shared trunk). */
+  divert(id) {
+    const d = this.svc.get(id), p = this.player, old = this.stations;
+    this.line = d.line; this.geom = d.geom; this.routes = d.routes;
+    const route = this.route = d.routes[this.direction];
+    p.route = route; p.physics.route = route;
+    this.timetable = new Timetable(route, this.specs, d.line.startTime);
+    this.stations = new StationManager(route, this.timetable, p, this.bus, this.settings);
+    Object.assign(this.stations, { atStop: null, nextStop: old.nextStop, lastDelay: old.lastDelay, served: old.served, boardingPending: old.boardingPending });
+    this.passengers.route = route; this.passengers.routes = d.routes; this.passengers.line = d.line; this.passengers.stationManager = this.stations;
+    for (const k of [...this.passengers.crowds.keys()]) this.passengers.removeCrowd(k);
+    this.signalView.dispose();
+    this.signals = new SignalSystem(route, d.line, this.bus);
+    this.signals.lastFront = p.front;
+    this.signalView = new SignalView(this.scene, this.signals, route, this.geom);
+    for (const m of this.aiModels.values()) m.dispose(this.scene);
+    this.aiModels.clear();
+    this.traffic = new TrafficManager({ line: d.line, routes: d.routes, specs: this.specs, playerRoute: route, playerTimetable: this.timetable, startClock: this.clock, bus: this.bus });
+    this.world = this.worlds.get(id);
+    this.playerModel.setDestination(d.line, route.terminus);
+    this.announcer.line = d.line;
+  }
+
+  /** Scheduled arrivals for a station of a service the player is not on (passenger displays). */
+  etasScheduled(d, index, dir) {
+    const route = d.routes[dir];
+    const tt = d.tt[dir] ??= new Timetable(route, this.specs, d.line.startTime);
+    const k = dir === 'A' ? index : d.line.stations.length - 1 - index;
+    const e = tt.entry(k);
+    const base = e.arr ?? e.dep, h = d.line.headway;
+    const n = Math.ceil((this.clock - base) / h);
+    return [0, 1].map((i) => base + (n + i) * h - this.clock).filter((x) => x >= 0);
   }
 
   applyGraphics() {
@@ -115,6 +256,7 @@ export class Game {
       vigilance: () => p().safety.acknowledgeVigilance(),
       headlights: () => { p().headlightsHigh = !p().headlightsHigh; this.audio.click(); },
       cabLight: () => { p().cabLight = !p().cabLight; this.audio.click(); },
+      routeSelect: () => this.selectRoute(),
     };
   }
 
@@ -234,6 +376,7 @@ export class Game {
       case 'announce': A.announce(); break;
       case 'headlights': A.headlights(); break;
       case 'cabLight': A.cabLight(); break;
+      case 'routeSelect': A.routeSelect(); break;
       case 'toggleHud': this.settings.set('gameplay.showHud', !this.settings.get('gameplay.showHud')); break;
       case 'lookBack': this.cameraSys.resetView(); break;
       default: break;
@@ -245,6 +388,15 @@ export class Game {
 
   simStep(dt) {
     const p = this.player, sp = this.specs, route = this.route;
+    const J = this.junction;
+    if (J && !J.passed) {
+      this.signals.hold = J.set ? null : J.divergeS - 20;
+      if (!J.warned && J.divergeS - p.front < 900) {
+        J.warned = true;
+        this.toast(`Junction ahead: set the route for ${this.planned.service} (${this.input.labelFor('routeSelect')} or the ROUTE button).`, J.set ? 'info' : 'warn', 6);
+      }
+      if (p.front >= J.divergeS) this.passJunction();
+    }
     const staticLimit = Math.min(route.permittedFor(p.front, sp.length), sp.maxSpeed);
     const atp = this.settings.get('gameplay.atp') || this.signals.system === 'cbtc';
     const auth = this.signals.authority;
@@ -298,7 +450,11 @@ export class Game {
     for (const [id, m] of this.aiModels) if (!seen.has(id)) { m.dispose(this.scene); this.aiModels.delete(id); }
 
     this.signalView.update(this.time);
-    this.world.update(route.toTrack(p.front - this.specs.length / 2), this.clock, (i, d) => this.etas(i, d), camPos);
+    const trackS = route.toTrack(p.front - this.specs.length / 2);
+    for (const [id, w] of this.worlds) {
+      const d = this.svc.get(id);
+      w.update(trackS, this.clock, (i, dir) => (d.line === this.line ? this.etas(i, dir) : this.etasScheduled(d, i, dir)), camPos);
+    }
     this.passengers.update(dt, p.front);
     const st = this.snapshot();
     this.state = st;
@@ -346,12 +502,15 @@ export class Game {
     const vk = Math.abs(p.speed) * 3.6;
     const nextLimit = this.route.nextLimitChange(p.front, s.staticLimit);
     let alarm = null;
+    const J = this.junction;
     if (s.latched) alarm = { text: `EMERGENCY BRAKE · ${s.latchReason}`, color: '#ff4030' };
     else if (p.controller.isEB) alarm = { text: 'EMERGENCY BRAKE APPLIED', color: '#ff4030' };
     else if (s.overspeed !== 'none') alarm = { text: `OVERSPEED · permitted ${Math.round(s.permitted)} km/h`, color: '#ffb300' };
     else if (s.vigAlarm) alarm = { text: 'VIGILANCE · acknowledge now', color: '#ff7a00' };
+    else if (J && !J.passed && !J.set && J.divergeS - p.front < 500) alarm = { text: `SET ROUTE FOR ${this.planned.service.toUpperCase()} · press ${this.input.labelFor('routeSelect')}`, color: '#ffb300' };
     else if (info.standing && !p.doors.locked && info.dwell.authorized) alarm = { text: 'DEPARTURE AUTHORISED · close doors', color: '#3cff8a' };
     const doorsOpenSide = p.doors.openSide();
+    const jo = J && J.options.find((o) => o.id === J.set);
     return {
       line: this.line, directionName: this.route.directionName, terminus: this.route.terminus, trainName: this.specs.name,
       signalSystem: this.signals.system, atpEnabled: this.settings.get('gameplay.atp'),
@@ -375,6 +534,8 @@ export class Game {
       gradient: this.route.gradientAt(p.front - this.specs.length / 2),
       accel: p.physics.a, alarm, cameraMode: this.cameraSys.mode,
       score: this.scoring.result(true).score,
+      junction: J && !J.passed ? { distance: J.divergeS - p.front, set: jo ? jo.name : null, side: jo?.side, ok: J.set === this.planned.id, destination: this.planned.service } : null,
+      destination: this.route.terminus,
     };
   }
 
@@ -394,6 +555,7 @@ export class Game {
     this.audio.setAlarm(null); this.audio.horn(false);
     if (this.camera.parent) this.camera.parent.remove(this.camera);
     this.scene.traverse((o) => { o.geometry?.dispose?.(); });
+    this.routeIndicator = null;
     this.interaction.setTargets([]);
     this.scene = null;
   }

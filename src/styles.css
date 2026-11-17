@@ -137,3 +137,7 @@ input[type=range] { accent-color: var(--accent); }
   .selection-card { min-width: 0; width: 100%; } .menu-main { padding: 16px; } .menu-screen { padding: 16px; }
   .field { grid-template-columns: 1fr 1fr 48px; } .brand h1 { font-size: 32px; }
 }
+
+.hud-junction { display: none; margin-top: 4px; font-size: 12px; font-weight: 700; }
+.hud-junction.ok { color: var(--ok); } .hud-junction.warn { color: var(--warn); } .hud-junction.bad { color: var(--bad); }
+.branch-toggle { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; }

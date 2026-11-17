@@ -136,7 +136,12 @@ export class DMI {
       const txt = st.departure ? 'DEPARTURE AUTHORISED' : st.dwellOpened ? `Dwell ${Math.max(0, Math.ceil(st.dwellRemaining))} s${st.boardingDone ? '' : ' · boarding'}` : 'Open doors';
       g.fillText(txt, 352, 322);
     } else {
-      g.fillStyle = '#8fa1b3'; g.font = '24px Arial'; g.fillText(`${st.stopsRemaining} stop(s) to ${st.terminus}`, 352, 322);
+      if (st.junction && st.junction.distance < 2500) {
+        const j = st.junction;
+        g.fillStyle = !j.set ? (on ? '#ffb300' : '#7a5a00') : j.ok ? '#3cff8a' : '#ff4030';
+        g.font = 'bold 26px Arial';
+        g.fillText(`JUNCTION ${Math.round(j.distance)} m · ROUTE ${j.set ? `${j.side === 'left' ? '◀' : '▶'} ${j.set}` : 'NOT SET'}`, 352, 322);
+      } else { g.fillStyle = '#8fa1b3'; g.font = '24px Arial'; g.fillText(`${st.stopsRemaining} stop(s) to ${st.terminus}`, 352, 322); }
     }
 
     // Train status.

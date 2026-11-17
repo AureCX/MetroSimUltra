@@ -11,6 +11,7 @@ export class SignalSystem {
     this.system = this.cfg.system;
     this.signals = [];
     this.lastFront = null;
+    this.hold = null; // chainage the train must not pass (junction with no route set)
     this.build();
   }
 
@@ -54,6 +55,17 @@ export class SignalSystem {
   update(others, player) {
     this._aspects(others, 'aspectOthers');
     this._aspects([...others, player], 'aspect');
+    if (this.hold != null) {
+      // The last signal before the held point protects the junction: force it to danger.
+      let k = -1;
+      this.signals.forEach((s, i) => { if (s.r <= this.hold) k = i; });
+      if (k >= 0) {
+        this.signals[k].aspect = this.signals[k].aspectOthers = 'red';
+        const prev = this.signals[k - 1];
+        if (prev && prev.aspectOthers === 'green') prev.aspectOthers = 'yellow';
+        if (prev && prev.aspect === 'green') prev.aspect = 'yellow';
+      }
+    }
     if (this.lastFront != null) {
       for (const s of this.signals) {
         if (this.lastFront < s.r && player.front >= s.r) this.bus.emit('signal:passed', { signal: s, aspect: s.aspectOthers });
@@ -67,6 +79,7 @@ export class SignalSystem {
       for (const t of others) if (t.rear > player.front && t.rear - 45 < eoa) eoa = t.rear - 45;
       const end = this.signals.at(-1);
       if (player.front < end.r) eoa = Math.min(eoa, end.r - 3);
+      if (this.hold != null && player.front < this.hold) eoa = Math.min(eoa, this.hold);
       this.authority = eoa;
     } else {
       const red = this.signals.find((s) => s.r > player.front - 0.5 && s.aspectOthers === 'red');

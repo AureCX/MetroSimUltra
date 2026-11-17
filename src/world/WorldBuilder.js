@@ -2,7 +2,7 @@
 // conductor rail), lamps, cables, lineside boards and station interiors.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { sweep, tunnelProfile, FLOOR_Y, ARCH_SPRING, ARCH_RISE, BOX_HEIGHT } from './Sweep.js';
+import { sweep, tunnelProfile, tunnelProfilePartial, FLOOR_Y, ARCH_SPRING, ARCH_RISE, BOX_HEIGHT } from './Sweep.js';
 import { Textures } from './Textures.js';
 import { StationView } from './StationBuilder.js';
 
@@ -10,7 +10,17 @@ const GAUGE_HALF = 0.7175;
 const CHUNK = 100;
 
 export class WorldBuilder {
-  constructor(scene, line, geom, routes, quality = 'high') {
+  /**
+   * opts (all optional) — used to add the second branch of a branching line to the same world:
+   *  fromS        build only from this chainage on (the shared trunk is built by the main builder)
+   *  firstStation build stations from this index on
+   *  junction     { divergeS, wallS, inner } — between divergeS and wallS the wall on the `inner`
+   *               side (+1 right / −1 left, direction A) is left out so both tunnels form one chamber
+   *  lightPool / tunnelPool  pools of the main builder to share
+   *  offset       draw the chamber surfaces with a polygon offset (avoids z-fighting with the twin tunnel)
+   */
+  constructor(scene, line, geom, routes, quality = 'high', opts = {}) {
+    this.opts = { fromS: 0, firstStation: 0, junction: null, ...opts };
     this.scene = scene;
     this.line = line;
     this.geom = geom;
@@ -39,13 +49,33 @@ export class WorldBuilder {
     this.buildBoards();
     this.buildBuffers();
     this.line.stations.forEach((st, i) => {
+      if (i < this.opts.firstStation) return;
       const sv = new StationView(this.line, this.geom, this.routes, st, i, this.quality);
       this.group.add(sv.group);
       this.stations.push(sv);
     });
-    this.lights = new StationLightPool(this.scene, this.geom, this.line);
-    this.tunnelLights = new TunnelLightPool(this.scene, this.lampPositions);
+    const zones = this.geom.zones.filter((z) => z.index >= this.opts.firstStation);
+    if (this.opts.lightPool) { this.opts.lightPool.addSource(this.geom, this.line, zones); }
+    else { this.lights = new StationLightPool(this.scene); this.lights.addSource(this.geom, this.line, zones); }
+    if (this.opts.tunnelPool) this.opts.tunnelPool.positions.push(...this.lampPositions);
+    else this.tunnelLights = new TunnelLightPool(this.scene, this.lampPositions);
     return this;
+  }
+
+  /** Is [a, b] inside the junction chamber? Returns the inner side (+1/−1) or 0. */
+  innerSide(a, b) {
+    const j = this.opts.junction;
+    return j && a >= j.divergeS - 0.01 && b <= j.wallS + 0.01 ? j.inner : 0;
+  }
+  /** Splits [a, b] into chunks no longer than CHUNK, also cutting at the junction boundaries. */
+  chunk(a, b) {
+    const cuts = [a, b];
+    const j = this.opts.junction;
+    if (j) for (const c of [j.divergeS, j.wallS]) if (c > a && c < b) cuts.push(c);
+    cuts.sort((x, y) => x - y);
+    const out = [];
+    for (let i = 0; i < cuts.length - 1; i++) for (let s = cuts[i]; s < cuts[i + 1] - 0.5; s += CHUNK) out.push([s, Math.min(cuts[i + 1], s + CHUNK)]);
+    return out;
   }
 
   /** Ranges of track chainage that are tunnel (not station boxes). */
@@ -54,9 +84,8 @@ export class WorldBuilder {
     let cur = 0;
     for (const z of this.geom.zones) { if (z.start > cur) out.push([cur, z.start]); cur = z.end; }
     if (cur < this.geom.length) out.push([cur, this.geom.length]);
-    const chunks = [];
-    for (const [a, b] of out) for (let s = a; s < b - 0.5; s += CHUNK) chunks.push([s, Math.min(b, s + CHUNK)]);
-    return chunks;
+    const from = this.opts.fromS;
+    return out.filter(([, b]) => b > from).flatMap(([a, b]) => this.chunk(Math.max(a, from), b));
   }
 
   origin(s) { const p = this.geom.point(s); return new THREE.Vector3(p.x, p.y, p.z); }
@@ -64,16 +93,23 @@ export class WorldBuilder {
   buildTunnel() {
     const g = this.geom, type = this.line.tunnelProfile;
     const lampMatrices = [];
+    if (this.opts.offset) {
+      for (const k of ['tunnel', 'bed']) { this.mat[k] = this.mat[k].clone(); Object.assign(this.mat[k], { polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }); }
+    }
     for (const [a, b] of this.tunnelRanges()) {
       const o = this.origin(a);
-      const lining = sweep(g, a, b, 3, (s) => tunnelProfile(g.tunnelHalfWidthAt(s), type), { origin: o, uScale: 0.22, vScale: 0.25 });
+      const inner = this.innerSide(a, b);
+      const lining = sweep(g, a, b, 3, (s) => (inner ? tunnelProfilePartial(g.tunnelHalfWidthAt(s), type, inner) : tunnelProfile(g.tunnelHalfWidthAt(s), type)), { origin: o, uScale: 0.22, vScale: 0.25 });
       this.add(new THREE.Mesh(lining, this.mat.tunnel), o);
+      const F = FLOOR_Y + 0.03;
       const bed = sweep(g, a, b, 3, (s) => {
         const hw = g.tunnelHalfWidthAt(s);
-        return [[-hw, 0.2], [-hw + 0.75, 0.2], [-hw + 0.75, FLOOR_Y + 0.03], [hw - 0.75, FLOOR_Y + 0.03], [hw - 0.75, 0.2], [hw, 0.2]];
+        if (inner > 0) return [[-hw, 0.2], [-hw + 0.75, 0.2], [-hw + 0.75, F], [hw + 0.6, F]];
+        if (inner < 0) return [[-hw - 0.6, F], [hw - 0.75, F], [hw - 0.75, 0.2], [hw, 0.2]];
+        return [[-hw, 0.2], [-hw + 0.75, 0.2], [-hw + 0.75, F], [hw - 0.75, F], [hw - 0.75, 0.2], [hw, 0.2]];
       }, { origin: o, uScale: 0.3, vScale: 0.3 });
       this.add(new THREE.Mesh(bed, this.mat.bed), o);
-      const cables = [-1, 1].map((side) => sweep(g, a, b, 3, (s) => {
+      const cables = [-1, 1].filter((sd) => sd !== inner).map((side) => sweep(g, a, b, 3, (s) => {
         const hw = g.tunnelHalfWidthAt(s) * side;
         const i = -0.12 * side;
         return [[hw, 1.2], [hw + i, 1.2], [hw + i, 1.5], [hw, 1.5]];
@@ -81,6 +117,7 @@ export class WorldBuilder {
       this.add(new THREE.Mesh(mergeGeometries(cables), this.mat.cable), o);
       for (let s = Math.ceil(a / 24) * 24; s < b; s += 24) {
         for (const side of [-1, 1]) {
+          if (side === inner) continue;
           const hw = g.tunnelHalfWidthAt(s) - 0.08;
           const p = g.point(s, hw * side, 2.55);
           const m = new THREE.Matrix4().makeRotationY(-g.heading(s));
@@ -100,10 +137,10 @@ export class WorldBuilder {
   buildTrack() {
     const g = this.geom;
     const sleeperGeo = new THREE.BoxGeometry(2.5, 0.14, 0.24);
-    for (let a = 0; a < g.length - 0.5; a += CHUNK) {
-      const b = Math.min(g.length, a + CHUNK);
+    for (const [a, b] of this.chunk(this.opts.fromS, g.length)) {
       const o = this.origin(a);
       const railGeos = [], topGeos = [], cond = [];
+      const inner = this.innerSide(a, b);
       for (const route of Object.values(this.routes)) {
         const sg = route.sign;
         for (const r of [-GAUGE_HALF, GAUGE_HALF]) {
@@ -117,14 +154,14 @@ export class WorldBuilder {
           }, { origin: o }));
           topGeos.push(sweep(g, a, b, 3, (s) => { const c = sg * g.halfSpacingAt(s) + r; return [[c - 0.036, 0.001], [c + 0.036, 0.001]]; }, { origin: o }));
         }
-        cond.push(sweep(g, a, b, 3, (s) => {
+        if (sg !== inner) cond.push(sweep(g, a, b, 3, (s) => {
           const c = sg * (g.halfSpacingAt(s) + GAUGE_HALF + 0.62);
           return [[c - 0.05, -0.12], [c - 0.05, 0.04], [c + 0.05, 0.04], [c + 0.05, -0.12]];
         }, { origin: o }));
       }
       this.add(new THREE.Mesh(mergeGeometries(railGeos), this.mat.rail), o);
       this.add(new THREE.Mesh(mergeGeometries(topGeos), this.mat.railTop), o);
-      this.add(new THREE.Mesh(mergeGeometries(cond), this.mat.conductor), o);
+      if (cond.length) this.add(new THREE.Mesh(mergeGeometries(cond), this.mat.conductor), o);
       const count = Math.floor((b - a) / 0.75) * 2;
       const sl = new THREE.InstancedMesh(sleeperGeo, this.mat.sleeper, count);
       const m = new THREE.Matrix4();
@@ -176,6 +213,7 @@ export class WorldBuilder {
   }
 
   addBoard(route, r, side, height, w, h, tex, postMat) {
+    if (route.toTrack(r) < this.opts.fromS + 5) return;
     const p = route.point(r, side, height);
     const heading = this.geom.heading(route.toTrack(r));
     const phi = -heading + (route.sign < 0 ? Math.PI : 0);
@@ -195,6 +233,7 @@ export class WorldBuilder {
     const wall = new THREE.MeshLambertMaterial({ map: Textures.concrete('#55524d'), side: THREE.DoubleSide });
     for (const route of Object.values(this.routes)) {
       const r = route.length - 8;
+      if (route.toTrack(r) < this.opts.fromS) continue;
       const p = route.point(r, 0, 0.6);
       const beam = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.5), mat);
       beam.position.set(p.x, p.y, p.z);
@@ -205,6 +244,7 @@ export class WorldBuilder {
       this.group.add(st);
     }
     for (const s of [0.05, this.geom.length - 0.05]) {
+      if (s < this.opts.fromS) continue;
       const hw = this.geom.tunnelHalfWidthAt(s);
       const p = this.geom.point(s, 0, 2.4);
       const cap = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, 6), wall);
@@ -217,8 +257,9 @@ export class WorldBuilder {
   /** Free space at a chainage (used to keep exterior cameras inside tunnels and stations). */
   envelope(trackS) {
     const z = this.geom.stationZoneAt(trackS);
-    if (z) {
-      const sv = this.stations[z.index];
+    const sv = z && this.stations.find((x) => x.index === z.index);
+    if (z && !sv && this.opts.fallback) return this.opts.fallback.envelope(trackS);
+    if (sv) {
       return { maxLat: sv.W - 0.4, ceil: (lat) => (sv.style === 'vault' ? sv.H + sv.vaultRise * Math.sqrt(Math.max(0, 1 - (lat / sv.W) ** 2)) : sv.H) - 0.35 };
     }
     const hw = this.geom.tunnelHalfWidthAt(trackS);
@@ -229,7 +270,7 @@ export class WorldBuilder {
   add(mesh, origin) { mesh.position.copy(origin); this.group.add(mesh); return mesh; }
 
   update(trackS, clock, etaProvider, viewPos) {
-    this.lights?.update(trackS);
+    if (viewPos) this.lights?.update(viewPos);
     if (viewPos) this.tunnelLights?.update(viewPos);
     for (const sv of this.stations) if (Math.abs(sv.centerS - trackS) < 500) sv.updatePIDs(clock, etaProvider);
   }
@@ -242,31 +283,38 @@ export class WorldBuilder {
   }
 }
 
-/** A fixed pool of point lights moved to the station nearest to the train (constant light count = no shader recompiles). */
+/** A fixed pool of point lights moved to the station nearest to the viewer (constant light count = no shader recompiles). */
 class StationLightPool {
-  constructor(scene, geom, line) {
-    this.scene = scene; this.geom = geom; this.line = line;
+  constructor(scene) {
+    this.scene = scene;
+    this.sources = [];
     this.lights = [];
     for (let i = 0; i < 6; i++) {
       const l = new THREE.PointLight(0xfff2dd, 0, 38, 1.4);
       scene.add(l);
       this.lights.push(l);
     }
-    this.current = -1;
+    this.current = null;
+    this.t = 0;
   }
-  update(trackS) {
+  addSource(geom, line, zones) {
+    for (const z of zones) { const p = geom.point(z.center); this.sources.push({ geom, line, z, p: new THREE.Vector3(p.x, p.y, p.z) }); }
+  }
+  update(viewPos) {
+    if (++this.t % 10 !== 1) return;
     let best = null, bd = Infinity;
-    this.geom.zones.forEach((z) => { const d = Math.abs(z.center - trackS); if (d < bd) { bd = d; best = z; } });
-    if (!best || best.index === this.current) return;
-    this.current = best.index;
-    const st = this.line.stations[best.index];
-    const hs = this.geom.halfSpacingAt(best.center);
+    for (const src of this.sources) { const d = src.p.distanceToSquared(viewPos); if (d < bd) { bd = d; best = src; } }
+    if (!best || best === this.current) return;
+    this.current = best;
+    const { geom, line, z } = best;
+    const st = line.stations[z.index];
+    const hs = geom.halfSpacingAt(z.center);
     const lat = st.platformType === 'island' ? [0, 0] : [hs + 1.45 + st.platformWidth / 2, -(hs + 1.45 + st.platformWidth / 2)];
     const color = st.style === 'modern' ? 0xe8f0ff : st.style === 'pillars' ? 0xfff6e6 : 0xffe9c4;
     const zs = [-st.platformLength / 3, 0, st.platformLength / 3];
     let i = 0;
-    for (const side of lat) for (const z of zs) {
-      const p = this.geom.point(best.center + z, side, 3.6);
+    for (const side of lat) for (const dz of zs) {
+      const p = geom.point(z.center + dz, side, 3.6);
       const l = this.lights[i++];
       l.position.set(p.x, p.y, p.z);
       l.color.setHex(color);

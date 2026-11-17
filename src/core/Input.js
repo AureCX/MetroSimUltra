@@ -15,6 +15,7 @@ export const ACTIONS = {
   announce:       { label: 'Play next-station announcement',    keys: ['KeyR'], pad: [8] },
   headlights:     { label: 'Headlights high / low',             keys: ['KeyL'], pad: [] },
   cabLight:       { label: 'Cab light',                         keys: ['KeyK'], pad: [] },
+  routeSelect:    { label: 'Set route at junction',             keys: ['KeyJ'], pad: [14, 15] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };

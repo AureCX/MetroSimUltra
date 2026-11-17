@@ -160,6 +160,7 @@ export class Cabin {
       ['OPEN LEFT', -0.86, -0.12, 0x2a7bff, () => A.doorsOpen('left'), (s) => s.doorsOpenSide === 'left'],
       ['CLOSE DOORS', -0.66, -0.12, 0xffc400, () => A.doorsClose(), (s) => s.doorsStatus === 'warning' || s.doorsStatus === 'closing'],
       ['OPEN RIGHT', 0.86, -0.12, 0x2a7bff, () => A.doorsOpen('right'), (s) => s.doorsOpenSide === 'right'],
+      ['ROUTE', -0.86, -0.24, 0xf2f2f2, () => A.routeSelect(), (s) => !!s.junction?.set],
       ['HORN', -0.46, -0.24, 0x9aa1a8, null, (s) => s.horn, { down: () => A.horn(true), up: () => A.horn(false) }],
       ['ANNOUNCE', -0.26, -0.24, 0x9aa1a8, () => A.announce(), () => false],
       ['VIGILANCE', 0.0, -0.24, 0xff7a00, () => A.vigilance(), (s) => s.vigAlarm],

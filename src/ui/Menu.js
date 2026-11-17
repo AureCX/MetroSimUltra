@@ -110,10 +110,18 @@ export class Menu {
     const select = (id) => { this.sel.lineId = id; this.persist(); this.renderLines(); };
     renderNetworkMap(this.root.querySelector('#l-map'), lines, this.sel.lineId, select);
     const list = this.root.querySelector('#l-list');
-    list.innerHTML = lines.map((l) => `<button class="line-item ${l.id === this.sel.lineId ? 'sel' : ''}" data-id="${l.id}">
+    // One entry per line; a branching line's services are chosen in the detail panel.
+    const groups = [...new Map(lines.map((l) => [l.sourceId, this.repo.services(l)])).values()];
+    const cur = this.line;
+    list.innerHTML = groups.map((svcs) => {
+      const l = svcs.find((x) => x.id === cur?.id) || svcs[0];
+      const sel = svcs.some((x) => x.id === cur?.id);
+      const ends = svcs.length > 1 ? `${esc(l.stations[0].name)} ↔ ${svcs.map((x) => esc(x.stations.at(-1).name)).join(' / ')}` : `${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}`;
+      return `<button class="line-item ${sel ? 'sel' : ''}" data-id="${l.id}">
       <span class="line-badge" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
-      <span><b>${esc(l.fullName)}</b><br><span class="sub">${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}</span></span>
-      ${l.builtIn ? '' : '<span class="tag">custom</span>'}</button>`).join('');
+      <span><b>${esc(l.name)}</b>${svcs.length > 1 ? ` <span class="sub">· ${svcs.length} branches</span>` : ''}<br><span class="sub">${ends}</span></span>
+      ${l.builtIn ? '' : '<span class="tag">custom</span>'}</button>`;
+    }).join('');
     list.querySelectorAll('.line-item').forEach((b) => (b.onclick = () => select(b.dataset.id)));
     this.renderLineDetail();
   }
@@ -122,15 +130,20 @@ export class Menu {
     const l = this.line, el = this.root.querySelector('#l-detail');
     if (!l) { el.innerHTML = ''; return; }
     if (l.network !== this.network) { el.innerHTML = '<p class="sub">Select a line on the map.</p>'; return; }
-    const audioKeys = new Set((await AssetStore.listAudioKeys(`${l.id}/`)).map((k) => k.slice(l.id.length + 1)));
+    const audioKeys = new Set((await AssetStore.listAudioKeys(`${l.sourceId}/`)).map((k) => k.slice(l.sourceId.length + 1)));
     const geom = new TrackGeometry(l);
     const route = new Route(l, geom, this.sel.direction);
     const tt = new Timetable(route, this.train, l.startTime);
     const total = l.stations.reduce((a, s) => a + s.distanceToNext, 0);
+    const svcs = this.repo.services(l);
+    const dirLabel = (d) => (svcs.length > 1 && d === 'A' ? `Direction ${svcs.map((x) => x.service).join(' / ')}` : l.directions[d].name);
+    const branchRow = svcs.length > 1 ? `<div class="branch-toggle"><span class="sub">${this.sel.direction === 'A' ? 'Destination:' : 'Starting from:'}</span>${svcs.map((x) => `<button class="btn small ${x.id === l.id ? 'primary' : ''}" data-svc="${x.id}">${esc(x.service)}</button>`).join('')}
+      <span class="sub">${this.sel.direction === 'A' ? `Set the route at ${esc(l.stations[l.trunkLength - 1].name)} junction while driving.` : ''}</span></div>` : '';
     el.innerHTML = `
       <div class="detail-head"><span class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
-      <div><h3>${esc(l.fullName)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km · ${l.stations.length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
-      <div class="dir-toggle">${['A', 'B'].map((d) => `<button class="btn small ${d === this.sel.direction ? 'primary' : ''}" data-dir="${d}">${esc(l.directions[d].name)}</button>`).join('')}</div>
+      <div><h3>${esc(l.name)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km · ${l.stations.length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
+      <div class="dir-toggle">${['A', 'B'].map((d) => `<button class="btn small ${d === this.sel.direction ? 'primary' : ''}" data-dir="${d}">${esc(dirLabel(d))}</button>`).join('')}</div>
+      ${branchRow}
       <div class="table-wrap"><table class="stations">
         <thead><tr><th>#</th><th>Station</th><th>Next</th><th>Limit</th><th>Dwell</th><th>Arr</th><th>Platform</th><th title="Next-station announcement">🔊</th></tr></thead>
         <tbody>${route.stops.map((s, k) => {
@@ -149,6 +162,7 @@ export class Menu {
         <button class="btn primary" id="l-use">Drive this line ▶</button>
       </div>
       <p class="sub">MP3 files are matched to stations by file name (e.g. <code>${esc(l.stations[1].id)}.mp3</code>, or <code>${esc(l.stations[1].id)}-arrival.mp3</code> for the arrival message).</p>`;
+    el.querySelectorAll('[data-svc]').forEach((b) => (b.onclick = () => { this.sel.lineId = b.dataset.svc; this.persist(); this.renderLines(); }));
     el.querySelectorAll('[data-dir]').forEach((b) => (b.onclick = () => { this.sel.direction = b.dataset.dir; this.persist(); this.renderLineDetail(); }));
     el.querySelector('#l-use').onclick = () => { this.persist(); this.emit('play', { line: l, train: this.train, direction: this.sel.direction }); };
     el.querySelector('#l-export').onclick = () => this.showJson(`${l.name} — line file`, l.raw.branches || !l.service ? l.raw : l.raw);
@@ -163,7 +177,7 @@ export class Menu {
         const m = base.match(/^(.*?)(?:-(arrival|terminus))?$/);
         const st = l.stations.find((s) => s.id === m[1] || slugify(s.name) === m[1]);
         if (!st) { msgs.push(`✗ ${f.name}: no station named “${m[1]}”`); continue; }
-        await AssetStore.putAudio(`${l.id}/${st.id}${m[2] ? `:${m[2]}` : ''}`, f);
+        await AssetStore.putAudio(`${l.sourceId}/${st.id}${m[2] ? `:${m[2]}` : ''}`, f);
         msgs.push(`✓ ${f.name} → ${st.name}${m[2] ? ` (${m[2]})` : ''}`);
       }
       this.notice(msgs.join('\n'));
@@ -171,12 +185,12 @@ export class Menu {
     };
     el.querySelectorAll('[data-up]').forEach((inp) => (inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return;
-      await AssetStore.putAudio(`${l.id}/${inp.dataset.up}`, f);
+      await AssetStore.putAudio(`${l.sourceId}/${inp.dataset.up}`, f);
       this.renderLineDetail();
     }));
-    el.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await AssetStore.deleteAudio(`${l.id}/${b.dataset.del}`); this.renderLineDetail(); }));
+    el.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await AssetStore.deleteAudio(`${l.sourceId}/${b.dataset.del}`); this.renderLineDetail(); }));
     el.querySelectorAll('[data-play]').forEach((b) => (b.onclick = async () => {
-      const blob = await AssetStore.getAudio(`${l.id}/${b.dataset.play}`);
+      const blob = await AssetStore.getAudio(`${l.sourceId}/${b.dataset.play}`);
       if (!blob) return;
       const a = new Audio(URL.createObjectURL(blob)); a.volume = this.settings.get('audio.master'); a.play();
     }));

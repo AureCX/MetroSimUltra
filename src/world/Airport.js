@@ -136,7 +136,8 @@ function aircraftGeometry(kind) {
   return { body, fin, L, span, door: [L * 0.3, cy + R * 0.1, R] };
 }
 
-export function buildAirport(parent, f, line, geom, stationIndex) {
+export function buildAirport(parent, f, line, geom, stationIndex, opts = {}) {
+  const landside = opts.landside !== false;
   const T = tex(), ct = cityTextures();
   const grp = new THREE.Group(); grp.position.set(f.x, f.y, f.z); grp.rotation.y = f.yaw; grp.name = 'airport';
   parent.add(grp);
@@ -159,9 +160,9 @@ export function buildAirport(parent, f, line, geom, stationIndex) {
   };
   const Y = 0.04;
   // ---- Airfield ground ----
-  k.strip(5600, 3400, M.grass, 0, -1250, 0, 0, 60, 60);
+  if (landside) k.strip(5600, 3400, M.grass, 0, -1250, 0, 0, 60, 60); else k.strip(5600, 2960, M.grass, 0, -1480, 0, 0, 60, 60);
   // ---- Runways (along local x) ----
-  const hdg = (geom.heading(geom.stationS[stationIndex]) * 180) / Math.PI; // runways run along the line
+  const hdg = geom ? (geom.heading(geom.stationS[stationIndex]) * 180) / Math.PI : opts.heading ?? 90; // runways run along the line
   const dA = designator(hdg), dB = designator(hdg + 180);
   const runways = [{ z: -980, len: 3400, s: ['L', 'R'] }, { z: -1480, len: 3000, s: ['R', 'L'], x: 300 }];
   for (const rw of runways) {
@@ -263,11 +264,13 @@ export function buildAirport(parent, f, line, geom, stationIndex) {
   // Windsocks.
   for (const [x, z] of [[-1500, -1120], [1500, -1120]]) { k.mesh(new THREE.CylinderGeometry(0.1, 0.12, 8, 6), M.grey, x, 4, z); const sock = k.mesh(new THREE.ConeGeometry(0.7, 4, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xff6a1a, side: THREE.DoubleSide }), x + 2, 7.6, z); sock.rotation.z = Math.PI / 2; }
   // ---- Landside: forecourt roads, car parks, hotel, station entrance ----
+  if (landside) {
   k.strip(14, 620, M.road, 0, TZ + 82, Y, Math.PI / 2, 14, 30);     // departures kerb
   k.strip(14, 700, M.road, 0, TZ + 112, Y, Math.PI / 2, 14, 30);    // arrivals / through road
   k.strip(14, 900, M.road, -380, TZ + 520, Y, 0, 14, 30);            // access road
   k.strip(14, 900, M.road, 380, TZ + 520, Y, 0, 14, 30);
   k.strip(780, 14, M.road, 0, TZ + 960, Y, 0, 30, 14);
+  }
   for (const sx of [-1, 1]) {
     const gx = sx * 170, gz = TZ + 190;
     k.mesh(boxGeo(220, 16, 90, 0, 0, 0, 0, 3.5, 0.55), M.garage, gx, 8, gz);
@@ -276,8 +279,8 @@ export function buildAirport(parent, f, line, geom, stationIndex) {
   k.mesh(boxGeo(70, 64, 24, 0, 0, 0, 0, 4, 0.5), M.glass, 0, 32, TZ + 300);
   k.plane(40, 5, new THREE.MeshBasicMaterial({ map: Textures.label('HÔTEL AÉROPORT', { w: 1024, h: 128, bg: '#20303f', fg: '#ffffff', font: 'bold 80px Arial' }) }), 0, 60, TZ + 312.05);
   const mBadge = new THREE.MeshBasicMaterial({ map: Textures.label('M', { w: 128, h: 128, bg: '#ffffff', fg: '#1f3c88', font: 'bold 96px Arial', border: '#1f3c88', radius: 64 }), transparent: true });
-  const lb = new THREE.MeshBasicMaterial({ map: Textures.label(line.number, { w: 128, h: 128, bg: line.color, fg: line.textColor, font: 'bold 80px Arial', radius: 64 }), transparent: true });
-  k.box(0.3, 5, 0.3, M.dark, 40, 2.5, TZ + 74); k.plane(2, 2, mBadge, 40, 5.5, TZ + 74.2); k.plane(1.4, 1.4, lb, 40, 3.8, TZ + 74.2);
+  const lb = line && new THREE.MeshBasicMaterial({ map: Textures.label(line.number, { w: 128, h: 128, bg: line.color, fg: line.textColor, font: 'bold 80px Arial', radius: 64 }), transparent: true });
+  if (line) { k.box(0.3, 5, 0.3, M.dark, 40, 2.5, TZ + 74); k.plane(2, 2, mBadge, 40, 5.5, TZ + 74.2); k.plane(1.4, 1.4, lb, 40, 3.8, TZ + 74.2); }
   // Apron floodlight masts.
   for (const x of [-330, -110, 110, 330]) { k.mesh(new THREE.CylinderGeometry(0.4, 0.6, 30, 8), M.grey, x, 15, -560); k.box(6, 1, 2, M.lightW, x, 30, -560); }
   // Merge the many static meshes per material to keep draw calls low.

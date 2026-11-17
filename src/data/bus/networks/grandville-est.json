@@ -1,0 +1,777 @@
+{
+ "id": "grandville-est",
+ "name": "Grandville Est – Aéroport",
+ "frame": "airport",
+ "airport": {
+  "x": 0,
+  "z": 0
+ },
+ "depot": {
+  "name": "Dépôt Aéroval / Grandville Est",
+  "x0": 1130,
+  "z0": 360,
+  "x1": 1570,
+  "z1": 600,
+  "exitNode": "depotIn",
+  "start": {
+   "x": 1350,
+   "z": 520,
+   "heading": 0
+  },
+  "bays": {
+   "fuel": [
+    1220,
+    400
+   ],
+   "charge": [
+    1470,
+    400
+   ],
+   "wash": [
+    1220,
+    520
+   ],
+   "maintenance": [
+    1470,
+    520
+   ]
+  }
+ },
+ "nodes": [
+  {
+   "id": "n-1100_45",
+   "x": -1100,
+   "z": 45
+  },
+  {
+   "id": "n-380_45",
+   "x": -380,
+   "z": 45,
+   "signal": true
+  },
+  {
+   "id": "n380_45",
+   "x": 380,
+   "z": 45,
+   "signal": true
+  },
+  {
+   "id": "n1100_45",
+   "x": 1100,
+   "z": 45
+  },
+  {
+   "id": "n1600_45",
+   "x": 1600,
+   "z": 45
+  },
+  {
+   "id": "n-1100_330",
+   "x": -1100,
+   "z": 330
+  },
+  {
+   "id": "n-380_330",
+   "x": -380,
+   "z": 330,
+   "signal": true
+  },
+  {
+   "id": "n380_330",
+   "x": 380,
+   "z": 330,
+   "signal": true
+  },
+  {
+   "id": "n1100_330",
+   "x": 1100,
+   "z": 330,
+   "roundabout": 22
+  },
+  {
+   "id": "n1600_330",
+   "x": 1600,
+   "z": 330
+  },
+  {
+   "id": "n-1100_620",
+   "x": -1100,
+   "z": 620
+  },
+  {
+   "id": "n-380_620",
+   "x": -380,
+   "z": 620,
+   "signal": true
+  },
+  {
+   "id": "n380_620",
+   "x": 380,
+   "z": 620,
+   "signal": true
+  },
+  {
+   "id": "n1100_620",
+   "x": 1100,
+   "z": 620,
+   "signal": true
+  },
+  {
+   "id": "n1600_620",
+   "x": 1600,
+   "z": 620
+  },
+  {
+   "id": "n-1100_920",
+   "x": -1100,
+   "z": 920
+  },
+  {
+   "id": "n-380_920",
+   "x": -380,
+   "z": 920,
+   "signal": true
+  },
+  {
+   "id": "n380_920",
+   "x": 380,
+   "z": 920,
+   "signal": true
+  },
+  {
+   "id": "n1100_920",
+   "x": 1100,
+   "z": 920,
+   "signal": true
+  },
+  {
+   "id": "n1600_920",
+   "x": 1600,
+   "z": 920
+  },
+  {
+   "id": "n-1100_1210",
+   "x": -1100,
+   "z": 1210
+  },
+  {
+   "id": "n-380_1210",
+   "x": -380,
+   "z": 1210
+  },
+  {
+   "id": "n380_1210",
+   "x": 380,
+   "z": 1210
+  },
+  {
+   "id": "n1100_1210",
+   "x": 1100,
+   "z": 1210
+  },
+  {
+   "id": "cargo1",
+   "x": 520,
+   "z": 45
+  },
+  {
+   "id": "cargo2",
+   "x": 520,
+   "z": -300
+  },
+  {
+   "id": "cargo3",
+   "x": 1000,
+   "z": -300,
+   "roundabout": 16
+  },
+  {
+   "id": "depot",
+   "x": 1350,
+   "z": 330
+  },
+  {
+   "id": "depotIn",
+   "x": 1350,
+   "z": 430
+  }
+ ],
+ "edges": [
+  {
+   "a": "n-1100_45",
+   "b": "n-380_45",
+   "name": "Route des Terminaux",
+   "speed": 30
+  },
+  {
+   "a": "n-380_45",
+   "b": "n380_45",
+   "name": "Parvis des Terminaux",
+   "speed": 30,
+   "lanes": 2,
+   "busLane": true
+  },
+  {
+   "a": "n380_45",
+   "b": "cargo1",
+   "name": "Route des Terminaux",
+   "speed": 50
+  },
+  {
+   "a": "cargo1",
+   "b": "n1100_45",
+   "name": "Route des Terminaux",
+   "speed": 50
+  },
+  {
+   "a": "n1100_45",
+   "b": "n1600_45",
+   "name": "Avenue des Expositions",
+   "speed": 50
+  },
+  {
+   "a": "cargo1",
+   "b": "cargo2",
+   "name": "Rue du Fret",
+   "speed": 50
+  },
+  {
+   "a": "cargo2",
+   "b": "cargo3",
+   "name": "Rue du Fret",
+   "speed": 30
+  },
+  {
+   "a": "n-1100_330",
+   "b": "n-380_330",
+   "name": "Boulevard des Hôtels",
+   "speed": 50
+  },
+  {
+   "a": "n-380_330",
+   "b": "n380_330",
+   "name": "Boulevard des Hôtels",
+   "speed": 50
+  },
+  {
+   "a": "n380_330",
+   "b": "n1100_330",
+   "name": "Boulevard des Hôtels",
+   "speed": 50
+  },
+  {
+   "a": "n1100_330",
+   "b": "depot",
+   "name": "Boulevard des Hôtels",
+   "speed": 50
+  },
+  {
+   "a": "depot",
+   "b": "n1600_330",
+   "name": "Boulevard des Hôtels",
+   "speed": 50
+  },
+  {
+   "a": "n-1100_620",
+   "b": "n-380_620",
+   "name": "Avenue des Affaires",
+   "speed": 50
+  },
+  {
+   "a": "n-380_620",
+   "b": "n380_620",
+   "name": "Avenue des Affaires",
+   "speed": 50
+  },
+  {
+   "a": "n380_620",
+   "b": "n1100_620",
+   "name": "Avenue des Affaires",
+   "speed": 50
+  },
+  {
+   "a": "n1100_620",
+   "b": "n1600_620",
+   "name": "Avenue des Affaires",
+   "speed": 50
+  },
+  {
+   "a": "n-1100_920",
+   "b": "n-380_920",
+   "name": "Autoroute A17 – Boulevard de l'Aéroport",
+   "speed": 90,
+   "lanes": 2
+  },
+  {
+   "a": "n-380_920",
+   "b": "n380_920",
+   "name": "Autoroute A17 – Boulevard de l'Aéroport",
+   "speed": 90,
+   "lanes": 2
+  },
+  {
+   "a": "n380_920",
+   "b": "n1100_920",
+   "name": "Autoroute A17 – Boulevard de l'Aéroport",
+   "speed": 90,
+   "lanes": 2
+  },
+  {
+   "a": "n1100_920",
+   "b": "n1600_920",
+   "name": "Autoroute A17 – Boulevard de l'Aéroport",
+   "speed": 90,
+   "lanes": 2
+  },
+  {
+   "a": "n-1100_1210",
+   "b": "n-380_1210",
+   "name": "Rue des Coteaux",
+   "speed": 30
+  },
+  {
+   "a": "n-380_1210",
+   "b": "n380_1210",
+   "name": "Rue des Coteaux",
+   "speed": 30
+  },
+  {
+   "a": "n380_1210",
+   "b": "n1100_1210",
+   "name": "Rue des Coteaux",
+   "speed": 30
+  },
+  {
+   "a": "n-1100_45",
+   "b": "n-1100_330",
+   "name": "Rue du Personnel",
+   "speed": 50
+  },
+  {
+   "a": "n-1100_330",
+   "b": "n-1100_620",
+   "name": "Rue du Personnel",
+   "speed": 50
+  },
+  {
+   "a": "n-1100_620",
+   "b": "n-1100_920",
+   "name": "Rue du Personnel",
+   "speed": 50
+  },
+  {
+   "a": "n-1100_920",
+   "b": "n-1100_1210",
+   "name": "Rue du Personnel",
+   "speed": 50
+  },
+  {
+   "a": "n-380_45",
+   "b": "n-380_330",
+   "name": "Avenue Jean Mermoz",
+   "speed": 50,
+   "lanes": 2,
+   "busLane": true
+  },
+  {
+   "a": "n-380_330",
+   "b": "n-380_620",
+   "name": "Avenue Jean Mermoz",
+   "speed": 50,
+   "lanes": 2,
+   "busLane": true
+  },
+  {
+   "a": "n-380_620",
+   "b": "n-380_920",
+   "name": "Avenue Jean Mermoz",
+   "speed": 50
+  },
+  {
+   "a": "n-380_920",
+   "b": "n-380_1210",
+   "name": "Avenue Jean Mermoz",
+   "speed": 50
+  },
+  {
+   "a": "n380_45",
+   "b": "n380_330",
+   "name": "Rue Hélène Boucher",
+   "speed": 50
+  },
+  {
+   "a": "n380_330",
+   "b": "n380_620",
+   "name": "Rue Hélène Boucher",
+   "speed": 50
+  },
+  {
+   "a": "n380_620",
+   "b": "n380_920",
+   "name": "Rue Hélène Boucher",
+   "speed": 50
+  },
+  {
+   "a": "n380_920",
+   "b": "n380_1210",
+   "name": "Rue Hélène Boucher",
+   "speed": 50
+  },
+  {
+   "a": "n1100_45",
+   "b": "n1100_330",
+   "name": "Avenue de la Gare Routière",
+   "speed": 50
+  },
+  {
+   "a": "n1100_330",
+   "b": "n1100_620",
+   "name": "Avenue de la Gare Routière",
+   "speed": 50
+  },
+  {
+   "a": "n1100_620",
+   "b": "n1100_920",
+   "name": "Avenue de la Gare Routière",
+   "speed": 50
+  },
+  {
+   "a": "n1100_920",
+   "b": "n1100_1210",
+   "name": "Avenue de la Gare Routière",
+   "speed": 50
+  },
+  {
+   "a": "n1600_45",
+   "b": "n1600_330",
+   "name": "Rue des Halls",
+   "speed": 50
+  },
+  {
+   "a": "n1600_330",
+   "b": "n1600_620",
+   "name": "Rue des Halls",
+   "speed": 50
+  },
+  {
+   "a": "n1600_620",
+   "b": "n1600_920",
+   "name": "Rue des Halls",
+   "speed": 50
+  },
+  {
+   "a": "depot",
+   "b": "depotIn",
+   "name": "Accès Dépôt",
+   "speed": 20
+  }
+ ],
+ "blocks": [
+  {
+   "x0": -1100,
+   "z0": 45,
+   "x1": -380,
+   "z1": 330,
+   "type": "staff",
+   "name": "Zone du Personnel"
+  },
+  {
+   "x0": 380,
+   "z0": 45,
+   "x1": 1100,
+   "z1": 330,
+   "type": "rental",
+   "name": "Centre de Location de Voitures"
+  },
+  {
+   "x0": 1100,
+   "z0": 45,
+   "x1": 1600,
+   "z1": 330,
+   "type": "expo",
+   "name": "Parc des Expositions"
+  },
+  {
+   "x0": -1100,
+   "z0": 330,
+   "x1": -380,
+   "z1": 620,
+   "type": "business",
+   "name": "Quartier d'Affaires de l'Aéroport"
+  },
+  {
+   "x0": -380,
+   "z0": 330,
+   "x1": 380,
+   "z1": 620,
+   "type": "business",
+   "name": "Quartier d'Affaires de l'Aéroport"
+  },
+  {
+   "x0": 380,
+   "z0": 330,
+   "x1": 1100,
+   "z1": 620,
+   "type": "hotel",
+   "name": "Hôtels de l'Aéroport"
+  },
+  {
+   "x0": 1100,
+   "z0": 330,
+   "x1": 1600,
+   "z1": 620,
+   "type": "depot",
+   "name": "Dépôt Aéroval / Grandville Est"
+  },
+  {
+   "x0": -1100,
+   "z0": 620,
+   "x1": -380,
+   "z1": 920,
+   "type": "parking",
+   "name": "Parking Longue Durée P5"
+  },
+  {
+   "x0": -380,
+   "z0": 620,
+   "x1": 380,
+   "z1": 920,
+   "type": "commercial",
+   "name": "Centre Commercial Aéroville"
+  },
+  {
+   "x0": 380,
+   "z0": 620,
+   "x1": 1100,
+   "z1": 920,
+   "type": "industrial",
+   "name": "Zone Industrielle Est"
+  },
+  {
+   "x0": 1100,
+   "z0": 620,
+   "x1": 1600,
+   "z1": 920,
+   "type": "industrial",
+   "name": "Zone Industrielle Est"
+  },
+  {
+   "x0": -1100,
+   "z0": 920,
+   "x1": -380,
+   "z1": 1210,
+   "type": "residential",
+   "name": "Les Coteaux"
+  },
+  {
+   "x0": -380,
+   "z0": 920,
+   "x1": 380,
+   "z1": 1210,
+   "type": "residential",
+   "name": "Les Coteaux"
+  },
+  {
+   "x0": 380,
+   "z0": 920,
+   "x1": 1100,
+   "z1": 1210,
+   "type": "residential",
+   "name": "Les Tilleuls"
+  }
+ ],
+ "stops": [
+  {
+   "id": "t1",
+   "name": "Aéroport International – Terminal 1 (Est)",
+   "edge": [
+    "n-380_45",
+    "n380_45"
+   ],
+   "along": 560,
+   "demand": 3.0,
+   "aeroval": true,
+   "metro": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "id": "t2",
+   "name": "Aéroport International – Terminal 2 (Ouest)",
+   "edge": [
+    "n-1100_45",
+    "n-380_45"
+   ],
+   "along": 200,
+   "demand": 2.4,
+   "aeroval": true
+  },
+  {
+   "id": "cargo",
+   "name": "Zone Cargo & Fret",
+   "edge": [
+    "cargo2",
+    "cargo3"
+   ],
+   "along": 380,
+   "demand": 0.8,
+   "aeroval": true
+  },
+  {
+   "id": "expo",
+   "name": "Parc des Expositions",
+   "edge": [
+    "n1100_45",
+    "n1600_45"
+   ],
+   "along": 250,
+   "demand": 1.6,
+   "metroStation": "Parc des Expositions",
+   "metro": [
+    "B"
+   ]
+  },
+  {
+   "id": "location",
+   "name": "Centre de Location de Voitures",
+   "edge": [
+    "n380_45",
+    "n380_330"
+   ],
+   "along": 140,
+   "demand": 1.2,
+   "aeroval": true
+  },
+  {
+   "id": "hotels",
+   "name": "Hôtels de l'Aéroport",
+   "edge": [
+    "n380_330",
+    "n1100_330"
+   ],
+   "along": 350,
+   "demand": 1.5,
+   "aeroval": true
+  },
+  {
+   "id": "affaires",
+   "name": "Quartier d'Affaires de l'Aéroport",
+   "edge": [
+    "n-380_330",
+    "n380_330"
+   ],
+   "along": 380,
+   "demand": 2.2
+  },
+  {
+   "id": "parkingld",
+   "name": "Parking Longue Durée P5",
+   "edge": [
+    "n-380_620",
+    "n-380_920"
+   ],
+   "along": 150,
+   "demand": 1.0,
+   "aeroval": true
+  },
+  {
+   "id": "personnel",
+   "name": "Zone du Personnel",
+   "edge": [
+    "n-380_45",
+    "n-380_330"
+   ],
+   "along": 140,
+   "demand": 1.3,
+   "aeroval": true
+  },
+  {
+   "id": "commercial",
+   "name": "Centre Commercial Aéroville",
+   "edge": [
+    "n-380_620",
+    "n380_620"
+   ],
+   "along": 380,
+   "demand": 2.0
+  },
+  {
+   "id": "coteaux",
+   "name": "Les Coteaux – Mairie",
+   "edge": [
+    "n-380_1210",
+    "n380_1210"
+   ],
+   "along": 380,
+   "demand": 1.6
+  },
+  {
+   "id": "tilleuls",
+   "name": "Avenue des Tilleuls",
+   "edge": [
+    "n380_1210",
+    "n1100_1210"
+   ],
+   "along": 360,
+   "demand": 1.1
+  },
+  {
+   "id": "zi",
+   "name": "Zone Industrielle Est",
+   "edge": [
+    "n1100_620",
+    "n1100_920"
+   ],
+   "along": 150,
+   "demand": 0.9
+  },
+  {
+   "id": "gareroutiere",
+   "name": "Gare Routière Aéroport",
+   "edge": [
+    "n1100_330",
+    "n1100_620"
+   ],
+   "along": 120,
+   "demand": 1.4
+  }
+ ],
+ "crossings": [
+  {
+   "edge": [
+    "n-380_45",
+    "n380_45"
+   ],
+   "along": 380
+  },
+  {
+   "edge": [
+    "n-1100_45",
+    "n-380_45"
+   ],
+   "along": 240
+  },
+  {
+   "edge": [
+    "n1100_45",
+    "n1600_45"
+   ],
+   "along": 300
+  },
+  {
+   "edge": [
+    "n-380_620",
+    "n380_620"
+   ],
+   "along": 420
+  },
+  {
+   "edge": [
+    "n-380_1210",
+    "n380_1210"
+   ],
+   "along": 420
+  }
+ ]
+}

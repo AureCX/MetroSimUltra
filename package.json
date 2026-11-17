@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
     "build:single": "vite build && node tools/build-artifact.mjs",
-    "solve:line-b": "node tools/solve-line-b.mjs"
+    "solve:line-b": "node tools/solve-line-b.mjs",
+    "solve:line-c": "node tools/solve-line-c.mjs"
   },
   "dependencies": {
     "three": "0.170.0"

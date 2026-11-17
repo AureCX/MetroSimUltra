@@ -1,0 +1,44 @@
+{
+ "id": "urbano12",
+ "order": 1,
+ "name": "Urbano 12",
+ "type": "standard",
+ "description": "Standard 12 m diesel city bus, 3 doors, 6-speed automatic.",
+ "length": 12.0,
+ "width": 2.55,
+ "height": 3.05,
+ "wheelbase": 5.9,
+ "frontOverhang": 2.7,
+ "mass": 11800,
+ "capacity": 100,
+ "seats": 30,
+ "doors": [
+  1.4,
+  6.2,
+  10.4
+ ],
+ "powertrain": "diesel",
+ "power": 220,
+ "torque": 1250,
+ "gears": [
+  3.36,
+  1.91,
+  1.42,
+  1.0,
+  0.72,
+  0.62
+ ],
+ "finalDrive": 5.74,
+ "idleRpm": 600,
+ "maxRpm": 2300,
+ "maxSpeed": 80,
+ "fuelCapacity": 280,
+ "brakeDecel": 5.5,
+ "steerMax": 0.85,
+ "rollStiffness": 1.0,
+ "livery": {
+  "body": "#e8ecef",
+  "stripe": "#1f4fa0",
+  "skirt": "#2a3038"
+ }
+}

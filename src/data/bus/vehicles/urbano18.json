@@ -1,0 +1,48 @@
+{
+ "id": "urbano18",
+ "order": 2,
+ "name": "Urbano 18 G",
+ "type": "articulated",
+ "description": "Articulated 18 m bus: long, heavy, wide turning circle, 4 doors.",
+ "length": 12.1,
+ "trailerLength": 6.9,
+ "width": 2.55,
+ "height": 3.05,
+ "wheelbase": 5.9,
+ "frontOverhang": 2.7,
+ "hitchBehindRear": 2.0,
+ "trailerAxle": 5.4,
+ "mass": 17200,
+ "capacity": 150,
+ "seats": 45,
+ "doors": [
+  1.4,
+  6.2,
+  10.6,
+  15.6
+ ],
+ "powertrain": "diesel",
+ "power": 265,
+ "torque": 1600,
+ "gears": [
+  3.36,
+  1.91,
+  1.42,
+  1.0,
+  0.72,
+  0.62
+ ],
+ "finalDrive": 6.2,
+ "idleRpm": 600,
+ "maxRpm": 2300,
+ "maxSpeed": 80,
+ "fuelCapacity": 350,
+ "brakeDecel": 5.0,
+ "steerMax": 0.9,
+ "rollStiffness": 0.9,
+ "livery": {
+  "body": "#e8ecef",
+  "stripe": "#1f4fa0",
+  "skirt": "#2a3038"
+ }
+}

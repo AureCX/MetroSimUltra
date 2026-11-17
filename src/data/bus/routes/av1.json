@@ -1,0 +1,30 @@
+{
+ "route": "AV1",
+ "name": "Aéroval Terminaux – Expositions",
+ "network": "grandville-est",
+ "operator": "aeroval",
+ "color": "#FFD000",
+ "textColor": "#16233a",
+ "language": "fr-FR",
+ "headway": 600,
+ "firstDeparture": "06:10",
+ "type": "airport",
+ "stops": [
+  {
+   "name": "Aéroport International – Terminal 1 (Est)",
+   "dwellTime": 30
+  },
+  {
+   "name": "Aéroport International – Terminal 2 (Ouest)",
+   "dwellTime": 25
+  },
+  {
+   "name": "Zone Cargo & Fret",
+   "dwellTime": 15
+  },
+  {
+   "name": "Parc des Expositions",
+   "dwellTime": 20
+  }
+ ]
+}

@@ -1,0 +1,212 @@
+{
+ "id": "grandville-c",
+ "line": "Line C",
+ "number": "C",
+ "network": "Grandville Métro",
+ "color": "#00DDF5",
+ "textColor": "#16233a",
+ "language": "fr-FR",
+ "maxSpeed": 75,
+ "startTime": "08:20:00",
+ "headway": 200,
+ "tunnel": {
+  "profile": "arch"
+ },
+ "map": {
+  "origin": [
+   1343.19,
+   -1742.47
+  ],
+  "heading": -164.665
+ },
+ "defaults": {
+  "platformLength": 110,
+  "platformWidth": 4.5,
+  "platformType": "side",
+  "approachSpeedLimit": 50,
+  "stopDuration": 20,
+  "style": "vault"
+ },
+ "signaling": {
+  "system": "fixed-block",
+  "blockLength": 300,
+  "overlap": 40,
+  "atpBrakeRate": 0.85
+ },
+ "announcements": {
+  "nextStation": "Prochaine station : {station}.",
+  "arrival": "{station}.",
+  "terminus": "{station}. Terminus. Tout le monde descend, s'il vous plaît."
+ },
+ "stations": [
+  {
+   "name": "Grandville Nord",
+   "distanceToNext": 487.4,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "modern",
+   "platformType": "island",
+   "platformWidth": 7,
+   "passengers": 26,
+   "theme": {
+    "wall": "#28362a",
+    "accent": "#00DDF5"
+   },
+   "track": [
+    {
+     "length": 200,
+     "gradient": 10
+    }
+   ]
+  },
+  {
+   "name": "Quartier des Affaires",
+   "distanceToNext": 487.4,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "modern",
+   "passengers": 30,
+   "theme": {
+    "wall": "#2b3140",
+    "accent": "#00DDF5"
+   },
+   "track": [
+    {
+     "length": 200,
+     "gradient": -10
+    }
+   ]
+  },
+  {
+   "name": "Saint-Michel",
+   "distanceToNext": 487.4,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "theme": {
+    "wall": "#f1ede2",
+    "accent": "#1f3c88"
+   },
+   "track": [
+    {
+     "length": 200,
+     "gradient": 10
+    }
+   ]
+  },
+  {
+   "name": "Place des Nations",
+   "distanceToNext": 2165.1,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "passengers": 24,
+   "theme": {
+    "accent": "#00DDF5"
+   },
+   "track": [
+    {
+     "length": 10
+    },
+    {
+     "length": 1208,
+     "radius": 450,
+     "turn": "left"
+    }
+   ]
+  },
+  {
+   "name": "République",
+   "distanceToNext": 1678.6,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "passengers": 34,
+   "theme": {
+    "wall": "#f4f1e8",
+    "accent": "#00DDF5"
+   },
+   "track": [
+    {
+     "length": 10
+    },
+    {
+     "length": 711,
+     "radius": 450,
+     "turn": "right"
+    }
+   ]
+  },
+  {
+   "name": "Gare Centrale",
+   "distanceToNext": 1150,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "passengers": 40,
+   "platformLength": 120,
+   "platformWidth": 5.5,
+   "theme": {
+    "wall": "#e9e2cf",
+    "accent": "#00DDF5"
+   },
+   "track": [
+    {
+     "length": 150
+    },
+    {
+     "length": 611,
+     "radius": 1400,
+     "turn": "left"
+    },
+    {
+     "length": 200,
+     "gradient": 12
+    }
+   ]
+  },
+  {
+   "name": "Palais Royal",
+   "distanceToNext": 1350,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "grand",
+   "passengers": 30,
+   "platformLength": 115,
+   "platformWidth": 6,
+   "theme": {
+    "wall": "#efe6d2",
+    "accent": "#00DDF5",
+    "vault": "#1b2a4a"
+   },
+   "track": [
+    {
+     "length": 80
+    },
+    {
+     "length": 785,
+     "radius": 300,
+     "turn": "left"
+    },
+    {
+     "length": 150
+    }
+   ],
+   "connections": [
+    "Université Nord"
+   ]
+  },
+  {
+   "name": "Opéra",
+   "distanceToNext": 0,
+   "speedLimit": 70,
+   "stopDuration": 20,
+   "style": "vault",
+   "passengers": 26,
+   "theme": {
+    "wall": "#f3eee0",
+    "accent": "#b3121b"
+   }
+  }
+ ]
+}

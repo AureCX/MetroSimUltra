@@ -1,0 +1,35 @@
+{
+ "id": "volta12e",
+ "order": 3,
+ "name": "Volta 12e",
+ "type": "electric",
+ "description": "Battery-electric 12 m bus: silent, instant torque, regenerative braking, 350 kWh.",
+ "length": 12.1,
+ "width": 2.55,
+ "height": 3.3,
+ "wheelbase": 5.9,
+ "frontOverhang": 2.7,
+ "mass": 13600,
+ "capacity": 95,
+ "seats": 29,
+ "doors": [
+  1.4,
+  6.2,
+  10.4
+ ],
+ "powertrain": "electric",
+ "power": 250,
+ "torque": 2400,
+ "battery": 350,
+ "auxPower": 9,
+ "regen": 0.7,
+ "maxSpeed": 80,
+ "brakeDecel": 5.5,
+ "steerMax": 0.85,
+ "rollStiffness": 1.05,
+ "livery": {
+  "body": "#f2f5f3",
+  "stripe": "#2fa84f",
+  "skirt": "#1f2a24"
+ }
+}

@@ -1,0 +1,42 @@
+{
+ "route": "31",
+ "name": "Gare Routière – Les Coteaux",
+ "network": "grandville-est",
+ "operator": "grandville",
+ "color": "#D7263D",
+ "textColor": "#ffffff",
+ "language": "fr-FR",
+ "headway": 720,
+ "firstDeparture": "05:50",
+ "type": "urban",
+ "stops": [
+  {
+   "name": "Gare Routière Aéroport",
+   "dwellTime": 20
+  },
+  {
+   "name": "Zone Industrielle Est",
+   "dwellTime": 15
+  },
+  {
+   "name": "Avenue des Tilleuls",
+   "dwellTime": 15
+  },
+  {
+   "name": "Les Coteaux – Mairie",
+   "dwellTime": 20
+  },
+  {
+   "name": "Centre Commercial Aéroville",
+   "dwellTime": 20
+  },
+  {
+   "name": "Quartier d'Affaires de l'Aéroport",
+   "dwellTime": 20
+  },
+  {
+   "name": "Aéroport International – Terminal 1 (Est)",
+   "dwellTime": 25
+  }
+ ]
+}

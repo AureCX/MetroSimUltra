@@ -1,0 +1,43 @@
+{
+ "id": "duplex11",
+ "order": 6,
+ "name": "Duplex 11 DD",
+ "type": "doubledecker",
+ "description": "Double-decker: 4.2 m tall, top-heavy — strong body roll, take bends slowly.",
+ "length": 11.2,
+ "width": 2.55,
+ "height": 4.2,
+ "wheelbase": 5.9,
+ "frontOverhang": 2.4,
+ "mass": 13500,
+ "capacity": 90,
+ "seats": 70,
+ "doors": [
+  1.4,
+  6.0
+ ],
+ "powertrain": "diesel",
+ "power": 230,
+ "torque": 1400,
+ "gears": [
+  3.36,
+  1.91,
+  1.42,
+  1.0,
+  0.72,
+  0.62
+ ],
+ "finalDrive": 6.0,
+ "idleRpm": 600,
+ "maxRpm": 2300,
+ "maxSpeed": 70,
+ "fuelCapacity": 300,
+ "brakeDecel": 5.0,
+ "steerMax": 0.85,
+ "rollStiffness": 0.55,
+ "livery": {
+  "body": "#c8352a",
+  "stripe": "#f2f2f2",
+  "skirt": "#2a1d1a"
+ }
+}

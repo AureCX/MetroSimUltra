@@ -1,0 +1,42 @@
+{
+ "route": "AV2",
+ "name": "Aéroval Hôtels & Affaires",
+ "network": "grandville-est",
+ "operator": "aeroval",
+ "color": "#F28C00",
+ "textColor": "#16233a",
+ "language": "fr-FR",
+ "headway": 900,
+ "firstDeparture": "06:20",
+ "type": "airport",
+ "stops": [
+  {
+   "name": "Aéroport International – Terminal 1 (Est)",
+   "dwellTime": 30
+  },
+  {
+   "name": "Centre de Location de Voitures",
+   "dwellTime": 20
+  },
+  {
+   "name": "Hôtels de l'Aéroport",
+   "dwellTime": 25
+  },
+  {
+   "name": "Quartier d'Affaires de l'Aéroport",
+   "dwellTime": 20
+  },
+  {
+   "name": "Parking Longue Durée P5",
+   "dwellTime": 20
+  },
+  {
+   "name": "Zone du Personnel",
+   "dwellTime": 15
+  },
+  {
+   "name": "Aéroport International – Terminal 2 (Ouest)",
+   "dwellTime": 25
+  }
+ ]
+}

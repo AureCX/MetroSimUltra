@@ -53,7 +53,8 @@ export class Menu {
     this.root.innerHTML = `<div class="menu-main">
       <div class="brand"><div class="logo">M</div><div><h1>Metro Driver</h1><p>Underground railway simulator</p></div></div>
       <nav>
-        <button class="btn primary" id="m-play">▶ Play</button>
+        <button class="btn primary" id="m-play">▶ Play metro</button>
+        <button class="btn primary bus-btn" id="m-bus">🚌 Bus — Grandville & Aéroval</button>
         <button class="btn" data-nav="lines">Select Line</button>
         <button class="btn" data-nav="trains">Select Train</button>
         <button class="btn" data-nav="settings">Settings</button>
@@ -69,6 +70,7 @@ export class Menu {
       <div class="totals sub">Career: ${this.save.data.totals.runs} runs · ${this.save.data.totals.distanceKm.toFixed(1)} km · ${this.save.data.totals.stations} stations served</div>
       ${this.repo.errors.length ? `<div class="errors">${this.repo.errors.map(esc).join('<br>')}</div>` : ''}
     </div>`;
+    this.root.querySelector('#m-bus').onclick = () => this.emit('bus');
     this.root.querySelector('#m-play').onclick = () => { if (this.line && this.train) { this.persist(); this.emit('play', { line: this.line, train: this.train, direction: this.sel.direction }); } };
   }
 

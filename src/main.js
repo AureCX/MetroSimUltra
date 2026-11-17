@@ -10,11 +10,18 @@ import { AudioSystem } from './audio/AudioSystem.js';
 import { Game } from './game/Game.js';
 import { HUD } from './ui/HUD.js';
 import { Menu } from './ui/Menu.js';
+import { BusGame } from './bus/BusGame.js';
+import { BusRepository } from './bus/BusRepository.js';
+import { BUS_ACTIONS } from './bus/BusControls.js';
+import { BusHUD } from './ui/BusHUD.js';
+import { BusMenu } from './ui/BusMenu.js';
 
 const bus = new EventBus();
 const settings = new Settings(bus);
 const save = new SaveSystem();
 const input = new Input(settings, bus);
+const busInput = new Input(settings, bus, { actions: BUS_ACTIONS, key: 'controls.busBindings' });
+busInput.enabled = false;
 const audio = new AudioSystem(settings, bus);
 
 const container = document.getElementById('viewport');
@@ -27,34 +34,68 @@ container.appendChild(renderer.domElement);
 const hud = new HUD(document.getElementById('hud'), bus, settings, input);
 hud.show(false);
 const game = new Game({ renderer, bus, settings, input, audio });
-window.__metro = { game, bus, settings }; // debugging handle
+const busHud = new BusHUD(document.getElementById('bushud'), bus, settings, busInput);
+busHud.show(false);
+const busGame = new BusGame({ renderer, bus, settings, input: busInput, audio, save });
+let active = game; // the session currently running (metro or bus)
+window.__metro = { game, busGame, bus, settings }; // debugging handle
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h);
   game.resize(w, h);
+  busGame.resize(w, h);
 }
 window.addEventListener('resize', resize);
 
 const repo = new LineRepository();
+const busRepo = new BusRepository();
+let busMenu;
 let menu;
 let state = 'menu'; // menu | playing | paused | summary
 let lastSession = null;
 
 async function boot() {
   await repo.load();
+  await busRepo.load();
   menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio });
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
   menu.on('restart', () => lastSession && startSession(lastSession));
   menu.on('quit', quitToMenu);
+  busMenu = new BusMenu(menu, busRepo, save, busInput, settings);
+  menu.on('bus', () => busMenu.show());
+  menu.on('busPlay', startBus);
   menu.show('main');
   game.applyGraphics();
   resize();
 }
 
-function startSession(sel) {
+function startBus(cfg) {
   audio.init();
+  lastSession = { bus: cfg };
+  menu.showLoading(`Building ${cfg.route ? `${cfg.route.route} ${cfg.route.name}` : 'the bus world'}…`);
+  setTimeout(() => {
+    try {
+      if (active === game) game.dispose();
+      busGame.start(cfg);
+      active = busGame;
+      resize(); menu.hide(); hud.show(false); busHud.show(true);
+      input.enabled = false; input.queue = [];
+      busInput.enabled = true; busInput.queue = [];
+      state = 'playing';
+    } catch (e) {
+      console.error(e);
+      busMenu.show();
+      menu.notice(`Could not start: ${e.message}`);
+    }
+  }, 30);
+}
+
+function startSession(sel) {
+  if (sel.bus) { startBus(sel.bus); return; }
+  audio.init();
+  busGame.dispose(); busHud.show(false); busInput.enabled = false; active = game; input.queue = [];
   lastSession = sel;
   hud.setMapOpen(false); game.mapTarget = null;
   menu.showLoading(`Building ${sel.line.name}…`);
@@ -78,16 +119,16 @@ function startSession(sel) {
 function setPaused(p) {
   if (state !== 'playing' && state !== 'paused') return;
   state = p ? 'paused' : 'playing';
-  game.setPaused(p);
+  active.setPaused(p);
   if (p) menu.show('pause'); else menu.hide();
-  input.enabled = !p;
+  if (active === game) input.enabled = !p; else busInput.enabled = !p;
 }
 
 function quitToMenu() {
   hud.setMapOpen(false); game.mapTarget = null;
-  game.setPaused(false);
-  game.dispose();
-  hud.show(false);
+  active.setPaused(false);
+  active.dispose();
+  hud.show(false); busHud.show(false); busInput.enabled = false; active = game;
   state = 'menu';
   input.enabled = true;
   menu.show('main');
@@ -116,6 +157,13 @@ bus.on('game:finished', (r) => {
     menu.showSummary(r, newBest);
   }, 1500);
 });
+bus.on('bus:finished', (r) => {
+  setTimeout(() => {
+    state = 'summary';
+    busGame.dispose(); busHud.show(false); busInput.enabled = false; active = game;
+    busMenu.summary(r);
+  }, 1200);
+});
 bus.on('settings:changed', ({ path }) => { if (path.startsWith('graphics') || path === '*') game.applyGraphics(); });
 
 // Escape while in a menu submenu during pause returns to the pause screen; in main menu nothing.
@@ -127,7 +175,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (state === 'playing' || state === 'paused') game.update(dt);
+  if (state === 'playing' || state === 'paused') active.update(dt);
   else input.poll(dt);
   requestAnimationFrame(frame);
 }

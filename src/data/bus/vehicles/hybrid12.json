@@ -1,0 +1,47 @@
+{
+ "id": "hybrid12",
+ "order": 4,
+ "name": "Hybride 12h",
+ "type": "hybrid",
+ "description": "Diesel-electric hybrid: electric launch and regenerative braking, lower fuel use.",
+ "length": 12.0,
+ "width": 2.55,
+ "height": 3.15,
+ "wheelbase": 5.9,
+ "frontOverhang": 2.7,
+ "mass": 12600,
+ "capacity": 98,
+ "seats": 30,
+ "doors": [
+  1.4,
+  6.2,
+  10.4
+ ],
+ "powertrain": "hybrid",
+ "power": 210,
+ "torque": 1200,
+ "electricPower": 120,
+ "battery": 25,
+ "regen": 0.5,
+ "gears": [
+  3.36,
+  1.91,
+  1.42,
+  1.0,
+  0.72,
+  0.62
+ ],
+ "finalDrive": 5.74,
+ "idleRpm": 600,
+ "maxRpm": 2300,
+ "maxSpeed": 80,
+ "fuelCapacity": 250,
+ "brakeDecel": 5.5,
+ "steerMax": 0.85,
+ "rollStiffness": 1.0,
+ "livery": {
+  "body": "#eef1f4",
+  "stripe": "#0f8a8a",
+  "skirt": "#23302f"
+ }
+}

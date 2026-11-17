@@ -127,7 +127,7 @@ export class Game {
     if (![...this.svc.values()].some((d) => d.geom.portals.length)) return;
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
     const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
-    grd.addColorStop(0, '#3f78c8'); grd.addColorStop(0.42, '#8fb7e6'); grd.addColorStop(0.5, '#dfe9f2'); grd.addColorStop(0.53, '#b9c4b2'); grd.addColorStop(1, '#6f7d64');
+    grd.addColorStop(0, '#2f6bc4'); grd.addColorStop(0.3, '#5f97de'); grd.addColorStop(0.46, '#a9c8ea'); grd.addColorStop(0.5, '#c6d8ea'); grd.addColorStop(0.52, '#8f9a80'); grd.addColorStop(1, '#6f7d64');
     g.fillStyle = grd; g.fillRect(0, 0, 4, 256);
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
@@ -152,16 +152,16 @@ export class Game {
     const target = this.geom.outdoorAt(tr) ? 1 : 0;
     d.o += (target - d.o) * Math.min(1, dt * 1.3); // eyes adapting to daylight / tunnel darkness
     const o = d.o;
-    this.scene.fog.color.setRGB(0.02 + 0.66 * o, 0.024 + 0.74 * o, 0.03 + 0.84 * o);
+    this.scene.fog.color.setRGB(0.02 + 0.76 * o, 0.024 + 0.83 * o, 0.03 + 0.9 * o);
     this.scene.background.copy(this.scene.fog.color);
     const draw = this.settings.get('graphics.drawDistance');
-    this.scene.fog.near = 25 + o * 140;
-    this.scene.fog.far = draw * (1 + 1.2 * o);
-    this.hemi.intensity = 0.55 + 1.1 * o;
+    this.scene.fog.near = 25 + o * 600;
+    this.scene.fog.far = draw * (1 - o) + o * 2400;
+    this.hemi.intensity = 0.55 + 0.6 * o;
     this.hemi.color.setRGB(0.54 + 0.3 * o, 0.56 + 0.32 * o, 0.6 + 0.35 * o);
     this.ambient.intensity = 0.35 + 0.25 * o;
-    d.sun.intensity = 2.6 * o;
-    const far = Math.round(draw * (1 + 1.3 * o) + 50);
+    d.sun.intensity = 2.1 * o;
+    const far = Math.round((draw + 50) * (1 - o) + o * 2600);
     if (Math.abs(this.camera.far - far) > 5) { this.camera.far = far; this.camera.updateProjectionMatrix(); }
     d.sun.position.copy(camPos).addScaledVector(d.dir, 200);
     d.sun.target.position.copy(camPos);
@@ -534,6 +534,7 @@ export class Game {
 
     this.signalView.update(this.time);
     this.updateDaylight(dt, camPos);
+    for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos);
     const trackS = route.toTrack(p.front - this.specs.length / 2);
     for (const [id, w] of this.worlds) {
       const d = this.svc.get(id);

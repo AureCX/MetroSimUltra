@@ -110,6 +110,7 @@ for both directions. Lineside warning and execution boards are generated automat
 | `announcement` | path / URL | — | MP3 played as next-station announcement (relative to the line file). |
 | `announcementText` | string | — | Custom speech text for this station. |
 | `track` | array | straight & level | Alignment between this station and the next (see below). |
+| `landmark` | object | — | Landmark built on the surface next to the station (surface lines only): `{ "type": "cityHall" \| "university", "side": "left" \| "right", "offset": 50, "along": 0 }` (metres from the track / along the line). |
 | `connections` | array of names | `[]` | Walking connections to stations with another name (drawn dashed on the map), e.g. `["Aéroport International"]`. Stations with the same name on different lines are interchanges automatically. |
 
 ### `track` segments
@@ -131,7 +132,7 @@ over to the next platform is straight and level. Platforms are always straight a
   Between an exit and the next enter portal the line runs in the open air: ground level is the
   track level at the portal + 5.5 m, so climb out with a gradient (e.g. 40 ‰ over 160 m) after the
   portal to reach the surface. Cuttings, embankments, portal headwalls, fences, a road, buildings,
-  trees, daylight and open-air canopy stations are generated automatically.
+  trees, daylight and open-air canopy stations are generated automatically, inside a procedural city (street grid, blocks, towers, parks, traffic) around the surface section.
 * `gradient` in ‰, positive = uphill in direction A. Vertical curves are smoothed automatically.
   Gradients act on the train physics (it will roll back on an up-grade if you release the brake).
 

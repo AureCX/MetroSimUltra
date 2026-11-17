@@ -218,6 +218,12 @@
       "wall": "#f1ede2",
       "accent": "#b3121b"
      },
+     "landmark": {
+      "type": "cityHall",
+      "side": "right",
+      "offset": 72,
+      "along": 640
+     },
      "track": [
       {
        "length": 120
@@ -263,9 +269,15 @@
      "speedLimit": 80,
      "stopDuration": 20,
      "style": "modern",
-     "passengers": 26,
+     "passengers": 30,
      "theme": {
       "accent": "#5ab0ff"
+     },
+     "landmark": {
+      "type": "university",
+      "side": "left",
+      "offset": 44,
+      "along": 0
      },
      "track": [
       {

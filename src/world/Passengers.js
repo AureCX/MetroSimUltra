@@ -52,7 +52,7 @@ const G = (() => {
   };
 })();
 
-class Person {
+export class Person {
   constructor(rand) {
     this.rand = rand;
     const r = rand;

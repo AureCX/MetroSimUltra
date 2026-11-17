@@ -5,8 +5,12 @@ import * as THREE from 'three';
 import { sweep, tunnelProfile, FLOOR_Y } from './Sweep.js';
 import { Textures } from './Textures.js';
 import { seededRandom, hashString } from '../core/util.js';
+import { City } from './City.js';
+import { buildCityHall, buildUniversity, landmarkFrame } from './Landmarks.js';
 
-const FAR = 170;       // half width of the modelled landscape
+const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity };
+
+const FAR = 52;        // half width of the rail-corridor verge (the city ground takes over beyond)
 const CHUNK = 100;
 
 function canvasTex(w, h, draw, repeat = true) {
@@ -22,7 +26,7 @@ function textures() {
   if (texCache) return texCache;
   const r = seededRandom(4242);
   const grass = canvasTex(256, 256, (g) => {
-    g.fillStyle = '#5d7a3c'; g.fillRect(0, 0, 256, 256);
+    g.fillStyle = '#4a6a2f'; g.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 9000; i++) { const v = r(); g.fillStyle = v < 0.5 ? `rgba(40,70,25,${0.25 * r()})` : `rgba(150,170,90,${0.2 * r()})`; g.fillRect(r() * 256, r() * 256, 1 + r() * 3, 1 + r() * 3); }
   });
   const road = canvasTex(128, 256, (g) => {
@@ -75,8 +79,19 @@ export class OutdoorBuilder {
   build() {
     const runs = this.runs();
     if (!runs.length && !this.geom.portals.length) return this;
-    for (const [a, b] of runs) { this.buildGround(a, b); this.buildScenery(a, b); }
+    for (const [a, b] of runs) this.buildGround(a, b);
     this.buildCover();
+    if (runs.length) {
+      const G = this.geom.groundAt(runs[0][0] + 1);
+      this.landmarks = [];
+      this.line.stations.forEach((st, i) => {
+        const lm = st.landmark;
+        if (!lm || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
+        const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 50);
+        this.landmarks.push(LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line));
+      });
+      this.city = new City(this, runs, this.landmarks);
+    }
     for (const p of this.geom.portals) if (p.s >= this.w.opts.fromS) this.buildPortal(p);
     return this;
   }
@@ -123,7 +138,6 @@ export class OutdoorBuilder {
           const m = sweep(g, s0, s1, 5, (s) => { const y = g.groundAt(s) - g.point(s).y; return [[-FAR, y], [FAR, y]]; }, { origin: o, uScale: 0.08, vScale: 0.08 });
           this.add(new THREE.Mesh(m, this.mat.grass), o);
         }
-        this.buildScenery(a, i, true);
         a = null;
       }
     }
@@ -179,88 +193,16 @@ export class OutdoorBuilder {
     }
   }
 
-  /** Buildings, trees, a road and street lights alongside the line. */
-  buildScenery(a, b, covered = false) {
-    const g = this.geom;
-    const rand = seededRandom(hashString(`${this.line.id}${Math.round(a)}`));
-    const trees = [];
-    const lamps = [];
-    // Road on the right-hand side (direction A).
-    const roadLat = 24;
-    if (!covered) {
-      for (const [s0, s1] of this.chunks(a, b)) {
-        const o = this.w.origin(s0);
-        const m = sweep(g, s0, s1, 4, (s) => { const y = g.groundAt(s) - g.point(s).y + 0.03; return [[roadLat - 4, y], [roadLat + 4, y]]; }, { origin: o, uScale: 0.125, vScale: 0.06 });
-        this.add(new THREE.Mesh(m, this.mat.road), o);
-      }
-      for (let s = a + 10; s < b; s += 32) lamps.push([s, roadLat - 4.6], [s + 16, roadLat + 4.6]);
+  /** Animation of traffic and people, only while the viewer is near. */
+  update(dt, t, clock, viewPos) {
+    if (!this.city) return;
+    if (Math.hypot(viewPos.x - this.city.center.x, viewPos.z - this.city.center.y) > 3500) return;
+    this.city.updateCars(dt);
+    for (const l of this.landmarks) {
+      const near = Math.hypot(viewPos.x - l.x, viewPos.z - l.z) < 450;
+      l.people.group.visible = near;
+      if (near) l.update(dt, t, clock);
     }
-    for (let s = a + 5; s < b; s += 22 + rand() * 18) {
-      for (const sd of [-1, 1]) {
-        if (rand() < 0.15) continue;
-        const lat = sd * (sd > 0 ? 38 + rand() * 40 : 26 + rand() * 50);
-        const w = 12 + rand() * 14, d = 10 + rand() * 10, h = 8 + rand() * (rand() < 0.2 ? 40 : 22);
-        this.building(s, lat, w, d, h, rand);
-      }
-      for (let k = 0; k < 3; k++) {
-        const sd = rand() < 0.5 ? -1 : 1;
-        const lat = sd > 0 ? (rand() < 0.5 ? 14 + rand() * 4 : 30 + rand() * 5) : 13 + rand() * 12;
-        trees.push([s + rand() * 20, sd * lat, 0.8 + rand() * 0.6, rand() < 0.5]);
-      }
-    }
-    this.trees(trees);
-    this.lamps(lamps);
-  }
-
-  building(s, lat, w, d, h, rand) {
-    const g = this.geom;
-    const p = g.point(s, lat, g.groundAt(s) - g.point(s).y + h / 2);
-    const geo = new THREE.BoxGeometry(w, h, d);
-    // Scale UVs so one texture tile = 4 m × 4 m of facade (shared materials).
-    const uv = geo.attributes.uv, nrm = geo.attributes.normal;
-    for (let i = 0; i < uv.count; i++) {
-      const ny = Math.abs(nrm.getY(i)) > 0.5, nx = Math.abs(nrm.getX(i)) > 0.5;
-      const sx = ny ? w : nx ? d : w, sy = ny ? d : h;
-      uv.setXY(i, uv.getX(i) * sx / 4, uv.getY(i) * sy / 4);
-    }
-    const fac = this.mat.facades[Math.floor(rand() * this.mat.facades.length)];
-    const mesh = new THREE.Mesh(geo, [fac, fac, this.mat.roof, this.mat.roof, fac, fac]);
-    mesh.position.set(p.x, p.y, p.z);
-    mesh.rotation.y = -g.heading(s) + (rand() - 0.5) * 0.3;
-    this.group.add(mesh);
-  }
-
-  trees(list) {
-    if (!list.length) return;
-    const g = this.geom;
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14, 0.2, 2.6, 6), this.mat.trunk, list.length);
-    const crowns = [new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.0, 1), this.mat.leaves, list.length), new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.0, 1), this.mat.leaves2, list.length)];
-    const counts = [0, 0];
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
-    list.forEach(([s, lat, k, alt], i) => {
-      const p = g.point(s, lat, g.groundAt(s) - g.point(s).y);
-      m.compose(pos.set(p.x, p.y + 1.3 * k, p.z), q.identity(), sc.set(k, k, k)); trunk.setMatrixAt(i, m);
-      const c = crowns[alt ? 1 : 0];
-      m.compose(pos.set(p.x, p.y + 3.6 * k, p.z), q.setFromEuler(new THREE.Euler(0, s, 0)), sc.set(k * 1.1, k * 1.3, k * 1.1)); c.setMatrixAt(counts[alt ? 1 : 0]++, m);
-    });
-    crowns.forEach((c, i) => { c.count = counts[i]; c.computeBoundingSphere(); this.group.add(c); });
-    trunk.computeBoundingSphere();
-    this.group.add(trunk);
-  }
-
-  lamps(list) {
-    if (!list.length) return;
-    const g = this.geom;
-    const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.1, 7, 6), this.mat.pole, list.length);
-    const heads = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.15, 0.35), this.mat.lamp, list.length);
-    const m = new THREE.Matrix4();
-    list.forEach(([s, lat], i) => {
-      const p = g.point(s, lat, g.groundAt(s) - g.point(s).y);
-      m.makeTranslation(p.x, p.y + 3.5, p.z); poles.setMatrixAt(i, m);
-      m.makeTranslation(p.x, p.y + 7, p.z); heads.setMatrixAt(i, m);
-    });
-    poles.computeBoundingSphere(); heads.computeBoundingSphere();
-    this.group.add(poles, heads);
   }
 
   add(mesh, o) { mesh.position.copy(o); this.group.add(mesh); }

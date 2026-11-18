@@ -171,13 +171,35 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && state === 'menu' && !input.capture && !document.querySelector('.menu-main')) menu.show('main');
 });
 
+// Visible error report: a problem in one part of a frame is shown on screen (and in the console) instead of
+// silently freezing the game, so it can be reported.
+const shownErrors = new Set();
+function showError({ where, message, stack }) {
+  const key = `${where}:${message}`;
+  if (shownErrors.has(key) || shownErrors.size > 4) return;
+  shownErrors.add(key);
+  const el = document.createElement('div');
+  el.className = 'app-error';
+  el.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);max-width:min(760px,92vw);background:#3a0f0f;color:#ffd9d4;border:1px solid #ff6a4a;border-radius:8px;padding:10px 14px;font:13px/1.4 system-ui,sans-serif;z-index:9999;cursor:pointer';
+  el.textContent = `Error in ${where}: ${message}${stack ? ` — ${stack}` : ''} (click to dismiss)`;
+  el.onclick = () => el.remove();
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 20000);
+}
+bus.on('app:error', showError);
+
 let last = performance.now();
 function frame(now) {
+  requestAnimationFrame(frame); // schedule first: an exception below must not end the loop
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (state === 'playing' || state === 'paused') active.update(dt);
-  else input.poll(dt);
-  requestAnimationFrame(frame);
+  try {
+    if (state === 'playing' || state === 'paused') active.update(dt);
+    else input.poll(dt);
+  } catch (e) {
+    console.error(e);
+    showError({ where: active === game ? 'metro' : 'bus', message: String(e?.message || e), stack: String(e?.stack || '').split('\n').slice(1, 3).join(' | ') });
+  }
 }
 boot().then(() => requestAnimationFrame(frame)).catch((e) => {
   console.error(e);

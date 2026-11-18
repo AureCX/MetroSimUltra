@@ -451,9 +451,27 @@ export class Game {
     if (this.paused || this.result) { this.render(); return; }
     dt = Math.min(dt, 0.1);
     this.acc = (this.acc || 0) + dt;
-    while (this.acc >= STEP) { this.simStep(STEP); this.acc -= STEP; }
-    this.updateVisuals(dt);
+    this.guard('simulation', () => { while (this.acc >= STEP) { this.simStep(STEP); this.acc -= STEP; } });
+    this.acc = Math.min(this.acc, STEP); // never let a failed step snowball
+    this.guard('visuals', () => this.updateVisuals(dt));
     this.render();
+  }
+
+  /**
+   * Runs one part of the frame; an error there is logged and shown once instead of stopping the whole game
+   * (a thrown frame would otherwise end the animation loop and leave a black screen).
+   */
+  guard(name, fn) {
+    try { return fn(); } catch (e) {
+      this.errorsSeen ??= new Set();
+      const key = `${name}:${e?.message}`;
+      if (!this.errorsSeen.has(key)) {
+        this.errorsSeen.add(key);
+        console.error(`[${name}]`, e);
+        this.bus.emit('app:error', { where: name, message: String(e?.message || e), stack: String(e?.stack || '').split('\n').slice(0, 3).join(' | ') });
+      }
+      return undefined;
+    }
   }
 
   handleAction(a) {
@@ -565,45 +583,49 @@ export class Game {
     }
     for (const [id, m] of this.aiModels) if (!seen.has(id)) { m.dispose(this.scene); this.aiModels.delete(id); }
 
-    this.signalView.update(this.time);
-    this.updateDaylight(dt, camPos);
-    for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos);
+    this.guard('signals', () => this.signalView.update(this.time));
+    this.guard('daylight', () => this.updateDaylight(dt, camPos));
+    this.guard('city', () => { for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos); });
     const trackS = route.toTrack(p.front - this.specs.length / 2);
-    for (const [id, w] of this.worlds) {
-      const d = this.svc.get(id);
-      w.update(trackS, this.clock, (i, dir) => (d.line === this.line ? this.etas(i, dir) : this.etasScheduled(d, i, dir)), camPos);
-    }
-    this.passengers.update(dt, p.front);
+    this.guard('stations', () => {
+      for (const [id, w] of this.worlds) {
+        const d = this.svc.get(id);
+        w.update(trackS, this.clock, (i, dir) => (d.line === this.line ? this.etas(i, dir) : this.etasScheduled(d, i, dir)), camPos);
+      }
+    });
+    this.guard('passengers', () => this.passengers.update(dt, p.front));
     const st = this.snapshot();
     this.state = st;
-    this.cabin.update(dt, st, this.time);
+    this.guard('cab', () => this.cabin.update(dt, st, this.time));
     this.cameraSys.update({
       car0: this.playerModel.cars[0], eye: this.cabin.eye, route, front: p.front, v: p.speed, accel: p.physics.a,
       jerk: p.physics.jerk, geom: this.geom, world: this.world, dt, time: this.time, scene: this.scene, padLook: this.input.look, bump: this.bump,
       carInterior: this.playerModel.cars[Math.min(1, this.playerModel.cars.length - 1)], carLength: this.specs.carLength, floor: TRAIN_FLOOR,
     });
     // Passenger information inside the train.
-    {
+    this.guard('train displays', () => {
       const sm = this.stations, k = sm.atStop ?? sm.nextStop, stp = route.stops[k];
       if (stp) this.playerModel.setInfo({ line: this.line, next: stp.name, terminus: route.terminus, clock: this.clock, side: stp.doorSide, atStation: sm.atStop != null });
-    }
+    });
     const tr = route.toTrack(p.front);
-    this.audio.update(dt, {
+    this.guard('audio', () => this.audio.update(dt, {
       v: p.speed, traction: p.physics.traction, brake: Math.max(p.physics.brake, p.physics.eb), radius: route.radiusAt(p.front),
       inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab' && this.cameraSys.mode !== 'interior', carLength: this.specs.carLength,
       doorsOpen: p.doors.anyOpen, outdoor: (this.daylight?.o ?? 0) > 0.5, motorPitch: this.specs.sound?.motorPitch, inverter: this.specs.sound?.inverter,
-    });
+    }));
     this.audio.setAlarm(p.safety.overspeed !== 'none' ? 'atp' : p.safety.vigAlarm ? 'vigilance' : null);
-    this.bus.emit('hud:update', st);
+    this.guard('HUD', () => this.bus.emit('hud:update', st));
     // Line map: cab panel and (if open) the full-size overlay, twice per second.
     this.mapAcc += dt;
     if (this.mapAcc > 0.5) {
       this.mapAcc = 0;
       const ms = { ...trainMapState(route, p.front, this.stations), activeId: this.line.id, plannedId: this.planned.id, directionName: route.directionName };
-      const lm = this.cabin.lineMap;
-      drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
-      lm.tex.needsUpdate = true;
-      if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
+      this.guard('line map', () => {
+        const lm = this.cabin.lineMap;
+        drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
+        lm.tex.needsUpdate = true;
+        if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
+      });
     }
   }
 

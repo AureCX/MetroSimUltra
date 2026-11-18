@@ -76,7 +76,7 @@ export class BusHUD {
     e.cam.textContent = st.camMode;
     const alarm = st.service ? `${st.service.label} · ${Math.round(st.service.pct * 100)} %` : !st.engineOn && st.speed < 1 ? `Engine off — ${L('engine')} to start` : st.parking && st.throttle > 0.2 ? `Parking brake applied — ${L('parking')}` : '';
     e.alarm.textContent = alarm; e.alarm.style.display = alarm ? 'block' : 'none'; e.alarm.style.borderColor = st.service ? '#3cff8a' : '#ffb300';
-    e.help.textContent = `${L('throttle')} accel · ${L('brake')} brake · ${L('steerLeft')}/${L('steerRight')} steer · ${L('doorFront')}/${L('doorRear')} doors · ${L('indLeft')}/${L('indRight')} indicators · ${L('kneel')} kneel · ${L('parking')} park brake · ${L('routeView')} route · ${L('camera')} camera · right-drag look`;
+    e.help.textContent = `${L('engine')} engine · ${L('gearD')}/${L('gearN')}/${L('gearR')} D/N/R · ${L('throttle')} accel · ${L('brake')} brake · ${L('steerLeft')}/${L('steerRight')} steer · ${L('doorFront')}/${L('doorRear')} doors · ${L('indLeft')}/${L('indRight')} indicators · ${L('kneel')} kneel · ${L('parking')} park brake · ${L('routeView')} route · ${L('camera')} camera · right-drag look`;
     if (!e.route.hidden) this.drawRoute(st);
   }
 

@@ -58,7 +58,7 @@ let lastSession = null;
 async function boot() {
   await repo.load();
   await busRepo.load();
-  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio });
+  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput });
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
   menu.on('restart', () => lastSession && startSession(lastSession));
@@ -82,7 +82,7 @@ function startBus(cfg) {
       active = busGame;
       resize(); menu.hide(); hud.show(false); busHud.show(true);
       input.enabled = false; input.queue = [];
-      busInput.enabled = true; busInput.queue = [];
+      busInput.enabled = true; busInput.queue = []; menu.controlsTab = 'bus';
       state = 'playing';
     } catch (e) {
       console.error(e);

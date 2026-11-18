@@ -31,6 +31,10 @@ export class BusVehicle {
     this.horn = false;
     this.mirrorYaw = [0, 0];
     this.interiorLights = true;
+    this.climate = true;        // heating / air conditioning (auxiliary load)
+    this.retarder = 2;          // coasting retarder / regeneration level 0..3
+    this.ramp = false; this.rampT = 0; // manual wheelchair ramp at the second door
+    this.rampDoor = Math.min(1, spec.doors.length - 1);
   }
   get speed() { return this.ph.vx; }
   get electric() { return this.spec.powertrain === 'electric'; }
@@ -52,10 +56,18 @@ export class BusVehicle {
   toggleParking() { this.parking = !this.parking; this.bus.emit('bus:parking', this.parking); }
   door(i, open) {
     const d = this.doors[i]; if (!d) return;
+    if (!open && i === this.rampDoor && this.rampT > 0.02) { this.bus.emit('bus:refused', 'Stow the ramp before closing this door'); return; }
     if (open && Math.abs(this.speed) > 0.8) { this.bus.emit('bus:doorWhileMoving', i); return; }
     d.target = open ? 1 : 0;
     this.bus.emit(open ? 'bus:doorOpen' : 'bus:doorClose', i);
   }
+  toggleRamp() {
+    if (this.ramp) { this.ramp = false; this.bus.emit('bus:ramp', false); return; }
+    if (Math.abs(this.speed) > 0.3) { this.bus.emit('bus:refused', 'Ramp only at a standstill'); return; }
+    if (this.doors[this.rampDoor].amount < 0.95) { this.bus.emit('bus:refused', `Open door ${this.rampDoor + 1} before deploying the ramp`); return; }
+    this.ramp = true; this.bus.emit('bus:ramp', true);
+  }
+  cycleRetarder() { this.retarder = (this.retarder + 1) % 4; this.bus.emit('bus:click'); }
   toggleDoor(i) { this.door(i, this.doors[i]?.target === 0); }
   allDoors(open) { for (const d of this.doors) if ((d.target === 1) !== open) this.door(d.i, open); }
   toggleKneel() {
@@ -82,6 +94,7 @@ export class BusVehicle {
     // Kneeling (front-right lowers, raises automatically when driving off).
     if (this.kneel && Math.abs(this.speed) > 3) { this.kneel = false; this.bus.emit('bus:kneel', false); }
     this.kneelT += ((this.kneel ? 1 : 0) - this.kneelT) * Math.min(1, dt * 1.5);
+    this.rampT = clamp(this.rampT + (this.ramp ? dt : -dt) / 2.5, 0, 1);
     // Indicators.
     this.blink += dt; if (this.blink > 0.38) { this.blink = 0; this.blinkOn = !this.blinkOn; if (this.indicator || this.hazards) this.bus.emit('bus:tick', this.blinkOn); }
     // Self-cancelling indicator after a completed turn.
@@ -95,19 +108,20 @@ export class BusVehicle {
     const c = { ...controls };
     if (this.kneelT > 0.2 && Math.abs(this.speed) > 1.4) c.throttle = 0;
     if (this.emergency) { c.throttle = 0; c.brake = 1; }
+    if (this.rampT > 0.02) c.throttle = 0;
     if (!this.engineOn) c.throttle = 0;
     this.ph.mu = env.mu; this.ph.grade = env.grade || 0;
     this.ph.step(dt, c, {
       engineOn: this.engineOn, gearSel: this.gearSel, parking: this.parking || this.airPressure < 5.5,
       doorBrake: !this.doorsClosed, airPressure: this.airPressure, kneel: this.kneelT > 0.5, hybridSoc: this.hybridSoc,
-      onShift: (g) => this.bus.emit('bus:shift', g),
+      onShift: (g) => this.bus.emit('bus:shift', g), retarderLevel: this.retarder,
     });
     const used = Math.max(0, this.ph.brakeP - prevP) * 0.9;
     this.airPressure = clamp(this.airPressure - used + (this.engineOn ? 0.35 * dt : 0), 0, 10);
     // Energy.
     const P = this.ph.lastPower || { drive: 0, regen: 0 };
     if (this.electric) {
-      const kw = Math.max(0, P.drive) / 1000 / 0.9 - P.regen / 1000 * 0.65 + (this.engineOn ? this.spec.auxPower ?? 8 : 0);
+      const kw = Math.max(0, P.drive) / 1000 / 0.9 - P.regen / 1000 * 0.65 + (this.engineOn ? (this.spec.auxPower ?? 8) + (this.climate ? 10 : 0) : 0);
       this.energy = clamp(this.energy - (kw * dt) / 3600, 0, this.energyMax);
     } else if (this.engineOn) {
       const kw = Math.max(0, P.drive) / 1000;

@@ -30,25 +30,32 @@ export class BusCockpit {
       seat: new THREE.MeshStandardMaterial({ color: 0x1b2533, roughness: 0.9 }), rubber: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 }),
     };
     const add = (geo, mat, x, y, z, parent = this.group) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
-    // Driver's cabin structure: dashboard, side consoles, seat, partition.
-    add(new THREE.BoxGeometry(W - 0.15, 0.95, 0.55), M.dash, 0, 0.95, zf + 0.42);
-    const top = add(new THREE.BoxGeometry(1.3, 0.05, 0.62), M.panel, xd + 0.1, 1.48, zf + 0.62); top.rotation.x = 0.25;
-    add(new THREE.BoxGeometry(0.45, 0.85, 0.9), M.dash, xd - 0.55, 0.85, zf + 1.15);       // left console
-    add(new THREE.BoxGeometry(0.4, 0.95, 0.75), M.dash, xd + 0.65, 0.9, zf + 1.05);       // right console
-    add(new THREE.BoxGeometry(0.5, 0.12, 0.5), M.seat, xd, 1.0, zf + 1.6); add(new THREE.BoxGeometry(0.5, 0.75, 0.1), M.seat, xd, 1.45, zf + 1.86);
-    add(new THREE.BoxGeometry(0.05, 1.3, 1.2), new THREE.MeshPhysicalMaterial({ color: 0xbfd6e2, transparent: true, opacity: 0.25, depthWrite: false }), xd + 0.9, 1.75, zf + 1.6); // cab door glass
-    // Instrument cluster.
+    // Box from min/max extents (body frame).
+    const box = (x0, x1, y0, y1, z0, z1, mat, parent = this.group) => add(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, parent);
+    const FL = 0.36, PLAT = 0.62, DASH = 1.08; // interior floor, driver platform, top of the dashboard (= windscreen bottom)
+    this.eye.set(xd, 1.96, zf + 1.45);
+    // Driver's area: raised platform, full-width lower dashboard, partition behind the seat, seat.
+    box(-W / 2 + 0.06, xd + 0.9, FL, PLAT, zf + 0.45, zf + 2.15, M.dash);
+    box(-W / 2 + 0.07, W / 2 - 0.07, FL, DASH, zf + 0.04, zf + 0.42, M.dash);
+    box(-W / 2 + 0.06, xd + 0.92, FL, 1.42, zf + 2.15, zf + 2.2, M.panel);
+    add(new THREE.BoxGeometry(0.03, 1.2, 0.9), new THREE.MeshPhysicalMaterial({ color: 0xbfd6e2, transparent: true, opacity: 0.22, depthWrite: false }), xd + 0.92, 1.25, zf + 1.75); // cab door glass
+    box(xd - 0.25, xd + 0.25, PLAT + 0.38, PLAT + 0.5, zf + 1.4, zf + 1.9, M.seat);
+    box(xd - 0.25, xd + 0.25, PLAT + 0.5, PLAT + 1.25, zf + 1.92, zf + 2.02, M.seat);
+    // Instrument hood in front of the driver, cluster on its rear face.
+    box(xd - 0.44, xd + 0.44, DASH, 1.5, zf + 0.44, zf + 0.62, M.dash);
+    box(xd - 0.3, xd + 0.3, PLAT, DASH, zf + 0.42, zf + 0.62, M.dash);
+    box(xd - 0.46, xd + 0.46, 1.5, 1.53, zf + 0.42, zf + 0.7, M.panel); // hood over the cluster
     this.cluster = canvasTex(1024, 384);
-    const cl = add(new THREE.PlaneGeometry(0.66, 0.25), new THREE.MeshBasicMaterial({ map: this.cluster.t }), xd, 1.6, zf + 0.722); cl.rotation.x = -0.35;
-    add(new THREE.BoxGeometry(0.72, 0.3, 0.02), M.black, xd, 1.597, zf + 0.705).rotation.x = -0.35;
-    add(new THREE.BoxGeometry(0.8, 0.2, 0.25), M.dash, xd, 1.48, zf + 0.55);
-    // Driver information / navigation display (right of the cluster).
+    const cl = add(new THREE.PlaneGeometry(0.72, 0.27), new THREE.MeshBasicMaterial({ map: this.cluster.t }), xd, 1.32, zf + 0.64); cl.rotation.x = -0.3;
+    // Driver information / navigation display, angled towards the driver on the right of the hood.
     this.did = canvasTex(768, 512);
-    const dg = add(new THREE.PlaneGeometry(0.36, 0.24), new THREE.MeshBasicMaterial({ map: this.did.t }), xd + 0.6, 1.66, zf + 0.66); dg.rotation.set(-0.35, -0.35, 0, 'YXZ');
+    box(xd + 0.47, xd + 0.9, DASH, 1.44, zf + 0.42, zf + 0.6, M.dash);
+    const dg = add(new THREE.PlaneGeometry(0.38, 0.26), new THREE.MeshBasicMaterial({ map: this.did.t }), xd + 0.69, 1.27, zf + 0.62); dg.rotation.set(-0.25, -0.4, 0, 'YXZ');
     this.didPage = 'map';
     this.register(dg, 'Driver display — click to switch Route / Map page', { click: () => { this.didPage = this.didPage === 'map' ? 'route' : 'map'; this.A.click(); } });
-    // Steering wheel.
-    const col = new THREE.Group(); col.position.set(xd, 1.32, zf + 1.02); col.rotation.x = -1.05; this.group.add(col);
+    // Steering column and wheel (nearly flat, as in a bus).
+    const col = new THREE.Group(); col.position.set(xd, 1.2, zf + 1.0); col.rotation.x = -1.05; this.group.add(col);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.55, 12), M.black); shaft.rotation.x = Math.PI / 2; shaft.position.z = -0.28; col.add(shaft);
     this.wheel = new THREE.Group(); col.add(this.wheel);
     this.wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.022, 10, 40), M.rubber));
     for (let i = 0; i < 3; i++) { const sp2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.02), M.black); sp2.position.set(Math.sin((i * 2 * Math.PI) / 3 + Math.PI) * 0.11, Math.cos((i * 2 * Math.PI) / 3 + Math.PI) * 0.11, 0); sp2.rotation.z = -((i * 2 * Math.PI) / 3 + Math.PI); this.wheel.add(sp2); }
@@ -56,21 +63,30 @@ export class BusCockpit {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.06, 6, 40), new THREE.MeshBasicMaterial({ visible: false })); this.wheel.add(rim);
     this.register(rim, 'Steering wheel — drag left / right', { dragRaw: (dx) => this.A.steerDrag(dx), release: () => this.A.steerRelease() });
     this.register(hub, 'Horn — hold', { down: () => this.A.horn(true), up: () => this.A.horn(false) });
-    // Indicator stalk on the column.
-    const stalk = new THREE.Group(); stalk.position.set(-0.32, -0.05, 0.05); col.add(stalk);
+    // Indicator stalk on the column (left).
+    const stalk = new THREE.Group(); stalk.position.set(-0.1, 0.02, -0.12); col.add(stalk);
     this.stalk = stalk;
-    stalk.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.025, 0.025), M.black));
-    for (const [side, dy] of [['left', 0.04], ['right', -0.04]]) {
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.05), new THREE.MeshStandardMaterial({ color: 0x3a3f45 })); pad.position.set(-0.12, dy, 0); stalk.add(pad);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.022, 0.022), M.black); arm.position.x = -0.1; stalk.add(arm);
+    for (const [side, dy] of [['left', 0.03], ['right', -0.03]]) {
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.04), new THREE.MeshStandardMaterial({ color: side === 'left' ? 0x3d5a40 : 0x3a3f45 })); pad.position.set(-0.2, dy, 0); stalk.add(pad);
       this.register(pad, side === 'left' ? 'Indicator left' : 'Indicator right', { click: () => this.A.indicator(side) });
     }
-    // Pedals.
+    // Pedals on the platform.
     this.pedals = {};
-    for (const [k, x, w] of [['brake', -0.13, 0.16], ['throttle', 0.1, 0.1]]) {
-      const g = new THREE.Group(); g.position.set(xd + x, 0.42, zf + 0.85); this.group.add(g);
-      const p = new THREE.Mesh(new THREE.BoxGeometry(w, 0.24, 0.03), M.rubber); p.position.y = 0.12; g.add(p);
+    for (const [k, x, w] of [['brake', -0.12, 0.16], ['throttle', 0.12, 0.09]]) {
+      const g = new THREE.Group(); g.position.set(xd + x, PLAT, zf + 0.85); this.group.add(g);
+      const p = new THREE.Mesh(new THREE.BoxGeometry(w, 0.26, 0.03), M.rubber); p.position.y = 0.13; g.add(p);
       g.rotation.x = -0.6; this.pedals[k] = g;
     }
+    // Side consoles: sloped switch panels either side of the wheel, on pedestals.
+    const consoleAt = (x0, x1, z0, z1, tilt) => {
+      box(x0 + 0.04, x1 - 0.04, PLAT, 0.9, z0 + 0.04, z1 - 0.04, M.dash);
+      const g = new THREE.Group(); g.position.set((x0 + x1) / 2, 1.0, (z0 + z1) / 2); g.rotation.set(0.12, 0, tilt); this.group.add(g);
+      add(new THREE.BoxGeometry(x1 - x0 + 0.02, 0.04, z1 - z0 + 0.02), M.panel, 0, -0.02, 0, g);
+      return { g, w: x1 - x0, d: z1 - z0 };
+    };
+    const leftC = consoleAt(xd - 0.72, xd - 0.34, zf + 0.66, zf + 1.4, -0.28);
+    const rightC = consoleAt(xd + 0.34, xd + 0.88, zf + 0.66, zf + 1.42, 0.28);
     // Interior camera monitor (upper left), exterior mirrors (render targets).
     this.rtInterior = new THREE.WebGLRenderTarget(320, 200);
     const mon = add(new THREE.PlaneGeometry(0.22, 0.14), new THREE.MeshBasicMaterial({ map: this.rtInterior.texture }), xd - 0.42, 2.55, zf + 0.5); mon.rotation.set(0.15, 0.45, 0, 'YXZ');
@@ -90,52 +106,62 @@ export class BusCockpit {
     this.intCam.rotation.set(-0.25, -0.12, 0, 'YXZ');
     if (sp.trailerLength) this.intCam.position.z = zf + sp.length - 1.2;
     model.body.add(this.intCam);
-    // Wipers and rain on the windscreen.
-    this.wipers = [-0.55, 0.5].map((x) => { const g = new THREE.Group(); g.position.set(x, 1.12, zf - 0.03); const b = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.95, 0.02), M.black); b.position.y = 0.47; g.add(b); this.group.add(g); return g; });
+    // Parked wipers lie along the bottom of the windscreen.
+    this.wipers = [-0.78, 0.32].map((x) => { const g = new THREE.Group(); g.position.set(x, 1.11, zf - 0.03); const b = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.82, 0.02), M.black); b.position.y = 0.41; g.add(b); this.group.add(g); return g; });
     this.drops = canvasTex(512, 256); this.dropAmt = 0; this.dropSeed = [];
     const dp = add(new THREE.PlaneGeometry(W - 0.2, 1.7), new THREE.MeshBasicMaterial({ map: this.drops.t, transparent: true, depthWrite: false }), 0, 1.95, zf - 0.005); dp.rotation.y = Math.PI; dp.renderOrder = 5;
-    // Buttons: right console (sloped) and left console.
-    const right = new THREE.Group(); right.position.set(xd + 0.65, 1.385, zf + 1.05); right.rotation.set(-0.5, 0, 0); this.group.add(right);
-    const left = new THREE.Group(); left.position.set(xd - 0.55, 1.285, zf + 1.15); left.rotation.set(-0.45, 0, 0); this.group.add(left);
+    // Switches. Every one is wired to a real function.
     const v = this.v;
     const doorBtns = v.doors.map((d, i) => [`DOOR ${i + 1}`, 0x2a7bff, () => this.A.door(i), () => d.target === 1]);
-    const R = [
-      ['ENGINE', 0x2fa84f, () => this.A.engine(), () => v.engineOn || v.cranking > 0],
-      ...doorBtns,
-      ['CLOSE ALL', 0xffc400, () => this.A.closeAll(), () => false],
-      ['KNEEL', 0x9aa1a8, () => this.A.kneel(), () => v.kneel],
-      ['HAZARD', 0xd01010, () => this.A.hazards(), () => v.hazards && v.blinkOn],
-      ['INT LIGHT', 0xfff0c0, () => this.A.interior(), () => v.interiorLights],
-      ['NAV PAGE', 0x5ab0ff, () => { this.didPage = this.didPage === 'map' ? 'route' : 'map'; this.A.click(); }, () => false],
-    ];
     const L = [
       ['D', 0x2fa84f, () => this.A.gear('D'), () => v.gearSel === 'D'],
       ['N', 0xffffff, () => this.A.gear('N'), () => v.gearSel === 'N'],
       ['R', 0xff7a1a, () => this.A.gear('R'), () => v.gearSel === 'R'],
-      ['PARK BRAKE', 0xd01010, () => this.A.parking(), () => v.parking],
+      ['ENGINE', 0x2fa84f, () => this.A.engine(), () => v.engineOn || v.cranking > 0],
       ['LIGHTS', 0x3a8bff, () => this.A.lights(), () => v.lights > 0],
       ['WIPERS', 0x9aa1a8, () => this.A.wipers(), () => v.wipers > 0],
+      ['INT LIGHT', 0xfff0c0, () => this.A.interior(), () => v.interiorLights],
+      ['CLIMATE', 0x5ab0ff, () => this.A.climate(), () => v.climate],
+      ['RETARDER', 0xffb300, () => this.A.retarder(), () => v.retarder > 0],
       ['MIRROR L ◀', 0x9aa1a8, () => this.A.mirror(0, -1), () => false],
       ['MIRROR L ▶', 0x9aa1a8, () => this.A.mirror(0, 1), () => false],
+      ['NAV PAGE', 0x5ab0ff, () => { this.didPage = this.didPage === 'map' ? 'route' : 'map'; }, () => false],
       ['MIRROR R ◀', 0x9aa1a8, () => this.A.mirror(1, -1), () => false],
       ['MIRROR R ▶', 0x9aa1a8, () => this.A.mirror(1, 1), () => false],
+      ['HORN', 0x9aa1a8, () => { this.A.horn(true); setTimeout(() => this.A.horn(false), 450); }, () => v.horn],
     ];
-    const bGeo = new THREE.CylinderGeometry(0.022, 0.024, 0.02, 18);
-    const place = (parent, list, cols) => list.forEach(([label, color, act, lit], i) => {
-      const x = -0.14 + (i % cols) * (0.28 / (cols - 1)), z = -0.3 + Math.floor(i / cols) * 0.11;
+    const R = [
+      ...doorBtns,
+      ['CLOSE ALL', 0xffc400, () => this.A.closeAll(), () => false],
+      ['KNEEL', 0x9aa1a8, () => this.A.kneel(), () => v.kneel],
+      ['RAMP', 0x2a7bff, () => this.A.ramp(), () => v.ramp],
+      ['HAZARD', 0xd01010, () => this.A.hazards(), () => v.hazards && v.blinkOn],
+      ['STOP RESET', 0x2fa84f, () => this.A.stopReset(), () => v.stopRequest],
+      ['ANNOUNCE', 0x9aa1a8, () => this.A.announce(), () => false],
+    ];
+    const keyGeo = new THREE.BoxGeometry(0.05, 0.018, 0.04);
+    const place = (c, list, cols, zStart) => list.forEach(([label, color, act, lit], i) => {
+      const pitchX = (c.w - 0.06) / cols, x = -c.w / 2 + 0.03 + pitchX * ((i % cols) + 0.5), z = zStart + Math.floor(i / cols) * 0.1;
       const mat = new THREE.MeshStandardMaterial({ color, emissive: 0x000000, roughness: 0.4 });
-      const b = new THREE.Mesh(bGeo, mat); b.position.set(x, 0.0, z); parent.add(b);
-      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.028), new THREE.MeshBasicMaterial({ map: lbl(label), transparent: true }));
-      l.rotation.x = -Math.PI / 2; l.position.set(x, 0.001, z + 0.04); parent.add(l);
-      const e = { mesh: b, mat, color: new THREE.Color(color), lit, press: 0 };
+      const b = new THREE.Mesh(keyGeo, mat); b.position.set(x, 0.009, z); c.g.add(b);
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(0.105, pitchX - 0.006), 0.026), new THREE.MeshBasicMaterial({ map: lbl(label), transparent: true }));
+      l.rotation.x = -Math.PI / 2; l.position.set(x, 0.002, z + 0.04); c.g.add(l);
+      const e = { mesh: b, mat, color: new THREE.Color(color), lit, press: 0, y: 0.009 };
       this.buttons.push(e);
       this.register(b, label.charAt(0) + label.slice(1).toLowerCase(), { click: () => { e.press = 0.2; this.A.click(); act(); } });
     });
-    place(right, R, 3); place(left, L, 3);
-    // Emergency mushroom on the right console.
+    place(leftC, L, 3, -leftC.d / 2 + 0.06);
+    place(rightC, R, 3, -rightC.d / 2 + 0.06);
+    // Parking-brake valve (left console, rear) and emergency mushroom (right console, rear).
+    const pb = new THREE.Group(); pb.position.set(0.02, 0, leftC.d / 2 - 0.1); leftC.g.add(pb);
+    add(new THREE.BoxGeometry(0.1, 0.02, 0.08), M.black, 0, 0.01, 0, pb);
+    const lever = add(new THREE.BoxGeometry(0.03, 0.09, 0.03), new THREE.MeshStandardMaterial({ color: 0xd8b400 }), 0, 0.055, 0, pb);
+    this.pbLever = lever;
+    this.register(lever, 'Parking brake valve', { click: () => { this.A.click(); this.A.parking(); } });
+    const pbl = add(new THREE.PlaneGeometry(0.1, 0.026), new THREE.MeshBasicMaterial({ map: lbl('PARK BRAKE', '#5a0b0b', '#fff'), transparent: true }), 0, 0.002, 0.065, pb); pbl.rotation.x = -Math.PI / 2;
     const eb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd01010, emissive: 0x200000 }));
-    eb.position.set(0.12, 0.0, 0.18); right.add(eb);
-    const ebl = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.03), new THREE.MeshBasicMaterial({ map: lbl('EMERGENCY', '#8a0c0c', '#fff') })); ebl.rotation.x = -Math.PI / 2; ebl.position.set(0.12, 0.001, 0.24); right.add(ebl);
+    eb.position.set(0.1, 0.0, rightC.d / 2 - 0.12); rightC.g.add(eb);
+    const ebl = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.03), new THREE.MeshBasicMaterial({ map: lbl('EMERGENCY', '#8a0c0c', '#fff') })); ebl.rotation.x = -Math.PI / 2; ebl.position.set(0.1, 0.002, rightC.d / 2 - 0.05); rightC.g.add(ebl);
     this.register(eb, 'Emergency stop (hazards + full brake)', { click: () => this.A.emergency() });
     this.ebBtn = eb;
   }
@@ -152,13 +178,14 @@ export class BusCockpit {
     for (const b of this.buttons) {
       const on = b.lit();
       b.mat.emissive.copy(on ? b.color : new THREE.Color(0)).multiplyScalar(on ? 0.8 : 0);
-      b.press = Math.max(0, b.press - dt); b.mesh.position.y = b.press > 0 ? -0.006 : 0;
+      b.press = Math.max(0, b.press - dt); b.mesh.position.y = b.y - (b.press > 0 ? 0.008 : 0);
     }
     this.ebBtn.position.y = v.emergency ? -0.012 : 0;
     // Wipers sweep; they clear the drops.
     const wiping = v.wipers > 0;
     const ang = wiping ? (Math.sin(v.wiperPhase) * 0.5 + 0.5) * 1.45 : 0;
-    this.wipers.forEach((w) => { w.rotation.z = -ang + 0.06; });
+    this.wipers.forEach((w) => { w.rotation.z = -Math.PI / 2 + 0.05 + ang; });
+    this.pbLever.rotation.x = v.parking ? 0 : 0.7;
     this.dropAmt = Math.min(1, Math.max(0, this.dropAmt + dt * st.rain * 0.25 - (wiping ? dt * [0, 0.35, 0.7, 1.2][v.wipers] : 0)));
     this.acc = (this.acc || 0) + dt;
     if (this.acc > 0.08) { this.acc = 0; this.drawCluster(st); this.drawDid(st); this.drawDrops(); }

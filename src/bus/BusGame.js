@@ -120,6 +120,11 @@ export class BusGame {
       mirror: (i, d) => { v().mirrorYaw[i] = clamp(v().mirrorYaw[i] + d * 0.05, -0.25, 0.35); },
       indicator: (s) => { v().setIndicator(s); },
       emergency: () => v().toggleEmergency(),
+      ramp: () => v().toggleRamp(),
+      retarder: () => { v().cycleRetarder(); this.toast(`Retarder ${['off', '1', '2', '3'][v().retarder]}`, 'info', 1.5); },
+      climate: () => { v().climate = !v().climate; this.toast(v().climate ? 'Climate on' : 'Climate off', 'info', 1.5); },
+      stopReset: () => { v().stopRequest = false; },
+      announce: () => { const r = this.runner, k = r.atStopIdx ?? r.nextIdx ?? null; const st = r.stops?.[k ?? 0]; if (st) this.announce(st, 'next'); },
       horn: (on) => { v().horn = on; },
       steerDrag: (dx) => { c().steerDrag = true; c().wheelTarget = clamp(c().wheelTarget + dx * 0.035, -16, 16); },
       steerRelease: () => { c().steerDrag = false; },
@@ -132,6 +137,8 @@ export class BusGame {
     on('bus:crank', (e) => A.crank(e)); on('bus:engine', (e) => this.toast(e ? 'Engine running' : 'Engine stopped', 'info', 2));
     on('bus:refused', (r) => { this.audio.refuse(); this.toast(r, 'warn', 3); });
     on('bus:doorOpen', () => A.door(true)); on('bus:doorClose', () => { A.doorWarning(); setTimeout(() => A.door(false), 600); });
+    on('bus:ramp', (d) => this.toast(d ? 'Ramp deployed — the bus is immobilised' : 'Ramp stowed', 'info', 2.5));
+    on('bus:gear', (g) => { if (g === 'D' || g === 'R') this.toast(`Gear ${g}`, 'info', 1.2); });
     on('bus:tick', (b) => A.tick(b)); on('bus:parking', (p) => A.parking(p)); on('bus:kneel', () => A.kneel()); on('bus:shift', () => A.shift());
     on('bus:validate', (p) => A.validate(true, p)); on('bus:stopRequest', () => { A.stopRequest(); this.toast('Stop requested (ARRÊT DEMANDÉ)', 'info', 3); });
     on('bus:doorWhileMoving', () => { this.audio.refuse(); this.toast('Doors cannot open while moving', 'warn', 3); });
@@ -182,6 +189,8 @@ export class BusGame {
       case 'indLeft': A.indicator('left'); break; case 'indRight': A.indicator('right'); break;
       case 'hazards': A.hazards(); break; case 'lights': A.lights(); break; case 'wipers': A.wipers(); break;
       case 'interior': A.interior(); break; case 'emergency': A.emergency(); break;
+      case 'ramp': A.ramp(); break; case 'retarder': A.retarder(); break; case 'climate': A.climate(); break;
+      case 'stopReset': A.stopReset(); break; case 'announce': A.announce(); break;
       case 'camera': this.camMode = CAMS[(CAMS.indexOf(this.camMode) + 1) % CAMS.length]; this.look.yaw = 0; this.look.pitch = this.camMode === 'cab' ? -0.2 : 0.25; break;
       case 'routeView': this.bus.emit('bus:routeView'); break;
       case 'navPage': this.cockpit.didPage = this.cockpit.didPage === 'map' ? 'route' : 'map'; break;
@@ -205,7 +214,9 @@ export class BusGame {
     const stick = Math.abs(axes[0] ?? 0) > 0.12 ? axes[0] : 0;
     if (stick) c.wheelTarget = stick * 16 * (1 / (1 + speed / 15));
     else if (L || R) c.wheelTarget = clamp(c.wheelTarget + (R ? rate : -rate) * dt, -16, 16);
-    else if (!c.steerDrag) c.wheelTarget -= Math.sign(c.wheelTarget) * Math.min(Math.abs(c.wheelTarget), (1 + speed * 0.35) * dt); // self-centring
+    else if (!c.steerDrag) c.wheelTarget -= Math.sign(c.wheelTarget) * Math.min(Math.abs(c.wheelTarget), (7 + speed * 0.6) * dt); // self-centring (keyboard)
+    // Accelerating without a drive gear: tell the driver how to select one.
+    if (c.throttle > 0.3 && v.engineOn && v.gearSel === 'N' && this.time - (this.gearHintT ?? -99) > 6) { this.gearHintT = this.time; this.toast(`Gearbox in N — press ${I.labelFor('gearD')} for D (or ${I.labelFor('gearR')} for R)`, 'warn', 4); }
     return { throttle: c.throttle, brake: c.brake, wheelTarget: c.wheelTarget };
   }
 

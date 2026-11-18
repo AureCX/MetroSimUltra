@@ -2,6 +2,7 @@
 // settings, controls (rebinding), credits, pause menu, loading screen and run summary.
 import { renderNetworkMap, escapeXml as esc } from './NetworkMap.js';
 import { ACTIONS, PAD_LABELS } from '../core/Input.js';
+import { BUS_ACTIONS } from '../bus/BusControls.js';
 import { AssetStore } from '../core/AssetStore.js';
 import { formatClock, formatDelta, slugify } from '../core/util.js';
 import { Timetable } from '../stations/Timetable.js';
@@ -10,8 +11,8 @@ import { Route } from '../lines/Route.js';
 import { EXAMPLE_LINE } from '../lines/LineRepository.js';
 
 export class Menu {
-  constructor(root, { repo, settings, save, input, bus, audio }) {
-    Object.assign(this, { root, repo, settings, save, input, bus, audio });
+  constructor(root, { repo, settings, save, input, bus, audio, busInput }) {
+    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput });
     this.handlers = {};
     this.context = 'main'; // main | pause
     const sel = save.selection;
@@ -303,21 +304,30 @@ export class Menu {
   }
 
   // ---------------- Controls ----------------
-  screen_controls() {
+  screen_controls(tab = this.controlsTab || 'metro') {
+    this.controlsTab = tab;
+    const bus = tab === 'bus' && this.busInput;
+    const I = bus ? this.busInput : this.input;
+    const table = bus ? BUS_ACTIONS : ACTIONS;
+    const padCell = (a, def) => (bus ? (def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'
+      : `${(def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'}${a === 'tractionUp' ? ' / D-pad ↑' : a === 'tractionDown' ? ' / D-pad ↓' : ''}`);
     const body = this.frame('Controls', `
-      <p class="sub">Click a key to rebind it, then press the new key (Esc cancels). Keys follow your keyboard layout.</p>
+      <div class="dir-toggle"><button class="btn small ${bus ? '' : 'primary'}" data-tab="metro">🚇 Metro</button>${this.busInput ? `<button class="btn small ${bus ? 'primary' : ''}" data-tab="bus">🚌 Bus</button>` : ''}</div>
+      <p class="sub">Click a key to rebind it, then press the new key (Esc cancels). Keys follow your keyboard layout. Metro and bus bindings are separate.</p>
       <table class="controls"><thead><tr><th>Action</th><th>Primary</th><th>Secondary</th><th>Gamepad</th></tr></thead><tbody>
-      ${Object.entries(ACTIONS).map(([a, def]) => `<tr><td>${esc(def.label)}</td>
-        ${[0, 1].map((slot) => `<td><button class="key" data-a="${a}" data-slot="${slot}">${esc(this.input.keyLabel(this.input.bindings[a][slot]))}</button></td>`).join('')}
-        <td class="sub">${(def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'}${a === 'tractionUp' ? ' / D-pad ↑' : a === 'tractionDown' ? ' / D-pad ↓' : ''}</td></tr>`).join('')}
+      ${Object.entries(table).map(([a, def]) => `<tr><td>${esc(def.label)}</td>
+        ${[0, 1].map((slot) => `<td><button class="key" data-a="${a}" data-slot="${slot}">${esc(I.keyLabel(I.bindings[a][slot]))}</button></td>`).join('')}
+        <td class="sub">${padCell(a, def)}</td></tr>`).join('')}
       </tbody></table>
-      <p class="sub">Mouse: left-click cab buttons, drag or scroll on the master controller; hold right button to look around; scroll to zoom. Gamepad right stick looks around.</p>
+      <p class="sub">${bus ? 'Mouse in the bus cab: click any switch, drag the steering wheel, click the indicator stalk, hold the wheel hub for the horn; hold the right button to look around. Gamepad: RT/LT analog accelerator & brake, left stick steering.'
+        : 'Mouse: left-click cab buttons, drag or scroll on the master controller; hold right button to look around; scroll to zoom. Gamepad right stick looks around.'}</p>
       <button class="btn small danger" id="c-reset">Restore defaults</button>`);
+    body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => this.screen_controls(b.dataset.tab)));
     body.querySelectorAll('.key').forEach((b) => (b.onclick = () => {
       b.textContent = '…press a key'; b.classList.add('listening');
-      this.input.rebind(b.dataset.a, Number(b.dataset.slot), () => this.screen_controls());
+      I.rebind(b.dataset.a, Number(b.dataset.slot), () => this.screen_controls(tab));
     }));
-    body.querySelector('#c-reset').onclick = () => { this.input.resetBindings(); this.screen_controls(); };
+    body.querySelector('#c-reset').onclick = () => { I.resetBindings(); this.screen_controls(tab); };
   }
 
   screen_credits() {

@@ -78,7 +78,7 @@ export class BusPhysics {
     const sp = this.spec, m = this.mass, Iz = m * (sp.length * sp.length) / 14;
     const v = this.vx;
     // Steering: wheel turns at a rate that drops with speed; front wheels follow via ratio.
-    const rate = (sys.steerRate ?? 5.5) * (1 / (1 + Math.abs(v) / 9));
+    const rate = (sys.steerRate ?? 10) * (1 / (1 + Math.abs(v) / 14));
     this.wheel += clamp(controls.wheelTarget - this.wheel, -rate * dt, rate * dt);
     const maxWheel = sp.steerMax * 18;
     this.wheel = clamp(this.wheel, -maxWheel, maxWheel);
@@ -97,8 +97,8 @@ export class BusPhysics {
     // Electric/hybrid regenerative braking and diesel retarder on the first part of the pedal.
     const vabs = Math.abs(v);
     let regen = 0;
-    if (sp.powertrain !== 'diesel' && vabs > 1) regen = Math.min(controls.brake * 1.4 + (controls.throttle === 0 ? 0.08 : 0), 1) * (sp.regen ?? 0.5) * m * 1.2;
-    const retarder = sp.powertrain === 'diesel' && vabs > 2 ? clamp(controls.brake * 3, 0, 1) * 0.07 * m * G + (controls.throttle === 0 ? 0.012 * m * G : 0) : 0;
+    if (sp.powertrain !== 'diesel' && vabs > 1) regen = Math.min(controls.brake * 1.4 + (controls.throttle === 0 ? 0.04 * (sys.retarderLevel ?? 1) : 0), 1) * (sp.regen ?? 0.5) * m * 1.2;
+    const retarder = sp.powertrain === 'diesel' && vabs > 2 ? clamp(controls.brake * 3, 0, 1) * 0.07 * m * G + (controls.throttle === 0 ? 0.008 * (sys.retarderLevel ?? 1) * m * G : 0) : 0;
     let Fb = this.brakeP * sp.brakeDecel * m + regen + retarder;
     if (sys.parking) Fb = Math.max(Fb, 0.8 * m * G);
     const gripMax = this.mu * m * G;

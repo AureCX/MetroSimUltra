@@ -1,4 +1,5 @@
 // A driving session: wires all decoupled systems together for one line / train / direction.
+import { ATO } from '../driving/ATO.js';
 import * as THREE from 'three';
 import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
@@ -9,7 +10,7 @@ import { SignalSystem } from '../signaling/SignalSystem.js';
 import { TrafficManager } from '../traffic/TrafficManager.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { SignalView } from '../world/SignalView.js';
-import { TrainModel } from '../world/TrainModel.js';
+import { TrainModel, TRAIN_FLOOR } from '../world/TrainModel.js';
 import { PassengerSystem } from '../world/Passengers.js';
 import { Cabin, CabInteraction } from '../cabin/Cabin.js';
 import { CameraSystem } from '../camera/CameraSystem.js';
@@ -118,6 +119,8 @@ export class Game {
     this.paused = false;
     this.result = null;
     this.bumpAcc = 0; this.bump = 0;
+    this.ato = line.automation === 'ato'; // automated line: the train drives itself unless the driver takes over
+    this.atoCtl = new ATO({ player: this.player, stations: this.stations, route, specs: train, openDoors: (side) => this.openDoors(side) });
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
     if (J && direction === 'A') this.buildRouteIndicator();
@@ -129,7 +132,7 @@ export class Game {
   /** Sky dome, sun and haze for lines with open-air sections. */
   buildDaylight() {
     this.daylight = null;
-    if (![...this.svc.values()].some((d) => d.geom.portals.length)) return;
+    if (![...this.svc.values()].some((d) => d.geom.portals.length || d.line.elevated)) return;
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
     const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
     grd.addColorStop(0, '#2f6bc4'); grd.addColorStop(0.3, '#5f97de'); grd.addColorStop(0.46, '#a9c8ea'); grd.addColorStop(0.5, '#c6d8ea'); grd.addColorStop(0.52, '#8f9a80'); grd.addColorStop(1, '#6f7d64');
@@ -271,6 +274,7 @@ export class Game {
     this.timetable = new Timetable(route, this.specs, d.line.startTime);
     this.stations = new StationManager(route, this.timetable, p, this.bus, this.settings);
     Object.assign(this.stations, { atStop: null, nextStop: old.nextStop, lastDelay: old.lastDelay, served: old.served, boardingPending: old.boardingPending });
+    if (this.atoCtl) Object.assign(this.atoCtl, { route, stations: this.stations });
     this.passengers.route = route; this.passengers.routes = d.routes; this.passengers.line = d.line; this.passengers.stationManager = this.stations;
     for (const k of [...this.passengers.crowds.keys()]) this.passengers.removeCrowd(k);
     this.signalView.dispose();
@@ -470,6 +474,12 @@ export class Game {
       case 'cabLight': A.cabLight(); break;
       case 'routeSelect': A.routeSelect(); break;
       case 'lineMap': A.lineMap(); break;
+      case 'ato':
+        if (this.line.automation !== 'ato') { this.toast('This line has no automatic train operation.', 'info', 2); break; }
+        this.ato = !this.ato;
+        if (!this.ato) this.player.controller.set(-this.player.controller.bNotches);
+        this.toast(this.ato ? 'ATO engaged — the train runs automatically' : 'Manual driving — ATO off', 'info', 3);
+        break;
       case 'toggleHud': this.settings.set('gameplay.showHud', !this.settings.get('gameplay.showHud')); break;
       case 'lookBack': this.cameraSys.resetView(); break;
       default: break;
@@ -494,6 +504,7 @@ export class Game {
     const atp = this.settings.get('gameplay.atp') || this.signals.system === 'cbtc';
     const auth = this.signals.authority;
     const authorityDist = atp && auth != null ? auth - p.front : null;
+    if (this.ato) this.atoCtl.step(auth);
     p.update(dt, { staticLimit, authorityDist, brakeRate: this.line.signaling.atpBrakeRate });
     this.stations.update(dt, this.clock);
     this.traffic.step(dt, this.clock);
@@ -569,11 +580,17 @@ export class Game {
     this.cameraSys.update({
       car0: this.playerModel.cars[0], eye: this.cabin.eye, route, front: p.front, v: p.speed, accel: p.physics.a,
       jerk: p.physics.jerk, geom: this.geom, world: this.world, dt, time: this.time, scene: this.scene, padLook: this.input.look, bump: this.bump,
+      carInterior: this.playerModel.cars[Math.min(1, this.playerModel.cars.length - 1)], carLength: this.specs.carLength, floor: TRAIN_FLOOR,
     });
+    // Passenger information inside the train.
+    {
+      const sm = this.stations, k = sm.atStop ?? sm.nextStop, stp = route.stops[k];
+      if (stp) this.playerModel.setInfo({ line: this.line, next: stp.name, terminus: route.terminus, clock: this.clock, side: stp.doorSide, atStation: sm.atStop != null });
+    }
     const tr = route.toTrack(p.front);
     this.audio.update(dt, {
       v: p.speed, traction: p.physics.traction, brake: Math.max(p.physics.brake, p.physics.eb), radius: route.radiusAt(p.front),
-      inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab', carLength: this.specs.carLength,
+      inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab' && this.cameraSys.mode !== 'interior', carLength: this.specs.carLength,
       doorsOpen: p.doors.anyOpen, outdoor: (this.daylight?.o ?? 0) > 0.5, motorPitch: this.specs.sound?.motorPitch, inverter: this.specs.sound?.inverter,
     });
     this.audio.setAlarm(p.safety.overspeed !== 'none' ? 'atp' : p.safety.vigAlarm ? 'vigilance' : null);
@@ -625,6 +642,7 @@ export class Game {
     else if (s.overspeed !== 'none') alarm = { text: `OVERSPEED · permitted ${Math.round(s.permitted)} km/h`, color: '#ffb300' };
     else if (s.vigAlarm) alarm = { text: 'VIGILANCE · acknowledge now', color: '#ff7a00' };
     else if (J && !J.passed && !J.set && J.divergeS - p.front < 500) alarm = { text: `SET ROUTE FOR ${this.planned.service.toUpperCase()} · press ${this.input.labelFor('routeSelect')}`, color: '#ffb300' };
+    else if (this.ato) alarm = { text: `ATO · automatic operation (${this.input.labelFor('ato')} to drive manually)`, color: '#5ab0ff' };
     else if (info.standing && !p.doors.locked && info.dwell.authorized) alarm = { text: 'DEPARTURE AUTHORISED · close doors', color: '#3cff8a' };
     const doorsOpenSide = p.doors.openSide();
     const jo = J && J.options.find((o) => o.id === J.set);

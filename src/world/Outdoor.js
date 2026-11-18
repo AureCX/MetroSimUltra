@@ -7,9 +7,9 @@ import { Textures } from './Textures.js';
 import { seededRandom, hashString } from '../core/util.js';
 import { City } from './City.js';
 import { buildCityHall, buildUniversity, landmarkFrame } from './Landmarks.js';
-import { buildAirport } from './Airport.js';
+import { buildAirport, buildTerminal2 } from './Airport.js';
 
-const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity, airport: buildAirport };
+const LANDMARKS = { cityHall: buildCityHall, university: buildUniversity, airport: buildAirport, terminal2: buildTerminal2 };
 
 const VIADUCT_CLEAR = 5;  // bed this high above the street (m) or more = viaduct, streets pass underneath
 const CHUNK = 100;
@@ -109,7 +109,9 @@ export class OutdoorBuilder {
         const lm = st.landmark;
         if (!lm || st.mirrorOf != null || lm.ground != null || i < this.w.opts.firstStation || !LANDMARKS[lm.type]) return;
         const lat = (lm.side === 'left' ? -1 : 1) * (lm.offset ?? 50);
-        this.landmarks.push(LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line));
+        // On an elevated line the landmark knows where the viaduct passes (local z = distance to the line).
+        const opts = this.line.elevated ? { corridor: { z: Math.abs(lat), height: this.line.elevated.height } } : {};
+        this.landmarks.push(LANDMARKS[lm.type](this.group, landmarkFrame(this.geom, i, lat, lm.along ?? 0, G), this.line, this.geom, i, opts));
       });
       this.city = new City(this, runs, this.landmarks);
     }

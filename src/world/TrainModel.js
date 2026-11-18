@@ -153,6 +153,88 @@ export class TrainModel {
       this.cars.push(car);
     }
     this.setLights('forward');
+    if (player) this.buildInterior(line);
+  }
+
+  /**
+   * Passenger saloons of the driven train (seen from the interior camera): floor, ceiling, wall linings that
+   * leave the windows clear (the exterior glass is single-sided, so the outside shows through), benches,
+   * grab poles, light strips, end walls and next-station displays above the doors.
+   */
+  buildInterior(line) {
+    const sp = this.specs, W = sp.width, L = sp.carLength, dps = sp.doorsPerSide, dw = sp.doorWidth;
+    const lam = (o) => new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, ...o });
+    const M = {
+      floor: lam({ color: 0x5b6068, emissive: 0x15171a }), wall: lam({ color: 0xe9ebee, emissive: 0x3a3c40 }), ceiling: lam({ color: 0xf2f3f5, emissive: 0x4a4b4e }),
+      seat: lam({ color: new THREE.Color(line.color).lerp(new THREE.Color(0x24324a), 0.45), emissive: 0x111111 }), pole: new THREE.MeshStandardMaterial({ color: line.color, metalness: 0.5, roughness: 0.35 }),
+      light: new THREE.MeshBasicMaterial({ color: 0xfffaf0 }), dark: lam({ color: 0x2b2f35 }),
+    };
+    const c = document.createElement('canvas'); c.width = 768; c.height = 160;
+    this.infoCanvas = c; this.infoTex = new THREE.CanvasTexture(c); this.infoTex.colorSpace = THREE.SRGBColorSpace;
+    const infoMat = new THREE.MeshBasicMaterial({ map: this.infoTex });
+    const y0 = FLOOR + 0.02, yc = 3.22, xi = W / 2 - 0.07;
+    const doorZ = []; for (let d = 0; d < dps; d++) doorZ.push(L / 2 - (L * (d + 0.5)) / dps);
+    const plane = (w, h, mat, x, y, z, rx, ry, parent) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); parent.add(m); return m; };
+    const box = (w, h, d, mat, x, y, z, parent) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); parent.add(m); return m; };
+    this.cars.forEach((car, ci) => {
+      const g = new THREE.Group(); g.name = 'interior'; car.add(g);
+      const zFront = ci === 0 ? L / 2 - 2.5 : L / 2 - 0.08, zBack = -L / 2 + 0.08; // car 0: behind the driver's cab
+      const len = zFront - zBack, zm = (zFront + zBack) / 2;
+      plane(W - 0.14, len, M.floor, 0, y0, zm, -Math.PI / 2, 0, g);
+      plane(W - 0.14, len, M.ceiling, 0, yc, zm, Math.PI / 2, 0, g);
+      for (const sx of [-0.45, 0.45]) plane(0.16, len - 0.4, M.light, sx, yc - 0.01, zm, Math.PI / 2, 0, g);
+      // Wall linings: below and above the window band, skipping door openings.
+      const spans = []; let cur = zBack;
+      for (const z of [...doorZ].sort((a, b) => a - b)) { if (z - dw / 2 > cur) spans.push([cur, Math.min(zFront, z - dw / 2)]); cur = z + dw / 2; }
+      if (cur < zFront) spans.push([cur, zFront]);
+      for (const side of [-1, 1]) for (const [a, b] of spans) {
+        if (b - a < 0.05) continue;
+        const ry = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        plane(b - a, 1.92 - y0, M.wall, side * xi, (1.92 + y0) / 2, (a + b) / 2, 0, ry, g);
+        plane(b - a, yc - 2.78, M.wall, side * xi, (yc + 2.78) / 2, (a + b) / 2, 0, ry, g);
+        if (b - a > 1.2) box(0.48, 0.1, b - a - 0.4, M.seat, side * (W / 2 - 0.34), FLOOR + 0.46, (a + b) / 2, g);   // bench
+        if (b - a > 1.2) box(0.08, 0.45, b - a - 0.4, M.seat, side * (W / 2 - 0.12), FLOOR + 0.72, (a + b) / 2, g);  // backrest
+      }
+      // Lintels above the doors with the next-station display, grab poles at each door.
+      for (const z of doorZ) {
+        if (z > zFront) continue;
+        for (const side of [-1, 1]) {
+          plane(dw, yc - (FLOOR + 1.98), M.wall, side * xi, (yc + FLOOR + 1.98) / 2, z, 0, side > 0 ? -Math.PI / 2 : Math.PI / 2, g);
+          plane(dw - 0.1, (dw - 0.1) * 160 / 768, infoMat, side * (xi - 0.02), yc - 0.2, z, 0, side > 0 ? -Math.PI / 2 : Math.PI / 2, g);
+        }
+        for (const dz of [-0.55, 0.55]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, yc - y0, 8), M.pole); pole.position.set(0, (yc + y0) / 2, z + dz); g.add(pole); }
+      }
+      // End walls (gangway opening between cars), cab partition with its door in car 0.
+      for (const [z, dir] of [[zFront, -1], [zBack, 1]]) {
+        const isCabWall = ci === 0 && dir < 0;
+        const open = isCabWall ? 0 : 1.2;
+        const sideW = (W - 0.14 - open) / 2;
+        for (const sx of [-1, 1]) plane(sideW, yc - y0, isCabWall ? M.dark : M.wall, sx * (open / 2 + sideW / 2), (yc + y0) / 2, z, 0, dir > 0 ? 0 : Math.PI, g);
+        if (!isCabWall) plane(open, yc - (FLOOR + 2.2), M.wall, 0, (yc + FLOOR + 2.2) / 2, z, 0, dir > 0 ? 0 : Math.PI, g);
+      }
+    });
+    this.setInfo({ line, next: '', terminus: '' });
+  }
+
+  /** Next-station displays inside the train. */
+  setInfo({ line, next, terminus, clock, side, atStation }) {
+    if (!this.infoCanvas) return;
+    const key = `${next}|${terminus}|${side}|${atStation}|${Math.floor((clock || 0) / 60)}`;
+    if (key === this.infoKey) return;
+    this.infoKey = key;
+    const g = this.infoCanvas.getContext('2d'), W = 768, H = 160;
+    g.fillStyle = '#0c0f14'; g.fillRect(0, 0, W, H);
+    g.fillStyle = line.color; g.beginPath(); g.arc(70, 80, 50, 0, Math.PI * 2); g.fill();
+    g.fillStyle = line.textColor; g.font = 'bold 64px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(line.number, 70, 84);
+    g.textAlign = 'left'; g.fillStyle = '#8fa1b3'; g.font = '26px Arial';
+    g.fillText(atStation ? 'Station · Stop' : 'Prochaine station · Next stop', 140, 40);
+    g.fillStyle = '#ffffff'; let size = 48; g.font = `bold ${size}px Arial`;
+    while (g.measureText(next).width > W - 160 && size > 22) { size -= 2; g.font = `bold ${size}px Arial`; }
+    g.fillText(next, 140, 90);
+    g.fillStyle = '#ffb000'; g.font = '24px Arial';
+    g.fillText(`${terminus ? `Direction ${terminus}` : ''}${side ? `   ·   Descente ${side === 'left' ? 'à gauche ◀' : 'à droite ▶'}` : ''}`, 140, 138);
+    if (clock != null) { g.textAlign = 'right'; g.fillStyle = '#8fa1b3'; g.font = 'bold 26px Arial'; const h = Math.floor(clock / 3600) % 24, m = Math.floor(clock / 60) % 60; g.fillText(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, W - 18, 40); }
+    this.infoTex.needsUpdate = true;
   }
 
   setDestination(line, terminus) {

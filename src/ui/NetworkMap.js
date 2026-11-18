@@ -39,7 +39,7 @@ export function renderNetworkMap(svg, lines, selectedId, onSelect) {
   }
   let html = `<rect x="${minX - pad}" y="${cy - h / 2}" width="${w}" height="${h}" fill="transparent"/>`;
   const drawn = new Set();
-  for (const s of shapes) for (const st of s.stations) for (const c of st.st.connections) {
+  for (const s of shapes) for (const st of s.stations) for (const c of [...st.st.connections, ...(st.st.interchange?.stations || [])]) {
     const o = pos.get(c.toLowerCase()); const key = [st.st.name, c].sort().join('|');
     if (!o || drawn.has(key)) continue; drawn.add(key);
     html += `<line x1="${st.x}" y1="${st.y}" x2="${o.x}" y2="${o.y}" stroke="#aab4bf" stroke-width="${4 * k}" stroke-dasharray="${8 * k} ${6 * k}"/>`;
@@ -52,7 +52,7 @@ export function renderNetworkMap(svg, lines, selectedId, onSelect) {
     html += `<path d="${d}" stroke="transparent" stroke-width="${40 * k}" fill="none"/>`;
     s.stations.forEach((st, i) => {
       const key = st.st.name.toLowerCase();
-      const inter = names.get(key).size > 1 || st.st.connections.length > 0;
+      const inter = names.get(key).size > 1 || st.st.connections.length > 0 || (st.st.interchange?.metro?.length ?? 0) > 0;
       const r = (inter ? 9 : 6) * k;
       html += `<circle cx="${st.x}" cy="${st.y}" r="${r}" fill="#fff" stroke="${inter ? '#111' : s.l.color}" stroke-width="${3 * k}"/>`;
       const dy = (i % 2 ? 26 : -18) * k;

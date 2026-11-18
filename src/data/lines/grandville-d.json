@@ -3,35 +3,41 @@
  "line": "Line D",
  "number": "D",
  "network": "Grandville Métro",
- "color": "#FFD000",
+ "color": "#FF8000",
  "textColor": "#16233a",
  "language": "fr-FR",
  "maxSpeed": 80,
  "startTime": "07:40:00",
- "headway": 150,
+ "headway": 180,
  "tunnel": {
   "profile": "box"
  },
  "map": {
   "origin": [
-   -4947.26,
-   1928.65
+   -4756.82,
+   2419.39
   ],
-  "heading": 180
+  "heading": -59.954
  },
+ "elevated": {
+  "height": 9
+ },
+ "automation": "ato",
+ "train": "apm-aeroval",
  "directions": {
   "A": {
-   "name": "Aéroval · Direction Parc des Expositions"
+   "name": "Aéroval · Direction Grandville Sud"
   },
   "B": {
    "name": "Aéroval · Direction Aéroport – Terminal 1"
   }
  },
  "defaults": {
-  "platformLength": 90,
-  "platformWidth": 6,
+  "platformLength": 105,
+  "platformWidth": 8,
   "platformType": "island",
   "approachSpeedLimit": 45,
+  "approachDistance": 100,
   "stopDuration": 25,
   "style": "modern"
  },
@@ -42,102 +48,149 @@
   "atpBrakeRate": 0.9
  },
  "announcements": {
-  "nextStation": "Prochaine station : {station}.",
-  "arrival": "{station}.",
-  "terminus": "{station}. Terminus. Merci d'avoir voyagé avec Aéroval."
+  "nextStation": "Prochaine station : {station}. {connections}",
+  "arrival": "{station}. {doors}",
+  "terminus": "{station}. Terminus. {connections} Merci d'avoir voyagé avec Aéroval.",
+  "connections": "Correspondance : {list}."
  },
  "stations": [
   {
    "name": "Aéroport International – Terminal 1 (Est)",
-   "distanceToNext": 1053.1,
-   "speedLimit": 70,
+   "distanceToNext": 588.4,
+   "speedLimit": 55,
    "stopDuration": 25,
    "style": "modern",
    "passengers": 40,
-   "connections": [
-    "Aéroport International",
-    "Aéroport Est"
-   ],
+   "signage": "airport",
+   "interchange": {
+    "metro": [
+     "A",
+     "B"
+    ],
+    "stations": [
+     "Aéroport International",
+     "Aéroport Est"
+    ],
+    "bus": [
+     "Aéroval"
+    ],
+    "airport": true
+   },
+   "landmark": {
+    "type": "airport",
+    "side": "right",
+    "offset": 100,
+    "along": 0
+   },
    "theme": {
     "wall": "#e9edf2",
-    "accent": "#FFD000"
+    "accent": "#FF8000"
    },
    "track": [
     {
-     "length": 120
-    },
-    {
-     "length": 513.1,
-     "radius": 420,
+     "length": 84.7,
+     "radius": 235,
      "turn": "right"
     },
     {
-     "length": 280
+     "length": 132.6
+    },
+    {
+     "length": 216.1,
+     "radius": 235,
+     "turn": "left"
     }
    ]
   },
   {
-   "name": "Aéroport International – Terminal 2 (Ouest)",
-   "distanceToNext": 2102.3,
-   "speedLimit": 70,
+   "name": "Aéroport International – Terminal 2",
+   "distanceToNext": 461.7,
+   "speedLimit": 65,
    "stopDuration": 25,
    "style": "modern",
    "passengers": 34,
+   "signage": "airport",
+   "interchange": {
+    "bus": [
+     "Aéroval"
+    ],
+    "airport": true
+   },
+   "landmark": {
+    "type": "terminal2",
+    "side": "right",
+    "offset": 95,
+    "along": 0
+   },
    "theme": {
     "wall": "#eef0f3",
-    "accent": "#FFD000"
+    "accent": "#FF8000"
    },
    "track": [
     {
-     "length": 180
-    },
-    {
-     "length": 1382.3,
-     "radius": 480,
+     "length": 113.8,
+     "radius": 380,
      "turn": "left"
     },
     {
-     "length": 400
-    }
-   ]
-  },
-  {
-   "name": "Zone Cargo & Fret",
-   "distanceToNext": 3446.6,
-   "speedLimit": 70,
-   "stopDuration": 25,
-   "style": "modern",
-   "passengers": 14,
-   "theme": {
-    "wall": "#3a3f46",
-    "accent": "#FFD000"
-   },
-   "track": [
-    {
-     "length": 90.8,
-     "radius": 500,
-     "turn": "left"
+     "length": 119.6
     },
     {
-     "length": 3125.1
-    },
-    {
-     "length": 90.7,
-     "radius": 500,
+     "length": 73.3,
+     "radius": 380,
      "turn": "right"
     }
    ]
   },
   {
-   "name": "Parc des Expositions",
-   "distanceToNext": 0,
-   "speedLimit": 70,
+   "name": "Quartier des Affaires – Aéroport",
+   "distanceToNext": 437,
+   "speedLimit": 65,
    "stopDuration": 25,
    "style": "modern",
-   "passengers": 28,
+   "passengers": 30,
+   "interchange": {
+    "bus": [
+     "Aéroval"
+    ],
+    "busWalk": true
+   },
    "theme": {
     "wall": "#2b3140",
-    "accent": "#FFD000"
+    "accent": "#FF8000"
+   },
+   "track": [
+    {
+     "length": 50.1,
+     "radius": 380,
+     "turn": "left"
+    },
+    {
+     "length": 162.4
+    },
+    {
+     "length": 69.5,
+     "radius": 380,
+     "turn": "right"
+    }
+   ]
+  },
+  {
+   "name": "Grandville Sud",
+   "distanceToNext": 0,
+   "speedLimit": 65,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 36,
+   "signage": "interchange",
+   "interchange": {
+    "metro": [
+     "A"
+    ]
+   },
+   "theme": {
+    "wall": "#3a3f46",
+    "accent": "#FF8000"
    }
   }
  ]

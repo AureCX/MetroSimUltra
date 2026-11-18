@@ -41,7 +41,17 @@ export function buildLineMapModel(line, services, network, direction) {
       if (seen.has(`${n.key}${l.number}`)) continue;
       if (l.stations.some((s) => s.name.toLowerCase() === n.name.toLowerCase())) { n.badges.push({ number: l.number, color: l.color, text: l.textColor }); seen.add(`${n.key}${l.number}`); }
     }
+    // Interchanges declared by another line's station (e.g. Line D's Terminal 1 names Line A's Aéroport International).
+    for (const l of others) {
+      if (seen.has(`${n.key}${l.number}`)) continue;
+      if (l.stations.some((s) => (s.interchange?.stations || []).some((x) => x.toLowerCase() === n.name.toLowerCase()))) { n.badges.push({ number: l.number, color: l.color, text: l.textColor }); seen.add(`${n.key}${l.number}`); }
+    }
+    for (const num of n.st.interchange?.metro || []) {
+      const l = others.find((x) => x.number === num);
+      if (l && !seen.has(`${n.key}${num}`)) { n.badges.push({ number: num, color: l.color, text: l.textColor }); seen.add(`${n.key}${num}`); }
+    }
     n.walk = (n.st.connections || []).map(lineOf).filter(Boolean).map((l) => ({ number: l.number, color: l.color, text: l.textColor }));
+    n.bus = n.st.interchange?.bus || []; n.busWalk = !!n.st.interchange?.busWalk; n.airport = !!n.st.interchange?.airport;
   }
   const ends = new Set();
   for (const p of paths.values()) { ends.add(p[0]); ends.add(p.at(-1)); }
@@ -148,7 +158,8 @@ export function drawLineMap(g, W, H, model, state) {
   const passedSet = new Set(activePath.filter((key, i) => i < upto && activePath.lastIndexOf(key) < upto));
   const nextKey = activePath[state.nextK ?? k + 1];
   const curKey = state.standing ? activePath[k] : null;
-  const fs = Math.max(13, Math.round(H * 0.058));
+  const longest = Math.max(...[...model.nodes.values()].map((n) => n.name.length));
+  const fs = Math.max(12, Math.round(H * 0.058 * (longest > 26 ? 26 / longest : 1) * (model.maxCol < 6 ? 1.15 : 1)));
   const r = lw * 0.95;
   for (const n of model.nodes.values()) {
     const p = pos(n);
@@ -182,24 +193,48 @@ export function drawLineMap(g, W, H, model, state) {
       g.fillText(n.name, 0, 0);
     }
     g.restore();
-    // Interchange badges.
-    const bs = [...n.badges.map((b) => ({ ...b, walk: false })), ...n.walk.map((b) => ({ ...b, walk: true }))];
-    if (bs.length) {
-      const br = Math.max(8, fs * 0.55);
-      let by = p.y + r * 1.15 + br + 6;
-      g.strokeStyle = '#555'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(p.x, p.y + r * 1.15); g.lineTo(p.x, by - br); g.stroke();
-      for (const b of bs) {
-        let bx = p.x - br * 1.15;
-        if (b.walk) {
-          g.setLineDash([3, 3]); g.strokeStyle = '#555'; g.beginPath(); g.moveTo(bx - br * 1.6, by); g.lineTo(bx - br * 0.2, by); g.stroke(); g.setLineDash([]);
-          g.fillStyle = '#555'; g.font = `bold ${br * 1.2}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('↔', bx - br * 2.3, by);
+    // Connections under the station, like printed maps: Ⓜ + metro lines on one row, walking links,
+    // bus networks (with a walker when the stop is a short walk away), airport pictogram.
+    const br = Math.max(9, H * 0.03);
+    const rows = [];
+    if (n.badges.length) rows.push({ kind: 'metro', list: n.badges });
+    for (const w of n.walk) rows.push({ kind: 'walk', list: [w] });
+    for (const name of n.bus) rows.push({ kind: 'bus', name });
+    if (n.airport) rows.push({ kind: 'airport' });
+    if (rows.length) {
+      let by = p.y + r * 1.15 + lw * 1.7 + br; // below the train marker lane
+      g.strokeStyle = '#555'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(p.x, p.y + r * 1.15); g.lineTo(p.x, by + (rows.length - 1) * br * 2.3 - br); g.stroke();
+      for (const row of rows) {
+        const x0 = p.x - br * 1.15;
+        g.textBaseline = 'middle';
+        if (row.kind === 'metro' || row.kind === 'walk') {
+          let bx = x0;
+          if (row.kind === 'walk') {
+            g.setLineDash([3, 3]); g.strokeStyle = '#555'; g.beginPath(); g.moveTo(bx - br * 1.6, by); g.lineTo(bx - br * 0.2, by); g.stroke(); g.setLineDash([]);
+            g.fillStyle = '#555'; g.font = `bold ${br * 1.2}px Arial`; g.textAlign = 'center'; g.fillText('↔', bx - br * 2.3, by);
+          }
+          g.fillStyle = '#fff'; g.strokeStyle = NAVY; g.lineWidth = 2; g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill(); g.stroke();
+          g.fillStyle = NAVY; g.font = `bold ${br * 1.3}px Arial`; g.textAlign = 'center'; g.fillText('M', bx, by + 1);
+          for (const b of row.list) {
+            bx += br * 2.3;
+            g.fillStyle = b.color; g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill();
+            g.fillStyle = b.text; g.fillText(b.number, bx, by + 1);
+          }
+        } else if (row.kind === 'bus') {
+          g.font = `bold ${br * 1.25}px Arial`; g.textAlign = 'left';
+          if (n.busWalk) { g.fillStyle = NAVY; g.textAlign = 'right'; g.fillText('🚶', x0 - 4, by); g.textAlign = 'left'; }
+          g.fillStyle = NAVY; g.fillText('BUS', x0 - br * 0.6, by + 1);
+          const w = g.measureText('BUS').width + 6;
+          g.font = `bold ${br * 0.85}px Arial`; const tw = g.measureText(row.name).width + 8;
+          g.fillStyle = '#ffd000'; g.fillRect(x0 - br * 0.6 + w, by - br * 0.6, tw, br * 1.2);
+          g.fillStyle = '#16233a'; g.fillText(row.name, x0 - br * 0.6 + w + 4, by + 1);
+        } else {
+          const sz = br * 2;
+          g.fillStyle = '#ffd000'; g.strokeStyle = '#2b2f35'; g.lineWidth = 2;
+          g.fillRect(p.x - sz / 2, by - sz / 2, sz, sz); g.strokeRect(p.x - sz / 2, by - sz / 2, sz, sz);
+          g.fillStyle = '#2b2f35'; g.font = `bold ${sz * 0.75}px Arial`; g.textAlign = 'center'; g.fillText('✈', p.x, by + 1);
         }
-        g.fillStyle = '#fff'; g.strokeStyle = NAVY; g.lineWidth = 2; g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill(); g.stroke();
-        g.fillStyle = NAVY; g.font = `bold ${br * 1.3}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('M', bx, by + 1);
-        bx += br * 2.3;
-        g.fillStyle = b.color; g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill();
-        g.fillStyle = b.text; g.fillText(b.number, bx, by + 1);
-        by += br * 2.4;
+        by += br * 2.3;
       }
     }
   }

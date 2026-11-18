@@ -187,12 +187,45 @@ test('Line C: one-way terminal loop closes on itself and returns on the other tr
   assert.ok(g.loop.closure < 3, `closure ${g.loop.closure}`);
 });
 
-test('Line D (Aéroval) shares Parc des Expositions with Line B and connects to Lines A and B at Terminal 1', () => {
+test('Line D (Aéroval): elevated airport express T1 → T2 → Quartier des Affaires – Aéroport → Grandville Sud, above Line A', () => {
   const d = normalizeLine(read('lines/grandville-d.json'));
-  assert.deepEqual(d.stations.map((s) => s.name), ['Aéroport International – Terminal 1 (Est)', 'Aéroport International – Terminal 2 (Ouest)', 'Zone Cargo & Fret', 'Parc des Expositions']);
-  assert.deepEqual(d.stations[0].connections, ['Aéroport International', 'Aéroport Est']);
-  const gd = new TrackGeometry(d), pd = gd.point(gd.stationS[3]);
-  const b = normalizeLine(expandServices(read('lines/grandville-b.json'))[1]), gb = new TrackGeometry(b);
-  const pb = gb.point(gb.stationS[b.stations.findIndex((s) => s.name === 'Parc des Expositions')]);
-  assert.ok(Math.hypot(pd.x - pb.x, pd.z - pb.z) < 6);
+  assert.deepEqual(d.stations.map((s) => s.name), ['Aéroport International – Terminal 1 (Est)', 'Aéroport International – Terminal 2', 'Quartier des Affaires – Aéroport', 'Grandville Sud']);
+  assert.deepEqual(d.stations[0].interchange.metro, ['A', 'B']);
+  assert.equal(d.automation, 'ato');
+  const gd = new TrackGeometry(d);
+  for (let s = 0; s < gd.length; s += 5) assert.ok(gd.outdoorAt(s), `open air at ${s}`);
+  assert.ok(gd.point(gd.stationS[1]).y - gd.groundAt(gd.stationS[1]) >= 8, 'on a viaduct');
+  const a = normalizeLine(expandServices(read('lines/grandville-a.json'))[0]), ga = new TrackGeometry(a);
+  const pa = ga.point(ga.stationS[a.stations.findIndex((s) => s.name === 'Grandville Sud')]), pd = gd.point(gd.stationS[3]);
+  assert.ok(Math.hypot(pd.x - pa.x, pd.z - pa.z) < 3, 'Grandville Sud right above Line A');
+});
+
+test('ATO drives Line D end to end: stops at every marker, opens and closes the doors, never trips ATP', async () => {
+  const { ATO } = await import('../src/driving/ATO.js');
+  const { route, line } = setup('lines/grandville-d.json');
+  const apm = deriveTrainSpecs(read('trains/apm-aeroval.json'));
+  const bus = new EventBus();
+  const pt = new PlayerTrain(apm, route, bus, settings);
+  const tt = new Timetable(route, apm, line.startTime);
+  const sm = new StationManager(route, tt, pt, bus, settings);
+  const sig = new SignalSystem(route, line, bus);
+  sm.boardingPending = () => 0;
+  const arrivals = [], trips = [];
+  bus.on('station:arrived', (e) => arrivals.push(e));
+  bus.on('safety:emergency', (e) => trips.push(e));
+  pt.physics.s = route.stops[0].stopR;
+  const ato = new ATO({ player: pt, stations: sm, route, specs: apm, openDoors: (side) => pt.doors.open(side, { speed: pt.speed, alignment: sm.alignment() }) });
+  let clock = tt.start - 30;
+  for (let i = 0; i < 20 * 60 * 20 && !sm.finished; i++) {
+    const dt = 0.05;
+    sig.update([], { front: pt.front, rear: pt.rear });
+    ato.step(sig.authority);
+    pt.update(dt, { staticLimit: Math.min(route.permittedFor(pt.front, apm.length), apm.maxSpeed), authorityDist: sig.authority != null ? sig.authority - pt.front : null, brakeRate: line.signaling.atpBrakeRate });
+    sm.update(dt, clock);
+    clock += dt;
+  }
+  assert.ok(sm.finished, 'reached the terminus');
+  assert.equal(arrivals.length, route.stops.length - 1, 'stopped at every station');
+  for (const a of arrivals) assert.ok(Math.abs(a.error) < 1.5, `stop error ${a.error.toFixed(2)} m at ${a.stop.name}`);
+  assert.equal(trips.length, 0, 'no emergency brake');
 });

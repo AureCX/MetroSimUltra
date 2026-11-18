@@ -80,6 +80,11 @@ export class TrackGeometry {
       }
       if (out) { this.outdoor[i] = 1; this.ground[i] = g; }
     }
+    // Elevated line: open air throughout, the street lies `height` below the track bed.
+    if (line.elevated) {
+      const Hs = line.elevated.height;
+      for (let i = 0; i < N; i++) { this.outdoor[i] = 1; this.ground[i] = this.py[i] - Hs; }
+    }
     // Ground also extends over the tunnel near each portal (so the landscape has no hole behind it).
     for (const p of ev) {
       const gg = this.py[Math.min(N - 1, Math.round(p.s))] + cover;

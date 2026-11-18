@@ -17,6 +17,7 @@ export const ACTIONS = {
   cabLight:       { label: 'Cab light',                         keys: ['KeyK'], pad: [] },
   routeSelect:    { label: 'Set route at junction',             keys: ['KeyJ'], pad: [14, 15] },
   lineMap:        { label: 'Show / hide the line map',          keys: ['KeyM'], pad: [] },
+  ato:            { label: 'Automatic operation (ATO) on / off', keys: ['KeyT'], pad: [] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };

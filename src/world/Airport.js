@@ -138,6 +138,9 @@ function aircraftGeometry(kind) {
 
 export function buildAirport(parent, f, line, geom, stationIndex, opts = {}) {
   const landside = opts.landside !== false;
+  // opts.corridor = { z, height }: an elevated line passes along the landside at local z (Line D). Car parks
+  // and the hotel move back to clear it, and a skybridge links the terminal to the station.
+  const corr = opts.corridor || null, back = corr ? 150 : 0;
   const T = tex(), ct = cityTextures();
   const grp = new THREE.Group(); grp.position.set(f.x, f.y, f.z); grp.rotation.y = f.yaw; grp.name = 'airport';
   parent.add(grp);
@@ -208,7 +211,7 @@ export function buildAirport(parent, f, line, geom, stationIndex, opts = {}) {
   k.mesh(roof, M.roof, 0, 18.2, TZ + 8);
   for (let x = -260; x <= 260; x += 26) for (const z of [TZ + 72, TZ - 58]) k.box(1.2, 18, 1.2, M.white, x, 9, z); // façade columns supporting the overhang
   k.plane = (w, h, mat, x, y, z, ry = 0) => k.mesh(new THREE.PlaneGeometry(w, h), mat, x, y, z, ry);
-  k.plane(180, 12, new THREE.MeshBasicMaterial({ map: Textures.label('AÉROPORT DE GRANDVILLE', { w: 2048, h: 136, bg: '#1d2a3a', fg: '#ffffff', font: 'bold 104px Arial' }) }), 0, 24, TZ + 72.2);
+  k.plane(180, 12, new THREE.MeshBasicMaterial({ map: Textures.label(corr ? 'AÉROPORT DE GRANDVILLE · TERMINAL 1' : 'AÉROPORT DE GRANDVILLE', { w: 2048, h: 136, bg: '#1d2a3a', fg: '#ffffff', font: 'bold 104px Arial' }) }), 0, 24, TZ + 72.2);
   // Piers (concourses) with gates and jet bridges.
   const piers = [-210, 0, 210];
   const stands = [];
@@ -272,12 +275,13 @@ export function buildAirport(parent, f, line, geom, stationIndex, opts = {}) {
   k.strip(780, 14, M.road, 0, TZ + 960, Y, 0, 30, 14);
   }
   for (const sx of [-1, 1]) {
-    const gx = sx * 170, gz = TZ + 190;
+    const gx = sx * 170, gz = TZ + 190 + back;
     k.mesh(boxGeo(220, 16, 90, 0, 0, 0, 0, 3.5, 0.55), M.garage, gx, 8, gz);
     k.plane(40, 4, new THREE.MeshBasicMaterial({ map: Textures.label(`P${sx < 0 ? 1 : 2}`, { w: 256, h: 64, bg: '#1f4fa0', fg: '#ffffff', font: 'bold 54px Arial' }) }), gx, 13, gz + 45.05);
   }
-  k.mesh(boxGeo(70, 64, 24, 0, 0, 0, 0, 4, 0.5), M.glass, 0, 32, TZ + 300);
-  k.plane(40, 5, new THREE.MeshBasicMaterial({ map: Textures.label('HÔTEL AÉROPORT', { w: 1024, h: 128, bg: '#20303f', fg: '#ffffff', font: 'bold 80px Arial' }) }), 0, 60, TZ + 312.05);
+  k.mesh(boxGeo(70, 64, 24, 0, 0, 0, 0, 4, 0.5), M.glass, 0, 32, TZ + 300 + back);
+  k.plane(40, 5, new THREE.MeshBasicMaterial({ map: Textures.label('HÔTEL AÉROPORT', { w: 1024, h: 128, bg: '#20303f', fg: '#ffffff', font: 'bold 80px Arial' }) }), 0, 60, TZ + 312.05 + back);
+  if (corr) skybridge(k, M, 0, TZ + 55, corr.z, corr.height, line);
   const mBadge = new THREE.MeshBasicMaterial({ map: Textures.label('M', { w: 128, h: 128, bg: '#ffffff', fg: '#1f3c88', font: 'bold 96px Arial', border: '#1f3c88', radius: 64 }), transparent: true });
   const lb = line && new THREE.MeshBasicMaterial({ map: Textures.label(line.number, { w: 128, h: 128, bg: line.color, fg: line.textColor, font: 'bold 80px Arial', radius: 64 }), transparent: true });
   if (line) { k.box(0.3, 5, 0.3, M.dark, 40, 2.5, TZ + 74); k.plane(2, 2, mBadge, 40, 5.5, TZ + 74.2); k.plane(1.4, 1.4, lb, 40, 3.8, TZ + 74.2); }
@@ -294,5 +298,71 @@ export function buildAirport(parent, f, line, geom, stationIndex, opts = {}) {
     buckets.get(key).geos.push(geo); grp.remove(o);
   }
   for (const { mat, geos } of buckets.values()) { const g2 = mergeGeometries(geos); if (g2) grp.add(new THREE.Mesh(g2, mat)); }
-  return { x: f.x, z: f.z, radius: 2000, group: grp, people: { group: new THREE.Group() }, hidden: true, update() {} };
+  // Nothing else is built on the airfield and the landside (local frame rectangle).
+  const zMax = landside ? (corr ? corr.z - 12 : 340) : 0;
+  const exclude = (x, z, pad = 0) => {
+    const dx = x - f.x, dz = z - f.z, c = Math.cos(f.yaw), s2 = Math.sin(f.yaw);
+    const lx = dx * c - dz * s2, lz = dx * s2 + dz * c;
+    return lx > -2800 - pad && lx < 2800 + pad && lz > -2950 - pad && lz < zMax + pad;
+  };
+  return { x: f.x, z: f.z, radius: 2000, exclude, group: grp, people: { group: new THREE.Group() }, hidden: true, update() {} };
+}
+
+/** Glass skybridge from a terminal façade (local z0) to an elevated station at local z1, with a lift/escalator tower. */
+function skybridge(k, M, x, z0, z1, deck, line) {
+  const y = deck + 6.5, len = z1 - z0;
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9fc3d6, metalness: 0.4, roughness: 0.1, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+  k.box(7, 0.4, len, M.grey, x, y, z0 + len / 2);                 // floor
+  k.box(7.4, 0.3, len, M.white, x, y + 4.2, z0 + len / 2);        // roof
+  for (const sx of [-1, 1]) k.box(0.06, 3.8, len, glass, x + sx * 3.5, y + 2.1, z0 + len / 2);
+  for (let z = z0 + 6; z < z1 - 4; z += 12) k.box(1.2, y, 1.2, M.white, x + 5, y / 2, z); // slender columns beside the bridge
+  // Lift & escalator tower down onto the island platform.
+  k.box(4, y + 4.5 - (deck + 1), 4.2, glass, x, (y + 4.5 + deck + 1) / 2, z1);
+  k.box(4.3, 0.3, 4.5, M.white, x, y + 4.6, z1);
+  const sign = new THREE.MeshBasicMaterial({ map: Textures.label(`M  ${line?.number || ''} · Aéroval`, { w: 512, h: 96, bg: line?.color || '#ff8000', fg: '#16233a', font: 'bold 60px Arial' }) });
+  k.mesh(new THREE.PlaneGeometry(6, 1.1), sign, x, y + 5.3, z0 + 0.4);
+}
+
+/**
+ * Terminal 2: a second, smaller terminal on the Line D corridor (local frame as buildAirport: +z faces the line),
+ * with apron and parked aircraft behind it, forecourt, signage and a skybridge to the elevated station.
+ */
+export function buildTerminal2(parent, f, line, geom, stationIndex, opts = {}) {
+  const T = tex(), ct = cityTextures();
+  const grp = new THREE.Group(); grp.position.set(f.x, f.y, f.z); grp.rotation.y = f.yaw; grp.name = 'terminal2';
+  parent.add(grp);
+  const k = new Kit(grp);
+  const lam = (o) => new THREE.MeshLambertMaterial(o);
+  const M = {
+    concrete: lam({ map: T.concrete, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+    road: lam({ map: T.road, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
+    glass: new THREE.MeshStandardMaterial({ map: ct.curtain, vertexColors: true, metalness: 0.55, roughness: 0.2 }),
+    roof: new THREE.MeshStandardMaterial({ map: T.roof, metalness: 0.6, roughness: 0.35, side: THREE.DoubleSide }),
+    white: lam({ color: 0xeceff2 }), grey: lam({ color: 0x8d949b }), dark: lam({ color: 0x2a2e33 }),
+    plane: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.25, roughness: 0.45, side: THREE.DoubleSide }),
+  };
+  const z1 = opts.corridor?.z ?? 95, deck = opts.corridor?.height ?? 9;
+  const TZ = -45;
+  k.strip(420, 260, M.concrete, 0, TZ - 150, 0.04, 0, 30, 30);                  // apron
+  k.mesh(boxGeo(300, 16, 80, 0, 0, 0, 0, 4, 0.6), M.glass, 0, 8, TZ);         // terminal hall
+  const roof = new THREE.BoxGeometry(316, 1.4, 96); k.mesh(roof, M.roof, 0, 16.8, TZ);
+  for (let x = -150; x <= 150; x += 25) k.box(1, 16, 1, M.white, x, 8, TZ + 47);
+  k.plane = (w, h, mat, x, y, z, ry = 0) => k.mesh(new THREE.PlaneGeometry(w, h), mat, x, y, z, ry);
+  k.plane(120, 9, new THREE.MeshBasicMaterial({ map: Textures.label('TERMINAL 2', { w: 2048, h: 154, bg: '#1d2a3a', fg: '#ffffff', font: 'bold 120px Arial' }) }), 0, 21.5, TZ + 48.2);
+  k.strip(14, 420, M.road, 0, TZ + 60, 0.05, Math.PI / 2, 14, 30);          // forecourt
+  const types = { narrow: aircraftGeometry('narrow'), wide: aircraftGeometry('wide') };
+  const fins = [0x1f4fa0, 0xc8352a, 0x2f8a4a, 0xe07b14].map((c) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide }));
+  [-110, -30, 50, 130].forEach((x, i) => {
+    const t = i === 2 ? types.wide : types.narrow;
+    const b = k.mesh(t.body, M.plane, x, 0, TZ - 70 - t.L * 0.45, Math.PI / 2);
+    b.add(new THREE.Mesh(t.fin, fins[i]));
+    k.box(3.2, 3, 20, M.grey, x - 4, t.door[1] + 0.3, TZ - 50);           // jet bridge
+  });
+  skybridge(k, M, 0, TZ + 40, z1, deck, line);
+  const exclude = (x, z, pad = 0) => {
+    const dx = x - f.x, dz = z - f.z, c = Math.cos(f.yaw), s2 = Math.sin(f.yaw);
+    const lx = dx * c - dz * s2, lz = dx * s2 + dz * c;
+    return lx > -230 - pad && lx < 230 + pad && lz > -300 - pad && lz < z1 - 12 + pad;
+  };
+  return { x: f.x, z: f.z, radius: 300, exclude, group: grp, people: { group: new THREE.Group() }, update() {} };
 }

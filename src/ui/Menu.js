@@ -110,7 +110,12 @@ export class Menu {
 
   renderLines() {
     const lines = this.repo.lines.filter((l) => l.network === this.network);
-    const select = (id) => { this.sel.lineId = id; this.persist(); this.renderLines(); };
+    const select = (id) => {
+      this.sel.lineId = id;
+      const pref = this.repo.line(id)?.raw?.train; // a line may name its own rolling stock (Line D: Aéroval APM)
+      if (pref && this.repo.train(pref)) this.sel.trainId = pref;
+      this.persist(); this.renderLines();
+    };
     renderNetworkMap(this.root.querySelector('#l-map'), lines, this.sel.lineId, select);
     const list = this.root.querySelector('#l-list');
     // One entry per line; a branching line's services are chosen in the detail panel.

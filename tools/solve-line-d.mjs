@@ -1,7 +1,7 @@
-// Generates src/data/lines/grandville-d.json: Metro Line D "Aéroval", the automated airport line.
-// Aéroport International – Terminal 1 (Est), next to Line A's Aéroport International and Line B's
-// Aéroport Est (walking connections) → Terminal 2 (Ouest) → round the south of the airfield →
-// Zone Cargo & Fret → Parc des Expositions, on the same spot as Line B's station (interchange).
+// Generates src/data/lines/grandville-d.json: Metro Line D "Aéroval", the automated elevated airport
+// express. Aéroport International – Terminal 1 (Est), above Line A's Aéroport International and Line B's
+// Aéroport Est → Aéroport International – Terminal 2 → Quartier des Affaires – Aéroport → Grandville Sud,
+// right above Line A's terminus. Whole line on viaducts.
 import fs from 'node:fs';
 import { normalizeLine, expandServices } from '../src/lines/LineSchema.js';
 import { TrackGeometry } from '../src/lines/TrackGeometry.js';
@@ -12,7 +12,7 @@ const station = (file, svc, name) => {
   const i = l.stations.findIndex((s) => s.name === name); return { p: g.point(g.stationS[i]), h: g.heading(g.stationS[i]) };
 };
 const bAir = station('grandville-b', 1, 'Aéroport Est').p, aAir = station('grandville-a', 0, 'Aéroport International').p;
-const pde = station('grandville-b', 1, 'Parc des Expositions');
+const gs = station('grandville-a', 0, 'Grandville Sud');
 const deg = (r) => (r * 180) / Math.PI, rad = (d) => (d * Math.PI) / 180;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const st = (length) => ({ length });
@@ -43,54 +43,66 @@ function solveASA(P0, h0, P1, h1, R) {
 const asaTrack = (r, R) => [...(Math.abs(r.phi1) > 1e-3 ? [curve(r.phi1, R)] : []), st(Math.max(1, Math.round(r.b * 10) / 10)), ...(Math.abs(r.phi2) > 1e-3 ? [curve(r.phi2, R)] : [])];
 const asaLen = (r, R) => asaTrack(r, R).reduce((a, x) => a + x.length, 0);
 
-const S = (name, extra = {}) => ({ name, distanceToNext: 900, speedLimit: 70, stopDuration: 25, style: 'modern', ...extra });
+const S = (name, extra = {}) => ({ name, distanceToNext: 800, speedLimit: 65, stopDuration: 25, style: 'modern', ...extra });
 const raw = {
-  id: 'grandville-d', line: 'Line D', number: 'D', network: 'Grandville Métro', color: '#FFD000', textColor: '#16233a',
-  service: null, language: 'fr-FR', maxSpeed: 80, startTime: '07:40:00', headway: 150,
-  tunnel: { profile: 'box' }, map: { origin: [0, 0], heading: 180 },
-  directions: { A: { name: 'Aéroval · Direction Parc des Expositions' }, B: { name: 'Aéroval · Direction Aéroport – Terminal 1' } },
-  defaults: { platformLength: 90, platformWidth: 6, platformType: 'island', approachSpeedLimit: 45, stopDuration: 25, style: 'modern' },
+  id: 'grandville-d', line: 'Line D', number: 'D', network: 'Grandville Métro', color: '#FF8000', textColor: '#16233a',
+  language: 'fr-FR', maxSpeed: 80, startTime: '07:40:00', headway: 180,
+  tunnel: { profile: 'box' }, map: { origin: [0, 0], heading: 330 },
+  elevated: { height: 9 },
+  automation: 'ato',
+  train: 'apm-aeroval',
+  directions: { A: { name: 'Aéroval · Direction Grandville Sud' }, B: { name: 'Aéroval · Direction Aéroport – Terminal 1' } },
+  defaults: { platformLength: 105, platformWidth: 8, platformType: 'island', approachSpeedLimit: 45, approachDistance: 100, stopDuration: 25, style: 'modern' },
   signaling: { system: 'cbtc', blockLength: 200, overlap: 30, atpBrakeRate: 0.9 },
   announcements: {
-    nextStation: 'Prochaine station : {station}.', arrival: '{station}.',
-    terminus: "{station}. Terminus. Merci d'avoir voyagé avec Aéroval.",
+    nextStation: 'Prochaine station : {station}. {connections}',
+    arrival: '{station}. {doors}',
+    terminus: "{station}. Terminus. {connections} Merci d'avoir voyagé avec Aéroval.",
+    connections: 'Correspondance : {list}.',
   },
   stations: [
-    S('Aéroport International – Terminal 1 (Est)', { passengers: 40, connections: ['Aéroport International', 'Aéroport Est'], theme: { wall: '#e9edf2', accent: '#FFD000' } }),
-    S('Aéroport International – Terminal 2 (Ouest)', { passengers: 34, theme: { wall: '#eef0f3', accent: '#FFD000' } }),
-    S('Zone Cargo & Fret', { passengers: 14, theme: { wall: '#3a3f46', accent: '#FFD000' } }),
-    S('Parc des Expositions', { distanceToNext: 0, passengers: 28, theme: { wall: '#2b3140', accent: '#FFD000' } }),
+    S('Aéroport International – Terminal 1 (Est)', { speedLimit: 55, passengers: 40, signage: 'airport', interchange: { metro: ['A', 'B'], stations: ['Aéroport International', 'Aéroport Est'], bus: ['Aéroval'], airport: true },
+      landmark: { type: 'airport', side: 'right', offset: 100, along: 0 }, theme: { wall: '#e9edf2', accent: '#FF8000' } }),
+    S('Aéroport International – Terminal 2', { passengers: 34, signage: 'airport', interchange: { bus: ['Aéroval'], airport: true },
+      landmark: { type: 'terminal2', side: 'right', offset: 95, along: 0 }, theme: { wall: '#eef0f3', accent: '#FF8000' } }),
+    S('Quartier des Affaires – Aéroport', { passengers: 30, interchange: { bus: ['Aéroval'], busWalk: true }, theme: { wall: '#2b3140', accent: '#FF8000' } }),
+    S('Grandville Sud', { distanceToNext: 0, passengers: 36, signage: 'interchange', interchange: { metro: ['A'] }, theme: { wall: '#3a3f46', accent: '#FF8000' } }),
   ],
 };
-delete raw.service;
-const st0 = raw.stations, half = 45, PAD = 25;
+const st0 = raw.stations, half = 52.5, PAD = 25;
 const build = () => { const l = normalizeLine(raw); return { l, g: new TrackGeometry(l) }; };
 const at = (b, i) => ({ p: b.g.point(b.g.stationS[i]), h: b.g.heading(b.g.stationS[i]), s: b.g.stationS[i] });
-// Terminal 1 sits between the two airport stations, 140 m north of them; Line D leaves southwards.
-const T1 = { x: (aAir.x + bAir.x) / 2, z: Math.min(aAir.z, bAir.z) - 140 };
+// Terminal 1 between Line A's and Line B's airport stations (directly above the interchange).
+const T1 = { x: (aAir.x + bAir.x) / 2, z: (aAir.z + bAir.z) / 2 };
+// Legs: arc–straight–arc onto each station (position, heading of the platforms).
+const targets = [
+  null,
+  { p: { x: -5430, z: 2030 }, h: rad(268), R: 450 },           // Terminal 2, past the west end of the terminal frontage
+  { p: { x: -5880, z: 2120 }, h: rad(262), R: 380 },           // Quartier des Affaires – Aéroport
+  { p: gs.p, h: gs.h, R: 380 },                                 // Grandville Sud, above Line A's platforms
+];
+raw.map.heading = Math.round(deg(Math.atan2(targets[1].p.x - T1.x, -(targets[1].p.z - T1.z))) * 1000) / 1000;
 { const p = at(build(), 0).p; raw.map.origin = [T1.x - p.x, T1.z - p.z]; }
-// T1 → T2: under the terminals, turning west.
-st0[0].track = [st(120), curve(rad(70), 420), st(280)];
-st0[0].distanceToNext = half + PAD + 120 + curve(rad(70), 420).length + 280 + half + PAD;
-// T2 → Cargo: a long sweep round the south of the airfield, back to the east.
-st0[1].track = [st(180), curve(rad(-165), 480), st(400)];
-st0[1].distanceToNext = Math.round((half + PAD + 180 + curve(rad(-165), 480).length + 400 + half + PAD) * 10) / 10;
-// Cargo → Parc des Expositions: arc–straight–arc onto Line B's station, platforms parallel to Line B.
-const hP = pde.h + Math.PI, R = 500;
-let aim = { x: pde.p.x, z: pde.p.z };
-for (let it = 0; it < 6; it++) {
-  const b = build(); const c = at(b, 2);
-  const E = b.g.point(c.s + half + PAD), d = dirOf(hP);
-  const sol = solveASA(E, c.h, { x: aim.x - d.x * (half + PAD), z: aim.z - d.z * (half + PAD) }, hP, R);
-  st0[2].track = asaTrack(sol, R);
-  st0[2].distanceToNext = Math.round((half + PAD + asaLen(sol, R) + half + PAD) * 10) / 10;
-  const q = at(build(), 3).p, ex = pde.p.x - q.x, ez = pde.p.z - q.z;
-  console.log('PdE iteration', it, 'error', Math.hypot(ex, ez).toFixed(2), 'turns', deg(sol.phi1).toFixed(1), deg(sol.phi2).toFixed(1));
-  if (Math.hypot(ex, ez) < 0.5) break;
-  aim = { x: aim.x + ex, z: aim.z + ez };
+for (let k = 1; k < targets.length; k++) {
+  const T = targets[k];
+  let aim = { x: T.p.x, z: T.p.z };
+  for (let it = 0; it < 8; it++) {
+    const b = build(); const c = at(b, k - 1);
+    const E = b.g.point(c.s + half + PAD), d = dirOf(T.h);
+    let sol = null, Rk = T.R;
+    for (; Rk >= 150 && !sol; Rk = Math.round(Rk * 0.85)) { try { sol = solveASA(E, c.h, { x: aim.x - d.x * (half + PAD), z: aim.z - d.z * (half + PAD) }, T.h, Rk); } catch { sol = null; } }
+    if (!sol) throw new Error(`no alignment to ${st0[k].name}`);
+    Rk = Math.round(Rk / 0.85);
+    st0[k - 1].track = asaTrack(sol, Rk);
+    st0[k - 1].distanceToNext = Math.round((half + PAD + asaLen(sol, Rk) + half + PAD) * 10) / 10;
+    const q = at(build(), k).p, ex = T.p.x - q.x, ez = T.p.z - q.z;
+    if (it === 0 || Math.hypot(ex, ez) < 0.5) console.log(st0[k].name, 'R', Rk, 'iteration', it, 'error', Math.hypot(ex, ez).toFixed(2), 'turns', deg(sol.phi1).toFixed(1), deg(sol.phi2).toFixed(1), 'straight', sol.b.toFixed(0));
+    if (Math.hypot(ex, ez) < 0.5) break;
+    aim = { x: aim.x + ex, z: aim.z + ez };
+  }
 }
 const fin = build();
-fin.l.stations.forEach((s, i) => { const p = at(fin, i).p; console.log(s.name.padEnd(46), p.x.toFixed(0), p.z.toFixed(0)); });
-console.log('to Line A', Math.hypot(at(fin, 0).p.x - aAir.x, at(fin, 0).p.z - aAir.z).toFixed(0), 'm, to Line B', Math.hypot(at(fin, 0).p.x - bAir.x, at(fin, 0).p.z - bAir.z).toFixed(0), 'm; distances', st0.map((s) => s.distanceToNext).join(', '));
+fin.l.stations.forEach((s, i) => { const p = at(fin, i).p; console.log(s.name.padEnd(46), p.x.toFixed(0), p.z.toFixed(0), deg(at(fin, i).h).toFixed(0)); });
+console.log('T1 to Line A', Math.hypot(at(fin, 0).p.x - aAir.x, at(fin, 0).p.z - aAir.z).toFixed(0), 'm, to Line B', Math.hypot(at(fin, 0).p.x - bAir.x, at(fin, 0).p.z - bAir.z).toFixed(0), 'm; distances', st0.map((s) => s.distanceToNext).join(', '));
 raw.map.origin = raw.map.origin.map((v) => Math.round(v * 100) / 100);
 fs.writeFileSync(new URL('../src/data/lines/grandville-d.json', import.meta.url), JSON.stringify(raw, null, 1));

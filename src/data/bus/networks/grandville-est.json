@@ -637,10 +637,7 @@
    ],
    "along": 380,
    "demand": 0.8,
-   "aeroval": true,
-   "metro": [
-    "D"
-   ]
+   "aeroval": true
   },
   {
    "id": "expo",
@@ -653,8 +650,7 @@
    "demand": 1.6,
    "metroStation": "Parc des Expositions",
    "metro": [
-    "B",
-    "D"
+    "B"
    ]
   },
   {
@@ -687,7 +683,10 @@
     "n380_330"
    ],
    "along": 380,
-   "demand": 2.2
+   "demand": 2.2,
+   "metro": [
+    "D"
+   ]
   },
   {
    "id": "parkingld",

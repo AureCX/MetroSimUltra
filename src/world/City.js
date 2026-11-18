@@ -172,7 +172,7 @@ export class City {
   /** Can something of radius r stand here? Clear of the trench walls and of the viaduct piers/deck. */
   free(x, z, r = 0) { return this.distTrench(x, z) > 17 + r && this.distTrack(x, z) > 7 + r && !this.inLandmark(x, z, r); }
 
-  inLandmark(x, z, pad = 0) { return this.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + pad); }
+  inLandmark(x, z, pad = 0) { return this.landmarks.some((l) => (l.exclude ? l.exclude(x, z, pad) : Math.hypot(l.x - x, l.z - z) < l.radius + pad)); }
 
   build() {
     this.buildGround();
@@ -191,6 +191,7 @@ export class City {
     };
     for (let x = ox; x < ex; x += TILE) for (let z = oz; z < ez; z += TILE) {
       const sx = Math.min(TILE, ex - x), sz = Math.min(TILE, ez - z);
+      if (this.inLandmark(x + sx / 2, z + sz / 2, -TILE)) continue; // the landmark lays its own ground (airfield)
       const d = this.distTrench(x + sx / 2, z + sz / 2);
       if (d > 40) { quad(x, z, sx, sz); continue; }
       // Near the open ramp: finer tiles, leaving the walled trench (covered by planted strips) open.
@@ -386,7 +387,7 @@ export class City {
       c.t += c.v * c.dir * dt;
       if (c.t > c.max) c.t = c.min; if (c.t < c.min) c.t = c.max;
       const x = c.alongX ? c.t : c.line, z = c.alongX ? c.line : c.t;
-      const hide = this.distTrench(x, z, 40) < 16;
+      const hide = this.distTrench(x, z, 40) < 16 || this.inLandmark(x, z);
       const yaw = c.alongX ? (c.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (c.dir > 0 ? 0 : Math.PI);
       m.compose(p.set(x, this.G, z), q.setFromAxisAngle(up, yaw), s.setScalar(hide ? 0 : 1));
       this.carBody.setMatrixAt(c.idx, m); this.carCab.setMatrixAt(c.idx, m);

@@ -202,7 +202,7 @@ export class Traffic {
       c.links[0].cars.add(c);
     }
     const p = pathAt(c.links[0].path, c.s, c.pos);
-    c.g.position.set(p.x, 0, p.z);
+    c.g.position.set(p.x, this.net.heightAt(p.x, p.z), p.z);
     c.g.rotation.y = Math.atan2(-p.dx, -p.dz);
     // Lights: brake & indicators for the next turn.
     c.lights.brake.color.setHex(c.a < -0.5 || c.v < 0.1 ? 0xff1a00 : 0x440000);
@@ -344,7 +344,7 @@ export class Traffic {
       if (p.state === 'walk') { const e2 = p.edge; p.x = e2.a.x + e2.dx * p.t + -e2.dz * p.side * (e2.half + 1.6); p.z = e2.a.z + e2.dz * p.t + e2.dx * p.side * (e2.half + 1.6); }
       const hx = p.state === 'cross' ? p.crossEnd.x - p.crossStart.x : p.edge.dx * p.dir, hz = p.state === 'cross' ? p.crossEnd.z - p.crossStart.z : p.edge.dz * p.dir;
       if (moving) p.g.rotation.y = Math.atan2(hx, hz);
-      p.g.position.set(p.x, 0.15, p.z);
+      p.g.position.set(p.x, 0.15 + this.net.heightAt(p.x, p.z), p.z);
       p.va = moving ? p.speed : 0; p.vd = 0;
       p.animate(dt, t);
     }

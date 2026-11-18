@@ -200,6 +200,28 @@ export class BusModel {
       });
     } else rearFace(this.body, this.zFront + L1);
     this.hitchZ = lr + (spec.hitchBehindRear ?? 2);
+    // "ARRÊT DEMANDÉ" signs, as in French buses: one at the front above the windscreen facing the saloon,
+    // repeaters under the ceiling; they light up red when a passenger presses a stop button.
+    const signTex = (lit) => {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 112; const g = c.getContext('2d');
+      g.fillStyle = '#0b0b0b'; g.fillRect(0, 0, 512, 112);
+      g.fillStyle = lit ? '#ff2a1a' : '#241010'; g.font = 'bold 62px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      if (lit) { g.shadowColor = '#ff3a20'; g.shadowBlur = 18; }
+      g.fillText('ARRÊT DEMANDÉ', 256, 60);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    };
+    this.stopSignMat = new THREE.MeshBasicMaterial({ map: signTex(false), side: THREE.DoubleSide });
+    this.stopSignTex = { off: this.stopSignMat.map, on: signTex(true) };
+    const ceil = dd ? 2.3 : 2.53;
+    const stopSign = (parent, z, w = 0.62, x = 0) => {
+      const h = w * 0.22;
+      add(Bx(w + 0.04, h + 0.04, 0.06), M.dark, x, ceil - 0.1, z, parent);
+      const pl = add(new THREE.PlaneGeometry(w, h), this.stopSignMat, x, ceil - 0.1, z + 0.031, parent); void pl;
+      const pr = add(new THREE.PlaneGeometry(w, h), this.stopSignMat, x, ceil - 0.1, z - 0.031, parent); pr.rotation.y = Math.PI;
+    };
+    stopSign(this.body, zf + 0.25, 0.7, 0.25); // above the windscreen, right of the driver's line of sight
+    for (let z = zf + 5.2; z < zf + L1 - 1.5; z += 4.6) stopSign(this.body, z);
+    if (this.trailer) for (let z = 2.2; z < spec.trailerLength - 1; z += 4.6) stopSign(this.trailer, z);
     // Manual wheelchair ramp, hinged at the sill of the second door: folded inside, flips out onto the kerb.
     const rd = Math.min(1, spec.doors.length - 1), leaf = this.doorLeaves[rd][0];
     this.ramp = new THREE.Group(); this.ramp.position.set(W / 2 - 0.02, 0.4, (this.doorLeaves[rd][0].userData.base + this.doorLeaves[rd][1].userData.base) / 2);
@@ -225,8 +247,12 @@ export class BusModel {
   /** Place the model from the physics state and vehicle systems. */
   update(v, t) {
     const ph = v.ph;
-    this.group.position.set(ph.x, 0, ph.z);
-    this.group.rotation.y = -ph.yaw;
+    // On the terrain: height under the centre, pitched to the slope between the axles.
+    const H = this.heightAt || (() => 0);
+    const fx = Math.sin(ph.yaw), fz = -Math.cos(ph.yaw), half = this.spec.wheelbase / 2;
+    const slope = (H(ph.x + fx * half, ph.z + fz * half) - H(ph.x - fx * half, ph.z - fz * half)) / (2 * half);
+    this.group.position.set(ph.x, H(ph.x, ph.z), ph.z);
+    this.group.rotation.set(Math.atan(slope), -ph.yaw, 0, 'YXZ');
     this.body.rotation.set(-ph.pitch, 0, ph.roll);
     this.body.position.y = ph.heave + (v.kneelT ? -0.07 * v.kneelT : 0);
     for (const w of this.wheels) { w.g.rotation.x = -ph.wheelSpin; if (w.steer) w.g.rotation.y = -ph.delta; }
@@ -252,6 +278,8 @@ export class BusModel {
     this.M.indL.color.setHex(bl && (v.indicator === 'left' || v.hazards) ? 0xffa000 : 0x553300);
     this.M.indR.color.setHex(bl && (v.indicator === 'right' || v.hazards) ? 0xffa000 : 0x553300);
     this.M.strip.color.setHex(v.interiorLights ? 0xfff6e0 : 0x555555);
+    const sm = v.stopRequest ? this.stopSignTex.on : this.stopSignTex.off;
+    if (this.stopSignMat.map !== sm) { this.stopSignMat.map = sm; this.stopSignMat.needsUpdate = true; }
     void t;
   }
 

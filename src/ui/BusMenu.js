@@ -9,7 +9,7 @@ import { formatClock, slugify } from '../core/util.js';
 import { WEATHERS } from '../bus/Weather.js';
 
 const NAVY = '#1f3c88';
-const METRO = { A: ['#8B1E8F', '#fff'], B: ['#33E633', '#111'], C: ['#00DDF5', '#16233a'], D: ['#888', '#fff'] };
+const METRO = { A: ['#8B1E8F', '#fff'], B: ['#33E633', '#111'], C: ['#00DDF5', '#16233a'], D: ['#FFD000', '#16233a'] };
 const MODES = [
   ['career', 'Career', 'Work shifts from the depot, earn experience, unlock routes and vehicles.'],
   ['timetable', 'Timetable', 'Any route with its schedule: deadhead, every stop on time, return to the depot.'],

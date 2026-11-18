@@ -1,0 +1,144 @@
+{
+ "id": "grandville-d",
+ "line": "Line D",
+ "number": "D",
+ "network": "Grandville Métro",
+ "color": "#FFD000",
+ "textColor": "#16233a",
+ "language": "fr-FR",
+ "maxSpeed": 80,
+ "startTime": "07:40:00",
+ "headway": 150,
+ "tunnel": {
+  "profile": "box"
+ },
+ "map": {
+  "origin": [
+   -4947.26,
+   1928.65
+  ],
+  "heading": 180
+ },
+ "directions": {
+  "A": {
+   "name": "Aéroval · Direction Parc des Expositions"
+  },
+  "B": {
+   "name": "Aéroval · Direction Aéroport – Terminal 1"
+  }
+ },
+ "defaults": {
+  "platformLength": 90,
+  "platformWidth": 6,
+  "platformType": "island",
+  "approachSpeedLimit": 45,
+  "stopDuration": 25,
+  "style": "modern"
+ },
+ "signaling": {
+  "system": "cbtc",
+  "blockLength": 200,
+  "overlap": 30,
+  "atpBrakeRate": 0.9
+ },
+ "announcements": {
+  "nextStation": "Prochaine station : {station}.",
+  "arrival": "{station}.",
+  "terminus": "{station}. Terminus. Merci d'avoir voyagé avec Aéroval."
+ },
+ "stations": [
+  {
+   "name": "Aéroport International – Terminal 1 (Est)",
+   "distanceToNext": 1053.1,
+   "speedLimit": 70,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 40,
+   "connections": [
+    "Aéroport International",
+    "Aéroport Est"
+   ],
+   "theme": {
+    "wall": "#e9edf2",
+    "accent": "#FFD000"
+   },
+   "track": [
+    {
+     "length": 120
+    },
+    {
+     "length": 513.1,
+     "radius": 420,
+     "turn": "right"
+    },
+    {
+     "length": 280
+    }
+   ]
+  },
+  {
+   "name": "Aéroport International – Terminal 2 (Ouest)",
+   "distanceToNext": 2102.3,
+   "speedLimit": 70,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 34,
+   "theme": {
+    "wall": "#eef0f3",
+    "accent": "#FFD000"
+   },
+   "track": [
+    {
+     "length": 180
+    },
+    {
+     "length": 1382.3,
+     "radius": 480,
+     "turn": "left"
+    },
+    {
+     "length": 400
+    }
+   ]
+  },
+  {
+   "name": "Zone Cargo & Fret",
+   "distanceToNext": 3446.6,
+   "speedLimit": 70,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 14,
+   "theme": {
+    "wall": "#3a3f46",
+    "accent": "#FFD000"
+   },
+   "track": [
+    {
+     "length": 90.8,
+     "radius": 500,
+     "turn": "left"
+    },
+    {
+     "length": 3125.1
+    },
+    {
+     "length": 90.7,
+     "radius": 500,
+     "turn": "right"
+    }
+   ]
+  },
+  {
+   "name": "Parc des Expositions",
+   "distanceToNext": 0,
+   "speedLimit": 70,
+   "stopDuration": 25,
+   "style": "modern",
+   "passengers": 28,
+   "theme": {
+    "wall": "#2b3140",
+    "accent": "#FFD000"
+   }
+  }
+ ]
+}

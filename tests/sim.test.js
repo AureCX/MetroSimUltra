@@ -186,3 +186,13 @@ test('Line C: one-way terminal loop closes on itself and returns on the other tr
   assert.equal(route.stops.at(-1).name, 'Grandville Nord');
   assert.ok(g.loop.closure < 3, `closure ${g.loop.closure}`);
 });
+
+test('Line D (Aéroval) shares Parc des Expositions with Line B and connects to Lines A and B at Terminal 1', () => {
+  const d = normalizeLine(read('lines/grandville-d.json'));
+  assert.deepEqual(d.stations.map((s) => s.name), ['Aéroport International – Terminal 1 (Est)', 'Aéroport International – Terminal 2 (Ouest)', 'Zone Cargo & Fret', 'Parc des Expositions']);
+  assert.deepEqual(d.stations[0].connections, ['Aéroport International', 'Aéroport Est']);
+  const gd = new TrackGeometry(d), pd = gd.point(gd.stationS[3]);
+  const b = normalizeLine(expandServices(read('lines/grandville-b.json'))[1]), gb = new TrackGeometry(b);
+  const pb = gb.point(gb.stationS[b.stations.findIndex((s) => s.name === 'Parc des Expositions')]);
+  assert.ok(Math.hypot(pd.x - pb.x, pd.z - pb.z) < 6);
+});

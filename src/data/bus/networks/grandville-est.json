@@ -2,6 +2,23 @@
  "id": "grandville-est",
  "name": "Grandville Est – Aéroport",
  "frame": "airport",
+ "terrain": {
+  "axis": "z",
+  "profile": [
+   [
+    620,
+    0
+   ],
+   [
+    920,
+    9
+   ],
+   [
+    1210,
+    18
+   ]
+  ]
+ },
  "airport": {
   "x": 0,
   "z": 0
@@ -593,7 +610,8 @@
    "aeroval": true,
    "metro": [
     "A",
-    "B"
+    "B",
+    "D"
    ]
   },
   {
@@ -605,7 +623,10 @@
    ],
    "along": 200,
    "demand": 2.4,
-   "aeroval": true
+   "aeroval": true,
+   "metro": [
+    "D"
+   ]
   },
   {
    "id": "cargo",
@@ -616,7 +637,10 @@
    ],
    "along": 380,
    "demand": 0.8,
-   "aeroval": true
+   "aeroval": true,
+   "metro": [
+    "D"
+   ]
   },
   {
    "id": "expo",
@@ -629,7 +653,8 @@
    "demand": 1.6,
    "metroStation": "Parc des Expositions",
    "metro": [
-    "B"
+    "B",
+    "D"
    ]
   },
   {

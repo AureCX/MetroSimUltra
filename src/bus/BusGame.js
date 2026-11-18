@@ -88,6 +88,8 @@ export class BusGame {
     else this.model.setDestination('', 'DÉPÔT / HORS SERVICE');
     this.traffic = new Traffic(scene, this.net, this.world, this.bus);
     this.passengers = new BusPassengers(scene, this.v, this.model, this.runner, this.bus);
+    this.passengers.heightAt = this.net.heightAt;
+    this.model.heightAt = this.net.heightAt;
     this.scoring = new BusScoring(this.bus);
     this.busAudio = new BusAudio(this.audio); this.busAudio.start(this.v.electric);
     this.camMode = 'cab'; this.chaseDist = 22; this.look.yaw = 0; this.look.pitch = -0.2;
@@ -124,6 +126,11 @@ export class BusGame {
       retarder: () => { v().cycleRetarder(); this.toast(`Retarder ${['off', '1', '2', '3'][v().retarder]}`, 'info', 1.5); },
       climate: () => { v().climate = !v().climate; this.toast(v().climate ? 'Climate on' : 'Climate off', 'info', 1.5); },
       stopReset: () => { v().stopRequest = false; },
+      ticket: () => {
+        const ok = this.passengers?.sellTicket();
+        if (ok) { this.audio.click(); this.busAudio.validate?.(true, 'ok'); this.cockpit?.printTicket(); this.toast(`Ticket sold — ${this.passengers.ticketPrice.toFixed(2).replace('.', ',')} €`, 'ok', 2); }
+        else this.toast('Nobody is waiting to buy a ticket', 'info', 2);
+      },
       announce: () => { const r = this.runner, k = r.atStopIdx ?? r.nextIdx ?? null; const st = r.stops?.[k ?? 0]; if (st) this.announce(st, 'next'); },
       horn: (on) => { v().horn = on; },
       steerDrag: (dx) => { c().steerDrag = true; c().wheelTarget = clamp(c().wheelTarget + dx * 0.035, -16, 16); },
@@ -137,6 +144,8 @@ export class BusGame {
     on('bus:crank', (e) => A.crank(e)); on('bus:engine', (e) => this.toast(e ? 'Engine running' : 'Engine stopped', 'info', 2));
     on('bus:refused', (r) => { this.audio.refuse(); this.toast(r, 'warn', 3); });
     on('bus:doorOpen', () => A.door(true)); on('bus:doorClose', () => { A.doorWarning(); setTimeout(() => A.door(false), 600); });
+    on('bus:cashLeftBehind', () => this.scoring.add(30, 'Closed the doors on a passenger buying a ticket'));
+    on('bus:cashFare', () => this.toast(`A passenger wants to buy a ticket — press ${this.input.labelFor('ticket')} or the TICKET machine`, 'warn', 5));
     on('bus:ramp', (d) => this.toast(d ? 'Ramp deployed — the bus is immobilised' : 'Ramp stowed', 'info', 2.5));
     on('bus:gear', (g) => { if (g === 'D' || g === 'R') this.toast(`Gear ${g}`, 'info', 1.2); });
     on('bus:tick', (b) => A.tick(b)); on('bus:parking', (p) => A.parking(p)); on('bus:kneel', () => A.kneel()); on('bus:shift', () => A.shift());
@@ -190,7 +199,7 @@ export class BusGame {
       case 'hazards': A.hazards(); break; case 'lights': A.lights(); break; case 'wipers': A.wipers(); break;
       case 'interior': A.interior(); break; case 'emergency': A.emergency(); break;
       case 'ramp': A.ramp(); break; case 'retarder': A.retarder(); break; case 'climate': A.climate(); break;
-      case 'stopReset': A.stopReset(); break; case 'announce': A.announce(); break;
+      case 'stopReset': A.stopReset(); break; case 'ticket': A.ticket(); break; case 'announce': A.announce(); break;
       case 'camera': this.camMode = CAMS[(CAMS.indexOf(this.camMode) + 1) % CAMS.length]; this.look.yaw = 0; this.look.pitch = this.camMode === 'cab' ? -0.2 : 0.25; break;
       case 'routeView': this.bus.emit('bus:routeView'); break;
       case 'navPage': this.cockpit.didPage = this.cockpit.didPage === 'map' ? 'route' : 'map'; break;
@@ -236,7 +245,8 @@ export class BusGame {
 
   simStep(dt, ctl) {
     const v = this.v, w = this.weather;
-    v.update(dt, ctl, { mu: w.w.mu, grade: 0, wet: w.wet });
+    const hd = v.ph.heading();
+    v.update(dt, ctl, { mu: w.w.mu, grade: this.net.terrain.gradeAt(v.ph.x, v.ph.z, hd.fx, hd.fz), wet: w.wet });
     this.time += dt;
     this.collisions(dt);
     this.rules(dt);
@@ -430,12 +440,13 @@ export class BusGame {
     if (this.camMode === 'chase') {
       const d = this.chaseDist, yaw = this.look.yaw, pitch = clamp(this.look.pitch, 0.05, 1.3);
       const bx = -h.fx * Math.cos(yaw) + h.rx * Math.sin(yaw), bz = -h.fz * Math.cos(yaw) + h.rz * Math.sin(yaw);
-      const target = new THREE.Vector3(ph.x + bx * d * Math.cos(pitch), 2 + Math.sin(pitch) * d, ph.z + bz * d * Math.cos(pitch));
+      const gy = this.net.heightAt(ph.x, ph.z);
+      const target = new THREE.Vector3(ph.x + bx * d * Math.cos(pitch), gy + 2 + Math.sin(pitch) * d, ph.z + bz * d * Math.cos(pitch));
       cam.position.lerp(target, Math.min(1, dt * 4));
-      cam.lookAt(ph.x + h.fx * 4, 2, ph.z + h.fz * 4);
+      cam.lookAt(ph.x + h.fx * 4, gy + 2, ph.z + h.fz * 4);
     } else {
       cam.position.set(ph.x, 120 + this.chaseDist * 2, ph.z + 0.01);
-      cam.lookAt(ph.x, 0, ph.z);
+      cam.lookAt(ph.x, this.net.heightAt(ph.x, ph.z), ph.z);
     }
     cam.fov = fov; cam.updateProjectionMatrix();
     return cam;
@@ -460,7 +471,7 @@ export class BusGame {
       score: this.scoring.result(true).score, comfort: this.scoring.comfort, phase: R.phase, maneuver: R.nextManeuver(),
       navPath: nav, mapStops: R.stops.slice(k).map((s) => this.runner.viewFor(this.runner.stops.indexOf(s))?.polePoint).filter(Boolean),
       upcoming, weather: this.weather.w, weatherLabel: this.weather.kind, hour: this.weather.hour, service: this.serviceState, camMode: this.camMode,
-      stopRequest: v.stopRequest, indicator: v.indicator, hazards: v.hazards, blinkOn: v.blinkOn, mode: this.mode,
+      stopRequest: v.stopRequest, cashWaiting: this.passengers?.cashWaiting ?? 0, indicator: v.indicator, hazards: v.hazards, blinkOn: v.blinkOn, mode: this.mode,
     };
   }
 

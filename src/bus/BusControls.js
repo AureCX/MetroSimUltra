@@ -17,6 +17,7 @@ export const BUS_ACTIONS = {
   retarder:    { label: 'Retarder level (0-3)', keys: ['KeyT'], pad: [] },
   climate:     { label: 'Heating / air conditioning', keys: ['KeyY'], pad: [] },
   stopReset:   { label: 'Reset stop request', keys: ['KeyV'], pad: [] },
+  ticket:      { label: 'Sell a ticket (ticket machine)', keys: ['Digit5'], pad: [] },
   announce:    { label: 'Repeat next-stop announcement', keys: ['Digit4'], pad: [] },
   indLeft:     { label: 'Indicator left', keys: ['KeyQ'], pad: [4] },
   indRight:    { label: 'Indicator right', keys: ['KeyE'], pad: [5] },

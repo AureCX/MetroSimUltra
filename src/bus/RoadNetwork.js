@@ -2,6 +2,8 @@
 // roundabouts, signals), two-way edges with lanes / bus lanes / speed limits, stops and crossings.
 // Provides lane geometry, turning paths (incl. roundabouts), traffic-signal states, shortest paths
 // and full lane-level route paths. Pure logic (no three.js) so it can be unit-tested.
+import { Terrain } from './Terrain.js';
+
 export const LANE = 3.5;
 export const WALK = 3.0; // sidewalk width
 
@@ -57,6 +59,8 @@ export function projectOnPath(path, x, z, s0 = 0, s1 = Infinity) {
 export class RoadNetwork {
   constructor(data) {
     this.data = data;
+    this.terrain = new Terrain(data.terrain);
+    this.heightAt = (x, z) => this.terrain.heightAt(x, z);
     this.nodes = new Map();
     for (const n of data.nodes) this.nodes.set(n.id, { ...n, edges: [], signal: !!n.signal, roundabout: n.roundabout || 0 });
     this.edges = data.edges.map((e, i) => {

@@ -49,8 +49,11 @@ export class BusCockpit {
     const cl = add(new THREE.PlaneGeometry(0.72, 0.27), new THREE.MeshBasicMaterial({ map: this.cluster.t }), xd, 1.32, zf + 0.64); cl.rotation.x = -0.3;
     // Driver information / navigation display, angled towards the driver on the right of the hood.
     this.did = canvasTex(768, 512);
-    box(xd + 0.47, xd + 0.9, DASH, 1.44, zf + 0.42, zf + 0.6, M.dash);
-    const dg = add(new THREE.PlaneGeometry(0.38, 0.26), new THREE.MeshBasicMaterial({ map: this.did.t }), xd + 0.69, 1.27, zf + 0.62); dg.rotation.set(-0.25, -0.4, 0, 'YXZ');
+    // The screen sits in its own bezel, turned towards the driver, on a short stalk above the dashboard.
+    const didG = new THREE.Group(); didG.position.set(xd + 0.72, 1.3, zf + 0.7); didG.rotation.set(-0.22, -0.42, 0, 'YXZ'); this.group.add(didG);
+    add(new THREE.BoxGeometry(0.43, 0.31, 0.05), M.black, 0, 0, -0.03, didG);
+    add(new THREE.BoxGeometry(0.06, 0.2, 0.06), M.dash, 0, -0.2, -0.05, didG);
+    const dg = add(new THREE.PlaneGeometry(0.38, 0.26), new THREE.MeshBasicMaterial({ map: this.did.t }), 0, 0, 0.0, didG);
     this.didPage = 'map';
     this.register(dg, 'Driver display — click to switch Route / Map page', { click: () => { this.didPage = this.didPage === 'map' ? 'route' : 'map'; this.A.click(); } });
     // Steering column and wheel (nearly flat, as in a bus).
@@ -138,6 +141,7 @@ export class BusCockpit {
       ['HAZARD', 0xd01010, () => this.A.hazards(), () => v.hazards && v.blinkOn],
       ['STOP RESET', 0x2fa84f, () => this.A.stopReset(), () => v.stopRequest],
       ['ANNOUNCE', 0x9aa1a8, () => this.A.announce(), () => false],
+      ['TICKET', 0x2fa84f, () => this.A.ticket(), () => false],
     ];
     const keyGeo = new THREE.BoxGeometry(0.05, 0.018, 0.04);
     const place = (c, list, cols, zStart) => list.forEach(([label, color, act, lit], i) => {
@@ -164,6 +168,28 @@ export class BusCockpit {
     const ebl = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.03), new THREE.MeshBasicMaterial({ map: lbl('EMERGENCY', '#8a0c0c', '#fff') })); ebl.rotation.x = -Math.PI / 2; ebl.position.set(0.1, 0.002, rightC.d / 2 - 0.05); rightC.g.add(ebl);
     this.register(eb, 'Emergency stop (hazards + full brake)', { click: () => this.A.emergency() });
     this.ebBtn = eb;
+    // Driver's ticket machine on the cab door side: keypad + printer; prints a ticket for cash fares.
+    const tm = new THREE.Group(); tm.position.set(xd + 0.86, 1.22, zf + 1.25); tm.rotation.set(-0.35, -1.2, 0, 'YXZ'); this.group.add(tm);
+    add(new THREE.BoxGeometry(0.26, 0.2, 0.16), M.black, 0, 0, 0, tm);
+    this.tmScreen = canvasTex(256, 128);
+    add(new THREE.PlaneGeometry(0.15, 0.075), new THREE.MeshBasicMaterial({ map: this.tmScreen.t }), -0.04, 0.03, 0.081, tm);
+    const tkey = add(new THREE.BoxGeometry(0.06, 0.05, 0.02), new THREE.MeshStandardMaterial({ color: 0x2fa84f, emissive: 0x000000 }), 0.08, 0.03, 0.085, tm);
+    const tkl = add(new THREE.PlaneGeometry(0.075, 0.02), new THREE.MeshBasicMaterial({ map: lbl('TICKET'), transparent: true }), 0.08, -0.015, 0.082, tm); void tkl;
+    this.register(tkey, 'Ticket machine — sell a ticket', { click: () => { this.A.click(); this.A.ticket(); } });
+    this.ticketPaper = add(new THREE.BoxGeometry(0.06, 0.004, 0.001), new THREE.MeshBasicMaterial({ color: 0xf5f2e8 }), -0.04, -0.07, 0.081, tm);
+    this.ticketPaper.visible = false; this.ticketT = 0; this.tkey = tkey;
+    this.drawTicketScreen(0);
+  }
+
+  /** Ticket machine animation: a ticket slides out of the printer slot. */
+  printTicket() { this.ticketT = 2.2; this.ticketPaper.visible = true; }
+  drawTicketScreen(waiting) {
+    const g = this.tmScreen.g;
+    g.fillStyle = '#0b1a12'; g.fillRect(0, 0, 256, 128);
+    g.fillStyle = waiting ? '#ffd25a' : '#5fe39a'; g.font = 'bold 30px "Courier New", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(waiting ? 'ESPÈCES' : 'BILLET', 128, 42);
+    g.font = 'bold 26px "Courier New", monospace'; g.fillText(waiting ? `${waiting} en attente` : '2,10 €', 128, 92);
+    this.tmScreen.t.needsUpdate = true;
   }
 
   register(mesh, label, handlers) { mesh.userData.interact = { label, ...handlers }; this.interactive.push(mesh); }
@@ -181,6 +207,16 @@ export class BusCockpit {
       b.press = Math.max(0, b.press - dt); b.mesh.position.y = b.y - (b.press > 0 ? 0.008 : 0);
     }
     this.ebBtn.position.y = v.emergency ? -0.012 : 0;
+    // Ticket machine.
+    const waiting = Math.max(0, (st.cashWaiting ?? 0));
+    if (waiting !== this.tmWaiting) { this.tmWaiting = waiting; this.drawTicketScreen(waiting); }
+    this.tkey.material.emissive.setHex(waiting && Math.sin(performance.now() / 180) > 0 ? 0x2fa84f : 0x000000);
+    if (this.ticketT > 0) {
+      this.ticketT -= dt;
+      const k = Math.min(1, (2.2 - this.ticketT) / 0.8);            // slides out of the slot in 0.8 s
+      this.ticketPaper.scale.z = 1 + k * 60; this.ticketPaper.position.z = 0.081 + k * 0.03;
+      if (this.ticketT <= 0) this.ticketPaper.visible = false;
+    }
     // Wipers sweep; they clear the drops.
     const wiping = v.wipers > 0;
     const ang = wiping ? (Math.sin(v.wiperPhase) * 0.5 + 0.5) * 1.45 : 0;

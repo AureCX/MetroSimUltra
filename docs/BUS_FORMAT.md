@@ -58,7 +58,8 @@ turning circles. Both directions are generated from the same file.
   "blocks": [ { "x0": 0, "z0": 0, "x1": 300, "z1": 280, "type": "business", "name": "…" } ],
   "depot": { "name": "…", "x0": …, "z0": …, "x1": …, "z1": …, "exitNode": "…", "start": { "x": …, "z": …, "heading": 0 },
              "bays": { "fuel": [x, z], "charge": [x, z], "wash": [x, z], "maintenance": [x, z] } },
-  "airport": { "x": 0, "z": 0 }
+  "airport": { "x": 0, "z": 0 },
+  "terrain": { "axis": "z", "profile": [[620, 0], [920, 9], [1210, 18]] }
 }
 ```
 
@@ -67,6 +68,9 @@ turning circles. Both directions are generated from the same file.
   priority to the right. `roundabout`: radius in metres (also used for turning circles at dead ends).
 * `lanes`: lanes per direction (1 or 2); `busLane` makes the kerb lane a red bus-only lane.
 * A stop exists on both sides of its road. `demand` scales waiting passengers; `metro` lists interchange lines.
+* `terrain` (optional): ground height in metres, piecewise linear along `axis` and constant beyond the end points.
+  Put the break points on rows of nodes so roads between nodes follow the slope exactly. The bus feels the gradient
+  (climbing, downhill braking, retarder).
 * `blocks.type`: `business`, `hotel`, `parking`, `rental`, `staff`, `expo`, `commercial`, `industrial`, `residential`, `depot`.
 
 ## Vehicle

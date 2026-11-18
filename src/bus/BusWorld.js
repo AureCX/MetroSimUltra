@@ -100,7 +100,28 @@ export class BusWorld {
     if (n.data.depot) this.buildDepot(n.data.depot);
     if (n.data.airport) this.buildAirportArea(n.data.airport);
     this.mergeStatic();
+    this.applyTerrain();
     return this;
+  }
+
+  /** Lays the finished world on the terrain: merged geometry vertex by vertex, instances and other objects as a whole. */
+  applyTerrain() {
+    const T = this.net.terrain;
+    if (!T || T.flat) return;
+    const m = new THREE.Matrix4();
+    for (const p of this.lampPositions) p.y += T.heightAt(p.x, p.z);
+    for (const o of this.group.children) {
+      if (o.isMesh && !o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      if (o.isInstancedMesh) {
+        for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m); m.elements[13] += T.heightAt(m.elements[12], m.elements[14]); o.setMatrixAt(i, m); }
+        o.instanceMatrix.needsUpdate = true; o.computeBoundingSphere?.();
+      } else if (o.isMesh && (o.userData.merged || (o.rotation.x === 0 && o.rotation.y === 0 && o.rotation.z === 0 && o.scale.x === 1 && o.geometry.boundingSphere?.radius > 4))) {
+        // World-aligned geometry (merged statics, roads, ground): follow the terrain vertex by vertex.
+        const pos = o.geometry.attributes.position, ox = o.position.x, oz = o.position.z;
+        for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) + T.heightAt(pos.getX(i) + ox, pos.getZ(i) + oz));
+        pos.needsUpdate = true; o.geometry.computeBoundingSphere(); o.geometry.computeBoundingBox();
+      } else o.position.y += T.heightAt(o.position.x, o.position.z);
+    }
   }
 
   // ---------- helpers ----------
@@ -114,6 +135,17 @@ export class BusWorld {
     const m = new THREE.Mesh(g, mat); this.group.add(m); return m;
   }
   rect(x0, z0, x1, z1, mat, y, tile = 8) {
+    // On sloping ground, large pieces are split where the slope changes so they follow the terrain.
+    const T = this.net.terrain, cuts = T && !T.flat ? T.breaks.filter((c) => (T.axis === 'z' ? c > z0 + 0.5 && c < z1 - 0.5 : c > x0 + 0.5 && c < x1 - 0.5)) : [];
+    if (cuts.length) {
+      const edges = [T.axis === 'z' ? z0 : x0, ...cuts, T.axis === 'z' ? z1 : x1];
+      let m = null;
+      for (let i = 0; i < edges.length - 1; i++) m = T.axis === 'z' ? this.rectFlat(x0, edges[i], x1, edges[i + 1], mat, y, tile) : this.rectFlat(edges[i], z0, edges[i + 1], z1, mat, y, tile);
+      return m;
+    }
+    return this.rectFlat(x0, z0, x1, z1, mat, y, tile);
+  }
+  rectFlat(x0, z0, x1, z1, mat, y, tile = 8) {
     const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2);
     const u = g.attributes.uv; for (let i = 0; i < u.count; i++) u.setXY(i, u.getX(i) * (x1 - x0) / tile, u.getY(i) * (z1 - z0) / tile);
     const m = new THREE.Mesh(g, mat); m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); this.group.add(m); return m;
@@ -589,7 +621,7 @@ export class BusWorld {
       if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [] });
       buckets.get(key).geos.push(geo); this.group.remove(o);
     }
-    for (const { mat, geos } of buckets.values()) { const g = mergeGeometries(geos); if (g) this.group.add(new THREE.Mesh(g, mat)); }
+    for (const { mat, geos } of buckets.values()) { const g = mergeGeometries(geos); if (g) { const mm = new THREE.Mesh(g, mat); mm.userData.merged = true; this.group.add(mm); } }
   }
 
   // ---------- per-frame ----------

@@ -24,12 +24,20 @@ export class BusPassengers {
     this.boarding = []; this.alighting = [];
     this.validations = 0; this.contactless = 0;
     this.validatorTimer = 0;
+    this.heightAt = () => 0;   // ground elevation (set by the game from the network terrain)
+    this.cashWaiting = 0; this.ticketsToHand = 0; this.cashSales = 0; this.ticketPrice = 2.1;
     this.comfortHits = 0;
     this.seatMix();
   }
   seatMix() { for (const s of this.model.seatSlots) s.taken = false; for (const s of this.model.standSlots) s.taken = false; }
   get count() { return this.onboard.length + this.boarding.filter((b) => b.state === 'inside').length; }
   get capacity() { return this.v.spec.capacity; }
+
+  /** Driver's ticket machine: sells a single ticket to the passenger paying cash (refused when nobody is waiting). */
+  sellTicket() {
+    if (this.cashWaiting > this.ticketsToHand) { this.ticketsToHand++; return true; }
+    return false;
+  }
 
   /** Initial load at the start (if the run begins mid-route) and expected waiting counts. */
   expectedAt(stopIdx, env) {
@@ -54,7 +62,7 @@ export class BusPassengers {
       const later = this.runner.stops.length - 1 - stopIdx;
       p.dest = stopIdx + 1 + Math.min(later - 1, Math.floor(Math.pow(this.rand(), 0.8) * later));
       p.mobility = this.rand() < 0.1;
-      p.pay = this.rand() < 0.55 ? 'nfc' : 'ok';
+      { const u = this.rand(); p.pay = u < 0.55 ? 'nfc' : u < 0.92 ? 'ok' : 'cash'; } // cash: buys a ticket from the driver
       p.speed = (p.mobility ? 0.6 : 1.0) + this.rand() * 0.5;
       const a = this.rand() * 6 - 3, b = this.rand() * 1.2;
       p.home = { x: sv.waitPoint.x + sv.d.dx * a + sv.d.rx * b, z: sv.waitPoint.z + sv.d.dz * a + sv.d.rz * b };
@@ -137,6 +145,7 @@ export class BusPassengers {
       if (queue.length && (doorsOpen[0] || (aeroAllDoors && doorsOpen.some(Boolean))) && !frontBusy && this.boarding.length < 3 && R.isServiceStop(k)) {
         const p = queue.shift();
         const door = doorsOpen[0] ? 0 : doorsOpen.findIndex(Boolean);
+        if (p.pay === 'cash' && door !== 0) p.pay = 'ok'; // no driver at the rear doors: buys at the machine instead
         this.boarding.push({ p, door, state: 'walk', valid: 0 });
       }
     }
@@ -151,7 +160,18 @@ export class BusPassengers {
         const step = Math.min(d, p.speed * kneelBoost * dt);
         p.g.position.x += (dx / (d || 1)) * step; p.g.position.z += (dz / (d || 1)) * step;
         p.g.rotation.y = Math.atan2(dx, dz); p.va = p.speed * kneelBoost;
-        if (d < 0.3) { b.state = 'validate'; b.valid = (p.pay === 'nfc' ? 0.8 : 1.7) * (p.mobility && v.kneelT < 0.6 ? 2.5 : 1); }
+        if (d < 0.3) {
+          b.state = p.pay === 'cash' ? 'cash' : 'validate'; b.valid = (p.pay === 'nfc' ? 0.8 : 1.7) * (p.mobility && v.kneelT < 0.6 ? 2.5 : 1);
+          if (b.state === 'cash') { this.cashWaiting = (this.cashWaiting || 0) + 1; this.bus.emit('bus:cashFare'); }
+        }
+      } else if (b.state === 'cash') {
+        // Waits at the driver until a ticket is sold, then validates it.
+        p.va = 0;
+        if (v.doors[b.door].amount < 0.5) { // doors closed on them: left behind at the stop
+          this.cashWaiting--; this.boarding.splice(this.boarding.indexOf(b), 1); this.scene.remove(p.g);
+          this.bus.emit('bus:cashLeftBehind'); continue;
+        }
+        if (this.ticketsToHand > 0) { this.ticketsToHand--; this.cashWaiting--; this.cashSales = (this.cashSales || 0) + 1; b.state = 'validate'; b.valid = 1.2; p.pay = 'ok'; }
       } else if (b.state === 'validate') {
         p.va = 0; b.valid -= dt;
         if (b.valid <= 0) {
@@ -189,6 +209,10 @@ export class BusPassengers {
     if (this.validatorTimer > 0 && (this.validatorTimer -= dt) <= 0) this.model.drawValidator('ready');
     // Payload mass.
     v.ph.payload = this.count * 72;
+    // People outside the bus stand on the ground.
+    for (const list of [...this.waiting.values(), this.boarding.map((b) => b.p), this.alighting.map((a) => a.p)]) {
+      for (const p of list) if (p.g.parent === this.scene) p.g.position.y = 0.15 + this.heightAt(p.g.position.x, p.g.position.z);
+    }
     // Clear crowds behind the bus.
     for (const [key] of this.waiting) { const idx = R.stops.findIndex((s) => s.key === key); if (idx >= 0 && idx < R.nextIdx - 1) this.clearWaiting(key); }
   }

@@ -80,3 +80,14 @@ test('the example route from the brief imports; unknown stops are rejected', () 
   assert.equal(r.route, 'B12');
   assert.throws(() => normalizeRoute({ route: 'X', stops: [{ name: 'Nowhere' }, { name: 'Elsewhere' }] }, nets), RouteError);
 });
+
+test('terrain: piecewise profile, gradient along the direction of travel', async () => {
+  const { Terrain } = await import('../src/bus/Terrain.js');
+  const t = new Terrain({ axis: 'z', profile: [[620, 0], [920, 9], [1210, 18]] });
+  assert.equal(t.heightAt(0, 100), 0);
+  assert.equal(t.heightAt(0, 770), 4.5);
+  assert.equal(t.heightAt(0, 5000), 18);
+  assert.ok(Math.abs(t.gradeAt(0, 770, 0, 1) - 30) < 1e-6, 'uphill southwards: +30 ‰');
+  assert.ok(Math.abs(t.gradeAt(0, 770, 0, -1) + 30) < 1e-6, 'downhill northwards');
+  assert.equal(new Terrain(undefined).flat, true);
+});

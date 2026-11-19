@@ -30,7 +30,7 @@ export class PlayerTrain {
     const sp = this.specs, out = [];
     for (let c = 0; c < sp.cars; c++) {
       const start = c * (sp.carLength + sp.carGap);
-      for (let d = 0; d < sp.doorsPerSide; d++) out.push(start + (sp.carLength * (d + 0.5)) / sp.doorsPerSide);
+      for (const z of sp.doorZ) out.push(start + sp.carLength / 2 - z);
     }
     return out;
   }

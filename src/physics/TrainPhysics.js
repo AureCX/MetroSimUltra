@@ -8,6 +8,12 @@ const ROTARY_MASS = 1.08;       // rotating-mass allowance
 const ADHESION_TRACTION = 0.24; // dry rail
 const ADHESION_BRAKE = 0.2;
 
+/** Door centres (car frame, +z = front): evenly spread between end margins that leave room for a cab. */
+export function doorCentres(L, dps, dw) {
+  const M = Math.min(1.75, Math.max(0.6, (L - dps * (dw + 0.8)) / 2));
+  return Array.from({ length: dps }, (_, d) => L / 2 - M - ((L - 2 * M) * (d + 0.5)) / dps);
+}
+
 export function deriveTrainSpecs(t) {
   const cars = t.cars ?? 5;
   const carLength = t.carLength ?? 15;
@@ -21,6 +27,8 @@ export function deriveTrainSpecs(t) {
     height: t.height ?? 3.5,
     doorsPerSide: t.doorsPerSide ?? 3,
     doorWidth: t.doorWidth ?? 1.3,
+    // Door centres in the car frame (+z = front), spread over the car length clear of the drivers' cabs.
+    doorZ: doorCentres(carLength, t.doorsPerSide ?? 3, t.doorWidth ?? 1.3),
     capacity: t.capacity ?? cars * 140,
     maxPower: t.maxPower ?? 1600,          // kW at wheel
     maxTractiveForce: t.maxTractiveForce ?? 180, // kN

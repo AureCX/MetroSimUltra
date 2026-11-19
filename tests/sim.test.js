@@ -160,3 +160,72 @@ test('a junction with no route set holds the movement authority before the point
   sig.update([], { front: 5000, rear: 4900 });
   assert.ok(sig.authority > 5770);
 });
+
+test('Line C: one-way terminal loop closes on itself and returns on the other track', async () => {
+  const fs = await import('node:fs');
+  const raw = JSON.parse(fs.readFileSync(new URL('../src/data/lines/grandville-c.json', import.meta.url)));
+  const line = normalizeLine(raw);
+  assert.ok(line.loop, 'loop expanded');
+  const names = line.stations.map((s) => s.name);
+  assert.deepEqual(names.slice(4, 9), ['République', 'Gare Centrale', 'Palais Royal', 'Opéra', 'République']);
+  assert.equal(names.at(-1), 'Grandville Nord');
+  const g = new TrackGeometry(line);
+  const route = new Route(line, g, 'A');
+  // The return platform of every trunk station is the twin of its outbound one: same place, other track.
+  for (const s of line.stations.filter((x) => x.mirrorOf != null)) {
+    const a = g.point(g.stationS[s.mirrorOf]), b = g.point(g.stationS[s.index]);
+    assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 0.5, `${s.name} twin`);
+    const ra = route.point(route.stops[s.mirrorOf].centerR), rb = route.point(route.stops[s.index].centerR);
+    const d = Math.hypot(ra.x - rb.x, ra.z - rb.z);
+    assert.ok(d > 3 && d < 12, `${s.name}: tracks ${d.toFixed(2)} m apart`);
+  }
+  // The circuit is continuous (no jumps along the train's path).
+  let max = 0;
+  for (let r = 1; r < route.length; r += 1) { const p = route.point(r - 1), q = route.point(r); max = Math.max(max, Math.abs(Math.hypot(p.x - q.x, p.z - q.z) - 1)); }
+  assert.ok(max < 0.08, `max step error ${max.toFixed(3)}`);
+  assert.equal(route.stops.at(-1).name, 'Grandville Nord');
+  assert.ok(g.loop.closure < 3, `closure ${g.loop.closure}`);
+});
+
+test('Line D (Aéroval): elevated airport express T1 → T2 → Quartier des Affaires – Aéroport → Grandville Sud, above Line A', () => {
+  const d = normalizeLine(read('lines/grandville-d.json'));
+  assert.deepEqual(d.stations.map((s) => s.name), ['Aéroport International – Terminal 1 (Est)', 'Aéroport International – Terminal 2', 'Quartier des Affaires – Aéroport', 'Grandville Sud']);
+  assert.deepEqual(d.stations[0].interchange.metro, ['A', 'B']);
+  assert.equal(d.automation, 'ato');
+  const gd = new TrackGeometry(d);
+  for (let s = 0; s < gd.length; s += 5) assert.ok(gd.outdoorAt(s), `open air at ${s}`);
+  assert.ok(gd.point(gd.stationS[1]).y - gd.groundAt(gd.stationS[1]) >= 8, 'on a viaduct');
+  const a = normalizeLine(expandServices(read('lines/grandville-a.json'))[0]), ga = new TrackGeometry(a);
+  const pa = ga.point(ga.stationS[a.stations.findIndex((s) => s.name === 'Grandville Sud')]), pd = gd.point(gd.stationS[3]);
+  assert.ok(Math.hypot(pd.x - pa.x, pd.z - pa.z) < 3, 'Grandville Sud right above Line A');
+});
+
+test('ATO drives Line D end to end: stops at every marker, opens and closes the doors, never trips ATP', async () => {
+  const { ATO } = await import('../src/driving/ATO.js');
+  const { route, line } = setup('lines/grandville-d.json');
+  const apm = deriveTrainSpecs(read('trains/apm-aeroval.json'));
+  const bus = new EventBus();
+  const pt = new PlayerTrain(apm, route, bus, settings);
+  const tt = new Timetable(route, apm, line.startTime);
+  const sm = new StationManager(route, tt, pt, bus, settings);
+  const sig = new SignalSystem(route, line, bus);
+  sm.boardingPending = () => 0;
+  const arrivals = [], trips = [];
+  bus.on('station:arrived', (e) => arrivals.push(e));
+  bus.on('safety:emergency', (e) => trips.push(e));
+  pt.physics.s = route.stops[0].stopR;
+  const ato = new ATO({ player: pt, stations: sm, route, specs: apm, openDoors: (side) => pt.doors.open(side, { speed: pt.speed, alignment: sm.alignment() }) });
+  let clock = tt.start - 30;
+  for (let i = 0; i < 20 * 60 * 20 && !sm.finished; i++) {
+    const dt = 0.05;
+    sig.update([], { front: pt.front, rear: pt.rear });
+    ato.step(sig.authority);
+    pt.update(dt, { staticLimit: Math.min(route.permittedFor(pt.front, apm.length), apm.maxSpeed), authorityDist: sig.authority != null ? sig.authority - pt.front : null, brakeRate: line.signaling.atpBrakeRate });
+    sm.update(dt, clock);
+    clock += dt;
+  }
+  assert.ok(sm.finished, 'reached the terminus');
+  assert.equal(arrivals.length, route.stops.length - 1, 'stopped at every station');
+  for (const a of arrivals) assert.ok(Math.abs(a.error) < 1.5, `stop error ${a.error.toFixed(2)} m at ${a.stop.name}`);
+  assert.equal(trips.length, 0, 'no emergency brake');
+});

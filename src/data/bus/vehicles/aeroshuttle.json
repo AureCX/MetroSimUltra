@@ -1,0 +1,37 @@
+{
+ "id": "aeroshuttle",
+ "order": 5,
+ "name": "Aéroval Shuttle 13",
+ "type": "shuttle",
+ "description": "Airport shuttle: few seats, wide doors on both sides, luggage racks.",
+ "length": 13.0,
+ "width": 2.55,
+ "height": 3.1,
+ "wheelbase": 6.6,
+ "frontOverhang": 2.8,
+ "mass": 12900,
+ "capacity": 110,
+ "seats": 16,
+ "doors": [
+  1.4,
+  5.6,
+  9.6,
+  11.9
+ ],
+ "powertrain": "electric",
+ "power": 240,
+ "torque": 2200,
+ "battery": 300,
+ "auxPower": 10,
+ "regen": 0.7,
+ "maxSpeed": 70,
+ "brakeDecel": 5.5,
+ "steerMax": 0.85,
+ "rollStiffness": 1.0,
+ "aeroval": true,
+ "livery": {
+  "body": "#ffd000",
+  "stripe": "#1f3c88",
+  "skirt": "#16233a"
+ }
+}

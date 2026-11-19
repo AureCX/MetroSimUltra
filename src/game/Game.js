@@ -1,4 +1,5 @@
 // A driving session: wires all decoupled systems together for one line / train / direction.
+import { ATO } from '../driving/ATO.js';
 import * as THREE from 'three';
 import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
@@ -9,7 +10,7 @@ import { SignalSystem } from '../signaling/SignalSystem.js';
 import { TrafficManager } from '../traffic/TrafficManager.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { SignalView } from '../world/SignalView.js';
-import { TrainModel } from '../world/TrainModel.js';
+import { TrainModel, TRAIN_FLOOR } from '../world/TrainModel.js';
 import { PassengerSystem } from '../world/Passengers.js';
 import { Cabin, CabInteraction } from '../cabin/Cabin.js';
 import { CameraSystem } from '../camera/CameraSystem.js';
@@ -38,6 +39,7 @@ export class Game {
   start({ line, train, direction, services, network }) {
     this.dispose();
     const bus = this.bus;
+    if (line.loop) direction = 'A'; // a terminal loop is one-way: every train runs the whole circuit
     this.line = line; this.specs = train; this.direction = direction;
     this.planned = line; // destination chosen in the menu
     const scene = this.scene = new THREE.Scene();
@@ -53,7 +55,7 @@ export class Game {
     this.svc = new Map();
     for (const l of services && services.length > 1 ? services : [line]) {
       const g = new TrackGeometry(l);
-      this.svc.set(l.id, { line: l, geom: g, routes: { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') }, tt: {} });
+      this.svc.set(l.id, { line: l, geom: g, routes: l.loop ? { A: new Route(l, g, 'A') } : { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') }, tt: {} });
     }
     const main = this.svc.get(line.id);
     this.geom = main.geom;
@@ -70,15 +72,19 @@ export class Game {
     this.stations = new StationManager(route, this.timetable, this.player, bus, this.settings);
     this.signals = new SignalSystem(route, line, bus);
     this.traffic = new TrafficManager({ line, routes: this.routes, specs: train, playerRoute: route, playerTimetable: this.timetable, startClock: this.clock, bus });
+    this.traffic.player = () => ({ front: this.player.front, rear: this.player.rear });
 
     const q = this.settings.get('graphics.quality');
     const J = this.junction;
-    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junction: J && { divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain } }).build();
+    const LP = this.geom.loop;
+    const junctions = J ? [{ divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain }]
+      : LP ? [{ divergeS: LP.J, wallS: LP.J + LP.chamber, inner: LP.inner }, { divergeS: LP.Jr - LP.chamber, wallS: LP.Jr, inner: LP.inner }] : [];
+    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions }).build();
     this.worlds = new Map([[line.id, this.world]]);
     for (const [id, d] of this.svc) {
       if (id === line.id) continue;
       this.worlds.set(id, new WorldBuilder(scene, d.line, d.geom, d.routes, q, {
-        fromS: J.divergeS, firstStation: J.index + 1, junction: { divergeS: J.divergeS, wallS: J.wallS, inner: -J.innerMain },
+        fromS: J.divergeS, firstStation: J.index + 1, junctions: [{ divergeS: J.divergeS, wallS: J.wallS, inner: -J.innerMain }],
         lightPool: this.world.lights, tunnelPool: this.world.tunnelLights, offset: true, fallback: this.world,
       }).build());
     }
@@ -113,6 +119,8 @@ export class Game {
     this.paused = false;
     this.result = null;
     this.bumpAcc = 0; this.bump = 0;
+    this.ato = line.automation === 'ato'; // automated line: the train drives itself unless the driver takes over
+    this.atoCtl = new ATO({ player: this.player, stations: this.stations, route, specs: train, openDoors: (side) => this.openDoors(side) });
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
     if (J && direction === 'A') this.buildRouteIndicator();
@@ -124,7 +132,7 @@ export class Game {
   /** Sky dome, sun and haze for lines with open-air sections. */
   buildDaylight() {
     this.daylight = null;
-    if (![...this.svc.values()].some((d) => d.geom.portals.length)) return;
+    if (![...this.svc.values()].some((d) => d.geom.portals.length || d.line.elevated)) return;
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
     const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
     grd.addColorStop(0, '#2f6bc4'); grd.addColorStop(0.3, '#5f97de'); grd.addColorStop(0.46, '#a9c8ea'); grd.addColorStop(0.5, '#c6d8ea'); grd.addColorStop(0.52, '#8f9a80'); grd.addColorStop(1, '#6f7d64');
@@ -266,6 +274,7 @@ export class Game {
     this.timetable = new Timetable(route, this.specs, d.line.startTime);
     this.stations = new StationManager(route, this.timetable, p, this.bus, this.settings);
     Object.assign(this.stations, { atStop: null, nextStop: old.nextStop, lastDelay: old.lastDelay, served: old.served, boardingPending: old.boardingPending });
+    if (this.atoCtl) Object.assign(this.atoCtl, { route, stations: this.stations });
     this.passengers.route = route; this.passengers.routes = d.routes; this.passengers.line = d.line; this.passengers.stationManager = this.stations;
     for (const k of [...this.passengers.crowds.keys()]) this.passengers.removeCrowd(k);
     this.signalView.dispose();
@@ -281,10 +290,21 @@ export class Game {
   }
 
   /** Scheduled arrivals for a station of a service the player is not on (passenger displays). */
+  /** Stop index on the route serving platform `dir` of station `index` (loop lines: the return platform is a later stop). */
+  stopIndexFor(line, index, dir) {
+    if (line.loop) {
+      if (dir !== 'B') return index;
+      const twin = line.stations.findIndex((s) => s.mirrorOf === index);
+      return twin >= 0 ? twin : index;
+    }
+    return dir === 'A' ? index : line.stations.length - 1 - index;
+  }
+
   etasScheduled(d, index, dir) {
+    if (d.line.loop) dir = 'A';
     const route = d.routes[dir];
     const tt = d.tt[dir] ??= new Timetable(route, this.specs, d.line.startTime);
-    const k = dir === 'A' ? index : d.line.stations.length - 1 - index;
+    const k = this.stopIndexFor(d.line, index, dir);
     const e = tt.entry(k);
     const base = e.arr ?? e.dep, h = d.line.headway;
     const n = Math.ceil((this.clock - base) / h);
@@ -431,9 +451,27 @@ export class Game {
     if (this.paused || this.result) { this.render(); return; }
     dt = Math.min(dt, 0.1);
     this.acc = (this.acc || 0) + dt;
-    while (this.acc >= STEP) { this.simStep(STEP); this.acc -= STEP; }
-    this.updateVisuals(dt);
+    this.guard('simulation', () => { while (this.acc >= STEP) { this.simStep(STEP); this.acc -= STEP; } });
+    this.acc = Math.min(this.acc, STEP); // never let a failed step snowball
+    this.guard('visuals', () => this.updateVisuals(dt));
     this.render();
+  }
+
+  /**
+   * Runs one part of the frame; an error there is logged and shown once instead of stopping the whole game
+   * (a thrown frame would otherwise end the animation loop and leave a black screen).
+   */
+  guard(name, fn) {
+    try { return fn(); } catch (e) {
+      this.errorsSeen ??= new Set();
+      const key = `${name}:${e?.message}`;
+      if (!this.errorsSeen.has(key)) {
+        this.errorsSeen.add(key);
+        console.error(`[${name}]`, e);
+        this.bus.emit('app:error', { where: name, message: String(e?.message || e), stack: String(e?.stack || '').split('\n').slice(0, 3).join(' | ') });
+      }
+      return undefined;
+    }
   }
 
   handleAction(a) {
@@ -454,6 +492,12 @@ export class Game {
       case 'cabLight': A.cabLight(); break;
       case 'routeSelect': A.routeSelect(); break;
       case 'lineMap': A.lineMap(); break;
+      case 'ato':
+        if (this.line.automation !== 'ato') { this.toast('This line has no automatic train operation.', 'info', 2); break; }
+        this.ato = !this.ato;
+        if (!this.ato) this.player.controller.set(-this.player.controller.bNotches);
+        this.toast(this.ato ? 'ATO engaged — the train runs automatically' : 'Manual driving — ATO off', 'info', 3);
+        break;
       case 'toggleHud': this.settings.set('gameplay.showHud', !this.settings.get('gameplay.showHud')); break;
       case 'lookBack': this.cameraSys.resetView(); break;
       default: break;
@@ -478,6 +522,7 @@ export class Game {
     const atp = this.settings.get('gameplay.atp') || this.signals.system === 'cbtc';
     const auth = this.signals.authority;
     const authorityDist = atp && auth != null ? auth - p.front : null;
+    if (this.ato) this.atoCtl.step(auth);
     p.update(dt, { staticLimit, authorityDist, brakeRate: this.line.signaling.atpBrakeRate });
     this.stations.update(dt, this.clock);
     this.traffic.step(dt, this.clock);
@@ -538,46 +583,56 @@ export class Game {
     }
     for (const [id, m] of this.aiModels) if (!seen.has(id)) { m.dispose(this.scene); this.aiModels.delete(id); }
 
-    this.signalView.update(this.time);
-    this.updateDaylight(dt, camPos);
-    for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos);
+    this.guard('signals', () => this.signalView.update(this.time));
+    this.guard('daylight', () => this.updateDaylight(dt, camPos));
+    this.guard('city', () => { for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos); });
     const trackS = route.toTrack(p.front - this.specs.length / 2);
-    for (const [id, w] of this.worlds) {
-      const d = this.svc.get(id);
-      w.update(trackS, this.clock, (i, dir) => (d.line === this.line ? this.etas(i, dir) : this.etasScheduled(d, i, dir)), camPos);
-    }
-    this.passengers.update(dt, p.front);
+    this.guard('stations', () => {
+      for (const [id, w] of this.worlds) {
+        const d = this.svc.get(id);
+        w.update(trackS, this.clock, (i, dir) => (d.line === this.line ? this.etas(i, dir) : this.etasScheduled(d, i, dir)), camPos);
+      }
+    });
+    this.guard('passengers', () => this.passengers.update(dt, p.front));
     const st = this.snapshot();
     this.state = st;
-    this.cabin.update(dt, st, this.time);
+    this.guard('cab', () => this.cabin.update(dt, st, this.time));
     this.cameraSys.update({
       car0: this.playerModel.cars[0], eye: this.cabin.eye, route, front: p.front, v: p.speed, accel: p.physics.a,
       jerk: p.physics.jerk, geom: this.geom, world: this.world, dt, time: this.time, scene: this.scene, padLook: this.input.look, bump: this.bump,
+      carInterior: this.playerModel.cars[Math.min(1, this.playerModel.cars.length - 1)], carLength: this.specs.carLength, floor: TRAIN_FLOOR,
+    });
+    // Passenger information inside the train.
+    this.guard('train displays', () => {
+      const sm = this.stations, k = sm.atStop ?? sm.nextStop, stp = route.stops[k];
+      if (stp) this.playerModel.setInfo({ line: this.line, next: stp.name, terminus: route.terminus, clock: this.clock, side: stp.doorSide, atStation: sm.atStop != null });
     });
     const tr = route.toTrack(p.front);
-    this.audio.update(dt, {
+    this.guard('audio', () => this.audio.update(dt, {
       v: p.speed, traction: p.physics.traction, brake: Math.max(p.physics.brake, p.physics.eb), radius: route.radiusAt(p.front),
-      inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab', carLength: this.specs.carLength,
+      inStation: !!this.geom.stationZoneAt(tr), exterior: this.cameraSys.mode !== 'cab' && this.cameraSys.mode !== 'interior', carLength: this.specs.carLength,
       doorsOpen: p.doors.anyOpen, outdoor: (this.daylight?.o ?? 0) > 0.5, motorPitch: this.specs.sound?.motorPitch, inverter: this.specs.sound?.inverter,
-    });
+    }));
     this.audio.setAlarm(p.safety.overspeed !== 'none' ? 'atp' : p.safety.vigAlarm ? 'vigilance' : null);
-    this.bus.emit('hud:update', st);
+    this.guard('HUD', () => this.bus.emit('hud:update', st));
     // Line map: cab panel and (if open) the full-size overlay, twice per second.
     this.mapAcc += dt;
     if (this.mapAcc > 0.5) {
       this.mapAcc = 0;
       const ms = { ...trainMapState(route, p.front, this.stations), activeId: this.line.id, plannedId: this.planned.id, directionName: route.directionName };
-      const lm = this.cabin.lineMap;
-      drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
-      lm.tex.needsUpdate = true;
-      if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
+      this.guard('line map', () => {
+        const lm = this.cabin.lineMap;
+        drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
+        lm.tex.needsUpdate = true;
+        if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
+      });
     }
   }
 
   /** Estimated seconds until the next trains reach station `index` in direction `dir` (passenger displays). */
   etas(index, dir) {
-    const route = this.routes[dir];
-    const k = dir === 'A' ? index : this.line.stations.length - 1 - index;
+    const route = this.routes[dir] || this.routes.A;
+    const k = this.stopIndexFor(this.line, index, dir);
     const out = [];
     for (const t of this.traffic.trains) {
       if (t.route !== route || t.mode === 'done' || t.k > k) continue;
@@ -609,6 +664,7 @@ export class Game {
     else if (s.overspeed !== 'none') alarm = { text: `OVERSPEED · permitted ${Math.round(s.permitted)} km/h`, color: '#ffb300' };
     else if (s.vigAlarm) alarm = { text: 'VIGILANCE · acknowledge now', color: '#ff7a00' };
     else if (J && !J.passed && !J.set && J.divergeS - p.front < 500) alarm = { text: `SET ROUTE FOR ${this.planned.service.toUpperCase()} · press ${this.input.labelFor('routeSelect')}`, color: '#ffb300' };
+    else if (this.ato) alarm = { text: `ATO · automatic operation (${this.input.labelFor('ato')} to drive manually)`, color: '#5ab0ff' };
     else if (info.standing && !p.doors.locked && info.dwell.authorized) alarm = { text: 'DEPARTURE AUTHORISED · close doors', color: '#3cff8a' };
     const doorsOpenSide = p.doors.openSide();
     const jo = J && J.options.find((o) => o.id === J.set);

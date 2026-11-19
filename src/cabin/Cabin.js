@@ -313,6 +313,8 @@ export class CabInteraction {
   }
   onMove(e) {
     if (this.drag) {
+      const it = this.drag.obj.userData.interact;
+      if (it.dragRaw) { it.dragRaw(e.clientX - this.drag.x, e.clientY - this.drag.y0); this.drag.x = e.clientX; this.drag.y0 = e.clientY; return; }
       const dy = e.clientY - this.drag.y;
       const steps = Math.trunc(dy / 22);
       if (steps !== 0) { this.drag.obj.userData.interact.drag?.(steps); this.drag.y += steps * 22; this.drag.moved = true; }
@@ -342,12 +344,12 @@ export class CabInteraction {
     if (!h) return;
     const it = h.userData.interact;
     e.preventDefault();
-    if (it.drag) { this.drag = { obj: h, y: e.clientY, moved: false }; this.dom.setPointerCapture?.(e.pointerId); return; }
+    if (it.drag || it.dragRaw) { this.drag = { obj: h, y: e.clientY, x: e.clientX, y0: e.clientY, moved: false }; this.dom.setPointerCapture?.(e.pointerId); return; }
     if (it.down) { it.down(); this.holding = it; return; }
     it.click?.();
   }
   onUp(e) {
-    if (this.drag) { this.drag = null; }
+    if (this.drag) { this.drag.obj.userData.interact.release?.(); this.drag = null; }
     if (this.holding) { this.holding.up?.(); this.holding = null; }
   }
   onWheel(e) {

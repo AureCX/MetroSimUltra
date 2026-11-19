@@ -36,7 +36,8 @@ export class Announcer {
     const tpl = st.announcementText && type === 'next' ? st.announcementText
       : type === 'terminus' ? this.line.announcements.terminus
         : type === 'arrival' ? this.line.announcements.arrival : this.line.announcements.nextStation;
-    const text = tpl.replaceAll('{station}', st.name).replaceAll('{line}', this.line.name);
+    const text = tpl.replaceAll('{station}', st.name).replaceAll('{line}', this.line.name)
+      .replaceAll('{connections}', this.connectionsText(st)).replaceAll('{doors}', this.doorsText(stop.doorSide)).replace(/\s+/g, ' ').trim();
     setTimeout(() => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = this.line.language;
@@ -48,6 +49,25 @@ export class Announcer {
     }, 1100);
     return 'speech';
   }
+  /** "Correspondance : lignes A et B, bus Aéroval, accès aux terminaux." (or English), '' without connections. */
+  connectionsText(st) {
+    const fr = this.line.language.startsWith('fr');
+    const ic = st.interchange || { metro: [], bus: [] };
+    const and = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} ${fr ? 'et' : 'and'} ${a.at(-1)}`);
+    const parts = [];
+    if (ic.metro?.length) parts.push(fr ? `${ic.metro.length > 1 ? 'lignes' : 'ligne'} ${and(ic.metro)}` : `${ic.metro.length > 1 ? 'lines' : 'line'} ${and(ic.metro)}`);
+    if (ic.bus?.length) parts.push(fr ? `bus ${and(ic.bus)}` : `${and(ic.bus)} buses`);
+    if (ic.airport) parts.push(fr ? "accès aux terminaux de l'aéroport" : 'airport terminals');
+    if (!parts.length) return '';
+    const tpl = this.line.announcements.connections || (fr ? 'Correspondance : {list}.' : 'Change here for {list}.');
+    return tpl.replaceAll('{list}', and(parts));
+  }
+  doorsText(side) {
+    const fr = this.line.language.startsWith('fr');
+    if (side === 'left') return fr ? 'Descente à gauche.' : 'Doors will open on the left.';
+    return fr ? 'Descente à droite.' : 'Doors will open on the right.';
+  }
+
   stop() {
     try { this.current?.stop(); } catch { /* already stopped */ }
     this.current = null;

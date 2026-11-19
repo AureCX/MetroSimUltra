@@ -17,6 +17,7 @@ export const ACTIONS = {
   cabLight:       { label: 'Cab light',                         keys: ['KeyK'], pad: [] },
   routeSelect:    { label: 'Set route at junction',             keys: ['KeyJ'], pad: [14, 15] },
   lineMap:        { label: 'Show / hide the line map',          keys: ['KeyM'], pad: [] },
+  ato:            { label: 'Automatic operation (ATO) on / off', keys: ['KeyT'], pad: [] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };
@@ -26,7 +27,10 @@ export const PAD_LABELS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'Back', '
 const REPEAT_DELAY = 0.32, REPEAT_RATE = 0.16;
 
 export class Input {
-  constructor(settings, bus) {
+  /** opts.actions: action table (default: metro), opts.key: settings path for saved bindings. */
+  constructor(settings, bus, opts = {}) {
+    this.actions = opts.actions || ACTIONS;
+    this.bindKey = opts.key || 'controls.bindings';
     this.settings = settings;
     this.bus = bus;
     this.down = new Set();         // physical codes held
@@ -46,12 +50,12 @@ export class Input {
   }
 
   loadBindings() {
-    const saved = this.settings.get('controls.bindings') || {};
+    const saved = this.settings.get(this.bindKey) || {};
     this.bindings = {};
-    for (const [a, def] of Object.entries(ACTIONS)) this.bindings[a] = saved[a] ? [...saved[a]] : [...def.keys];
+    for (const [a, def] of Object.entries(this.actions)) this.bindings[a] = saved[a] ? [...saved[a]] : [...def.keys];
   }
-  saveBindings() { this.settings.set('controls.bindings', this.bindings); }
-  resetBindings() { this.settings.set('controls.bindings', null); this.loadBindings(); }
+  saveBindings() { this.settings.set(this.bindKey, this.bindings); }
+  resetBindings() { this.settings.set(this.bindKey, null); this.loadBindings(); }
 
   /** Wait for the next key press and bind it to `action` (slot 0 = primary, 1 = secondary). */
   rebind(action, slot, done) {
@@ -106,7 +110,7 @@ export class Input {
   poll(dt) {
     this.pollGamepad();
     for (const a of Object.keys(this.held)) {
-      if (!ACTIONS[a]?.repeat || !this.isHeld(a)) continue;
+      if (!this.actions[a]?.repeat || !this.isHeld(a)) continue;
       const t0 = this.held[a];
       const t1 = t0 + dt;
       this.held[a] = t1;
@@ -127,7 +131,9 @@ export class Input {
     this.padHeld = new Set();
     if (!gp) { this.look.x = this.look.y = 0; return; }
     const pressed = gp.buttons.map((b) => b.pressed || b.value > 0.5);
-    for (const [a, def] of Object.entries(ACTIONS)) {
+    this.axes = gp.axes.slice();
+    this.padButtons = gp.buttons.map((b) => b.value);
+    for (const [a, def] of Object.entries(this.actions)) {
       for (const b of def.pad || []) {
         if (pressed[b]) {
           this.padHeld.add(a);
@@ -135,11 +141,11 @@ export class Input {
         } else if (this.padPrev[b] && !this.isHeld(a)) { delete this.held[a]; this.bus?.emit('input:release', a); }
       }
     }
-    // D-pad up/down mirror the triggers for controller notching.
-    if (pressed[12] && !this.padPrev[12]) { this.trigger('tractionUp'); this.held.tractionUp = 0; }
-    if (pressed[13] && !this.padPrev[13]) { this.trigger('tractionDown'); this.held.tractionDown = 0; }
-    if (pressed[12]) this.padHeld.add('tractionUp');
-    if (pressed[13]) this.padHeld.add('tractionDown');
+    // D-pad up/down mirror the triggers for controller notching (metro only).
+    if (this.actions === ACTIONS && pressed[12] && !this.padPrev[12]) { this.trigger('tractionUp'); this.held.tractionUp = 0; }
+    if (this.actions === ACTIONS && pressed[13] && !this.padPrev[13]) { this.trigger('tractionDown'); this.held.tractionDown = 0; }
+    if (this.actions === ACTIONS && pressed[12]) this.padHeld.add('tractionUp');
+    if (this.actions === ACTIONS && pressed[13]) this.padHeld.add('tractionDown');
     this.padPrev = pressed;
     const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v);
     this.look.x = dz(gp.axes[2] || 0);

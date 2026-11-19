@@ -64,6 +64,42 @@ train really takes it and the run continues on that branch with a penalty.
 `link` is merged into the last trunk station (the junction): it holds the distance, speed limit
 and track layout from the junction to the branch's first station.
 
+### Elevated and automated lines
+
+```json
+"elevated": { "height": 9 },      // whole line in the open air on viaducts, track bed 9 m above the street
+"automation": "ato",              // trains run automatically; the driver can take over (key T)
+"train": "apm-aeroval"            // rolling stock preselected when the line is chosen
+```
+
+### Station connections (`interchange`)
+
+```json
+"interchange": { "metro": ["A", "B"], "stations": ["Aéroport International", "Aéroport Est"],
+                 "bus": ["Aéroval"], "busWalk": false, "airport": true },
+"signage": "airport"              // or "interchange": flight boards / transfer signs on the platform
+```
+
+Stations with the same name on two lines are interchanges automatically. `stations` names the other lines'
+stations of the same complex when the names differ. Connections appear on the maps and in the
+announcements (`{connections}` in the templates; `{doors}` gives the door side).
+
+### Terminal loops (`loop`)
+
+A line that ends in a one-way loop ("raquette", like Line C) names the station where the loop
+starts. The stations after it are served one way round the loop; trains then come back along the
+trunk on the other track to the first station. There is only one direction to drive.
+
+```json
+"loop": { "junction": "République" },
+"stations": [ …trunk up to République…, { "name": "Gare Centrale" }, { "name": "Palais Royal" },
+              { "name": "Opéra", "distanceToNext": 1693.5, "track": [ …back to République… ] } ]
+```
+
+The last loop station's `distanceToNext` and `track` describe the run back to the junction
+station; the track should bring the alignment back onto the trunk (the engine closes any small
+residual error). The loop itself is single track.
+
 ### `signaling`
 
 ```json

@@ -1,0 +1,42 @@
+{
+ "id": "midi10",
+ "order": 7,
+ "name": "Midi 10.5 LF",
+ "type": "lowfloor",
+ "description": "Low-floor accessible midibus: fully flat floor, kneeling and ramp, nimble.",
+ "length": 10.5,
+ "width": 2.45,
+ "height": 2.95,
+ "wheelbase": 5.0,
+ "frontOverhang": 2.5,
+ "mass": 9200,
+ "capacity": 75,
+ "seats": 24,
+ "doors": [
+  1.3,
+  5.7
+ ],
+ "powertrain": "diesel",
+ "power": 180,
+ "torque": 900,
+ "gears": [
+  3.36,
+  1.91,
+  1.42,
+  1.0,
+  0.72
+ ],
+ "finalDrive": 5.5,
+ "idleRpm": 650,
+ "maxRpm": 2400,
+ "maxSpeed": 75,
+ "fuelCapacity": 200,
+ "brakeDecel": 5.8,
+ "steerMax": 0.9,
+ "rollStiffness": 1.1,
+ "livery": {
+  "body": "#f0f0f0",
+  "stripe": "#d7263d",
+  "skirt": "#2a2a2a"
+ }
+}

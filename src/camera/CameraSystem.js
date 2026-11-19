@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { clamp } from '../core/util.js';
 
-export const CAMERA_MODES = ['cab', 'chase', 'trackside'];
+export const CAMERA_MODES = ['cab', 'interior', 'chase', 'trackside'];
 
 export class CameraSystem {
   constructor(camera, dom, settings, bus) {
@@ -80,6 +80,14 @@ export class CameraSystem {
       cam.position.copy(ctx.eye).add(this.shake);
       cam.position.z += this.lean;
       cam.rotation.set(this.pitch - this.lean * 0.4, Math.PI + this.yaw, Math.sin(t * 9.3) * amp * 0.5, 'YXZ');
+      return;
+    }
+    if (this.mode === 'interior' && ctx.carInterior) {
+      // Passenger's view: standing near the rear of the saloon, looking along the car.
+      cam.fov = base * 1.05; cam.updateProjectionMatrix();
+      if (cam.parent !== ctx.carInterior) ctx.carInterior.add(cam);
+      cam.position.set(0.55, (ctx.floor ?? 1) + 1.62, -ctx.carLength / 2 + 1.6);
+      cam.rotation.set(this.pitch * 0.6, Math.PI + this.yaw, 0, 'YXZ');
       return;
     }
     if (cam.parent !== null && cam.parent !== ctx.scene) ctx.scene.add(cam);

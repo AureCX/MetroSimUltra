@@ -27,6 +27,7 @@ export class LineRepository {
       catch (e) { this.errors.push(`${file}: ${e.message}`); }
     }
     for (const { id, json } of await AssetStore.listLines()) {
+      if (String(id).startsWith('busroute:')) continue; // bus routes live in the same store
       try { this.addSource(json, id, false); } catch (e) { this.errors.push(`${id}: ${e.message}`); }
     }
     this.trains = Object.values(builtInTrains).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map(deriveTrainSpecs);

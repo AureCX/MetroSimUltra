@@ -2,6 +2,7 @@
 // settings, controls (rebinding), credits, pause menu, loading screen and run summary.
 import { renderNetworkMap, escapeXml as esc } from './NetworkMap.js';
 import { ACTIONS, PAD_LABELS } from '../core/Input.js';
+import { BUS_ACTIONS } from '../bus/BusControls.js';
 import { AssetStore } from '../core/AssetStore.js';
 import { formatClock, formatDelta, slugify } from '../core/util.js';
 import { Timetable } from '../stations/Timetable.js';
@@ -10,8 +11,8 @@ import { Route } from '../lines/Route.js';
 import { EXAMPLE_LINE } from '../lines/LineRepository.js';
 
 export class Menu {
-  constructor(root, { repo, settings, save, input, bus, audio }) {
-    Object.assign(this, { root, repo, settings, save, input, bus, audio });
+  constructor(root, { repo, settings, save, input, bus, audio, busInput }) {
+    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput });
     this.handlers = {};
     this.context = 'main'; // main | pause
     const sel = save.selection;
@@ -49,11 +50,12 @@ export class Menu {
   screen_main() {
     this.context = 'main';
     const l = this.line, t = this.train;
-    const rec = l ? this.save.record(l.id, this.sel.direction) : null;
+    const rec = l ? this.save.record(l.id, l.loop ? 'A' : this.sel.direction) : null;
     this.root.innerHTML = `<div class="menu-main">
       <div class="brand"><div class="logo">M</div><div><h1>Metro Driver</h1><p>Underground railway simulator</p></div></div>
       <nav>
-        <button class="btn primary" id="m-play">▶ Play</button>
+        <button class="btn primary" id="m-play">▶ Play metro</button>
+        <button class="btn primary bus-btn" id="m-bus">🚌 Bus — Grandville & Aéroval</button>
         <button class="btn" data-nav="lines">Select Line</button>
         <button class="btn" data-nav="trains">Select Train</button>
         <button class="btn" data-nav="settings">Settings</button>
@@ -62,13 +64,14 @@ export class Menu {
       </nav>
       <div class="selection-card">
         ${l ? `<div class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</div>
-        <div><b>${esc(l.fullName)}</b> · ${esc(l.network)}<br><span class="sub">${esc(l.directions[this.sel.direction].name)} · ${l.stations.length} stations</span><br>
+        <div><b>${esc(l.fullName)}</b> · ${esc(l.network)}<br><span class="sub">${esc(l.directions[this.sel.direction].name)} · ${l.stations.filter((x) => x.mirrorOf == null).length} stations</span><br>
         <span class="sub">Train: ${esc(t?.name || '-')}</span>
         ${rec ? `<br><span class="sub">Best: ${rec.bestScore} pts (grade ${rec.bestGrade}) · ${rec.runs} run(s)</span>` : ''}</div>` : '<div>No line available. Import one in “Select Line”.</div>'}
       </div>
       <div class="totals sub">Career: ${this.save.data.totals.runs} runs · ${this.save.data.totals.distanceKm.toFixed(1)} km · ${this.save.data.totals.stations} stations served</div>
       ${this.repo.errors.length ? `<div class="errors">${this.repo.errors.map(esc).join('<br>')}</div>` : ''}
     </div>`;
+    this.root.querySelector('#m-bus').onclick = () => this.emit('bus');
     this.root.querySelector('#m-play').onclick = () => { if (this.line && this.train) { this.persist(); this.emit('play', { line: this.line, train: this.train, direction: this.sel.direction }); } };
   }
 
@@ -107,7 +110,12 @@ export class Menu {
 
   renderLines() {
     const lines = this.repo.lines.filter((l) => l.network === this.network);
-    const select = (id) => { this.sel.lineId = id; this.persist(); this.renderLines(); };
+    const select = (id) => {
+      this.sel.lineId = id;
+      const pref = this.repo.line(id)?.raw?.train; // a line may name its own rolling stock (Line D: Aéroval APM)
+      if (pref && this.repo.train(pref)) this.sel.trainId = pref;
+      this.persist(); this.renderLines();
+    };
     renderNetworkMap(this.root.querySelector('#l-map'), lines, this.sel.lineId, select);
     const list = this.root.querySelector('#l-list');
     // One entry per line; a branching line's services are chosen in the detail panel.
@@ -116,7 +124,7 @@ export class Menu {
     list.innerHTML = groups.map((svcs) => {
       const l = svcs.find((x) => x.id === cur?.id) || svcs[0];
       const sel = svcs.some((x) => x.id === cur?.id);
-      const ends = svcs.length > 1 ? `${esc(l.stations[0].name)} ↔ ${svcs.map((x) => esc(x.stations.at(-1).name)).join(' / ')}` : `${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}`;
+      const ends = svcs.length > 1 ? `${esc(l.stations[0].name)} ↔ ${svcs.map((x) => esc(x.stations.at(-1).name)).join(' / ')}` : l.loop ? `${esc(l.stations[0].name)} → ${esc(l.loop.junction)} ⟲ ${l.loop.stations.map(esc).join(' · ')} (one-way loop)` : `${esc(l.stations[0].name)} ↔ ${esc(l.stations.at(-1).name)}`;
       return `<button class="line-item ${sel ? 'sel' : ''}" data-id="${l.id}">
       <span class="line-badge" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
       <span><b>${esc(l.name)}</b>${svcs.length > 1 ? ` <span class="sub">· ${svcs.length} branches</span>` : ''}<br><span class="sub">${ends}</span></span>
@@ -132,7 +140,8 @@ export class Menu {
     if (l.network !== this.network) { el.innerHTML = '<p class="sub">Select a line on the map.</p>'; return; }
     const audioKeys = new Set((await AssetStore.listAudioKeys(`${l.sourceId}/`)).map((k) => k.slice(l.sourceId.length + 1)));
     const geom = new TrackGeometry(l);
-    const route = new Route(l, geom, this.sel.direction);
+    const dirSel = l.loop ? 'A' : this.sel.direction;
+    const route = new Route(l, geom, dirSel);
     const tt = new Timetable(route, this.train, l.startTime);
     const total = l.stations.reduce((a, s) => a + s.distanceToNext, 0);
     const svcs = this.repo.services(l);
@@ -141,14 +150,14 @@ export class Menu {
       <span class="sub">${this.sel.direction === 'A' ? `Set the route at ${esc(l.stations[l.trunkLength - 1].name)} junction while driving.` : ''}</span></div>` : '';
     el.innerHTML = `
       <div class="detail-head"><span class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</span>
-      <div><h3>${esc(l.name)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km · ${l.stations.length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
-      <div class="dir-toggle">${['A', 'B'].map((d) => `<button class="btn small ${d === this.sel.direction ? 'primary' : ''}" data-dir="${d}">${esc(dirLabel(d))}</button>`).join('')}</div>
+      <div><h3>${esc(l.name)}</h3><span class="sub">${esc(l.network)} · ${(total / 1000).toFixed(2)} km${l.loop ? ' circuit' : ''} · ${l.stations.filter((x) => x.mirrorOf == null).length} stations · ${l.signaling.system === 'cbtc' ? 'CBTC moving block' : 'Fixed-block signalling'} · ${l.tunnelProfile} tunnel</span></div></div>
+      <div class="dir-toggle">${l.loop ? `<button class="btn small primary" data-dir="A">${esc(l.directions.A.name)}</button><span class="sub">One-way terminal loop at ${esc(l.loop.junction)}: ${l.loop.stations.map(esc).join(' → ')} → ${esc(l.loop.junction)}</span>` : ['A', 'B'].map((d) => `<button class="btn small ${d === this.sel.direction ? 'primary' : ''}" data-dir="${d}">${esc(dirLabel(d))}</button>`).join('')}</div>
       ${branchRow}
       <div class="table-wrap"><table class="stations">
         <thead><tr><th>#</th><th>Station</th><th>Next</th><th>Limit</th><th>Dwell</th><th>Arr</th><th>Platform</th><th title="Next-station announcement">🔊</th></tr></thead>
         <tbody>${route.stops.map((s, k) => {
           const st = s.station, e = tt.entry(k);
-          const dist = this.sel.direction === 'A' ? st.distanceToNext : (k < route.stops.length - 1 ? route.stops[k + 1].station.distanceToNext : 0);
+          const dist = dirSel === 'A' ? st.distanceToNext : (k < route.stops.length - 1 ? route.stops[k + 1].station.distanceToNext : 0);
           const has = audioKeys.has(st.id);
           return `<tr><td>${k + 1}</td><td>${esc(st.name)}${st.connections.length ? ` <span class="tag" title="Connections">${st.connections.map(esc).join(', ')}</span>` : ''}<span class="sub"> · ${st.style}</span></td><td>${dist ? `${dist} m` : '—'}</td><td>${st.speedLimit}</td><td>${st.stopDuration}s</td>
           <td>${formatClock(e.arr ?? e.dep, false)}</td><td>${st.platformType} · ${s.doorSide}</td>
@@ -300,21 +309,30 @@ export class Menu {
   }
 
   // ---------------- Controls ----------------
-  screen_controls() {
+  screen_controls(tab = this.controlsTab || 'metro') {
+    this.controlsTab = tab;
+    const bus = tab === 'bus' && this.busInput;
+    const I = bus ? this.busInput : this.input;
+    const table = bus ? BUS_ACTIONS : ACTIONS;
+    const padCell = (a, def) => (bus ? (def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'
+      : `${(def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'}${a === 'tractionUp' ? ' / D-pad ↑' : a === 'tractionDown' ? ' / D-pad ↓' : ''}`);
     const body = this.frame('Controls', `
-      <p class="sub">Click a key to rebind it, then press the new key (Esc cancels). Keys follow your keyboard layout.</p>
+      <div class="dir-toggle"><button class="btn small ${bus ? '' : 'primary'}" data-tab="metro">🚇 Metro</button>${this.busInput ? `<button class="btn small ${bus ? 'primary' : ''}" data-tab="bus">🚌 Bus</button>` : ''}</div>
+      <p class="sub">Click a key to rebind it, then press the new key (Esc cancels). Keys follow your keyboard layout. Metro and bus bindings are separate.</p>
       <table class="controls"><thead><tr><th>Action</th><th>Primary</th><th>Secondary</th><th>Gamepad</th></tr></thead><tbody>
-      ${Object.entries(ACTIONS).map(([a, def]) => `<tr><td>${esc(def.label)}</td>
-        ${[0, 1].map((slot) => `<td><button class="key" data-a="${a}" data-slot="${slot}">${esc(this.input.keyLabel(this.input.bindings[a][slot]))}</button></td>`).join('')}
-        <td class="sub">${(def.pad || []).map((b) => PAD_LABELS[b]).join(' / ') || '—'}${a === 'tractionUp' ? ' / D-pad ↑' : a === 'tractionDown' ? ' / D-pad ↓' : ''}</td></tr>`).join('')}
+      ${Object.entries(table).map(([a, def]) => `<tr><td>${esc(def.label)}</td>
+        ${[0, 1].map((slot) => `<td><button class="key" data-a="${a}" data-slot="${slot}">${esc(I.keyLabel(I.bindings[a][slot]))}</button></td>`).join('')}
+        <td class="sub">${padCell(a, def)}</td></tr>`).join('')}
       </tbody></table>
-      <p class="sub">Mouse: left-click cab buttons, drag or scroll on the master controller; hold right button to look around; scroll to zoom. Gamepad right stick looks around.</p>
+      <p class="sub">${bus ? 'Mouse in the bus cab: click any switch, drag the steering wheel, click the indicator stalk, hold the wheel hub for the horn; hold the right button to look around. Gamepad: RT/LT analog accelerator & brake, left stick steering.'
+        : 'Mouse: left-click cab buttons, drag or scroll on the master controller; hold right button to look around; scroll to zoom. Gamepad right stick looks around.'}</p>
       <button class="btn small danger" id="c-reset">Restore defaults</button>`);
+    body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => this.screen_controls(b.dataset.tab)));
     body.querySelectorAll('.key').forEach((b) => (b.onclick = () => {
       b.textContent = '…press a key'; b.classList.add('listening');
-      this.input.rebind(b.dataset.a, Number(b.dataset.slot), () => this.screen_controls());
+      I.rebind(b.dataset.a, Number(b.dataset.slot), () => this.screen_controls(tab));
     }));
-    body.querySelector('#c-reset').onclick = () => { this.input.resetBindings(); this.screen_controls(); };
+    body.querySelector('#c-reset').onclick = () => { I.resetBindings(); this.screen_controls(tab); };
   }
 
   screen_credits() {
@@ -347,7 +365,7 @@ export class Menu {
   showSummary(r, newBest) {
     this.context = 'main';
     this.root.style.display = '';
-    const other = r.direction === 'A' ? 'B' : 'A';
+    const other = r.line.loop ? 'A' : r.direction === 'A' ? 'B' : 'A';
     this.root.innerHTML = `<div class="menu-screen summary"><header><h2>${r.completed ? 'Run complete' : 'Run aborted'}</h2></header>
       <div class="menu-body">
         <div class="grade grade-${r.grade}">${r.grade}</div>
@@ -358,7 +376,7 @@ export class Menu {
         <tbody>${r.stops.map((s) => `<tr><td>${esc(s.name)}</td><td>${s.error >= 0 ? '+' : ''}${s.error.toFixed(2)} m</td><td>${formatDelta(s.delay)}</td><td>${s.acc}</td><td>${s.punct}</td></tr>`).join('') || '<tr><td colspan="5">No stops served</td></tr>'}</tbody></table></div>
         ${r.penalties.length ? `<h3>Penalties (−${r.penaltyTotal})</h3><ul class="penalties">${r.penalties.map((p) => `<li>${esc(p.text)}${p.count > 1 ? ` ×${p.count}` : ''} <b>−${p.points}</b></li>`).join('')}</ul>` : '<p>No penalties — exemplary driving.</p>'}
         <div class="row-tools">
-          <button class="btn primary" id="r-back">Drive back (${esc(r.line.directions[other].name)})</button>
+          <button class="btn primary" id="r-back">${r.line.loop ? 'Next circuit' : `Drive back (${esc(r.line.directions[other].name)})`}</button>
           <button class="btn" id="r-again">Retry</button>
           <button class="btn ghost" data-nav="main">Main menu</button>
         </div></div></div>`;

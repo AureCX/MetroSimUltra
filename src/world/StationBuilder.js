@@ -182,7 +182,7 @@ export class StationView {
       s.scale.x = 1;
     }
     // Direction & exit signs hanging over platforms.
-    const termA = this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
+    const termA = this.loopLabel() || this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
     const spans = this.platformSpans();
     const hangY = this.island ? Math.min(this.H - 0.6, 3.6) : Math.min(this.H - 0.3, PLATFORM_Y + 2.55);
     this.exits = [];
@@ -257,6 +257,13 @@ export class StationView {
     }
   }
 
+  /** Outbound platforms of a loop line's trunk lead to the loop, not to a terminus. */
+  loopLabel(short = false) {
+    const L = this.line.loop;
+    if (!L || this.index > L.junctionIndex) return null;
+    return short ? `Boucle ${L.stations.at(-1)}` : `Boucle ${L.stations[0]} – ${L.stations.at(-1)}`;
+  }
+
   buildPIDs() {
     const spans = this.platformSpans();
     const routes = this.island ? [['A', -1], ['B', 1]] : [['A', -1], ['B', 1]];
@@ -285,7 +292,7 @@ export class StationView {
     this.lastPid = sec;
     for (const p of this.pids) {
       const g = p.ctx, etas = etaProvider ? etaProvider(this.index, p.dir) : [];
-      const term = this.line.directions[p.dir].terminus;
+      const term = (p.dir === 'A' && this.loopLabel(true)) || this.line.directions[p.dir].terminus;
       g.fillStyle = '#050505'; g.fillRect(0, 0, 512, 128);
       g.fillStyle = this.line.color; g.fillRect(10, 12, 56, 46);
       g.fillStyle = this.line.textColor; g.font = 'bold 30px Arial'; g.textAlign = 'center'; g.fillText(this.line.number, 38, 46);
@@ -579,12 +586,57 @@ StationView.prototype.buildOutdoorSigns = function buildOutdoorSigns() {
     }
   }
   this.exits = [];
-  const termA = this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
+  const termA = this.loopLabel() || this.line.directions.A.terminus, termB = this.line.directions.B.terminus;
   const mat = new THREE.MeshBasicMaterial({ map: Textures.label(this.island ? `⬅ ${termB}   |   ${termA} ➜` : `Direction ${termA}`, { w: 1024, h: 96, bg: '#f5f5f0', fg: '#1a1a1a', font: 'bold 46px Arial', border: accent }) });
-  const g = new THREE.Group(); g.position.set(this.island ? 0 : -(this.e + this.W) / 2, this.H - 0.6, 0);
+  const busy = st.signage === 'airport'; // the platform centre holds the skybridge lift tower
+  const g = new THREE.Group(); g.position.set(this.island ? 0 : -(this.e + this.W) / 2, this.H - 0.6, busy ? this.Lp / 2 - 16 : 0);
   this.plane(3.6, 0.34, mat, 0, 0, 0.02, 0, g); this.plane(3.6, 0.34, mat, 0, 0, -0.02, Math.PI, g);
   this.box(0.02, 0.6, 0.02, this.m.metal, -1.5, 0.3, 0, g); this.box(0.02, 0.6, 0.02, this.m.metal, 1.5, 0.3, 0, g);
   this.group.add(g);
+  if (st.signage === 'airport') this.buildAirportSigns();
+  if (st.interchange.metro.length) this.buildTransferSigns(st.interchange.metro);
+};
+
+/** Airport station: flight information displays and terminal direction signs. */
+StationView.prototype.buildAirportSigns = function buildAirportSigns() {
+  const c = document.createElement('canvas'); c.width = 768; c.height = 480;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0b1830'; g.fillRect(0, 0, 768, 480);
+  g.fillStyle = '#ffd25a'; g.font = 'bold 38px Arial'; g.fillText('✈  DÉPARTS · DEPARTURES', 24, 52);
+  const flights = [['08:05', 'AV 412', 'LISBOA', 'B12', 'Embarquement'], ['08:20', 'GR 118', 'LONDON', 'A04', 'À l\'heure'], ['08:35', 'NX 902', 'MONTRÉAL', 'C21', 'À l\'heure'],
+    ['08:50', 'AV 316', 'ROMA', 'B07', 'Retardé 09:15'], ['09:10', 'KL 1224', 'AMSTERDAM', 'A11', 'À l\'heure'], ['09:25', 'GR 230', 'BERLIN', 'C03', 'À l\'heure'], ['09:40', 'TP 645', 'PORTO', 'B02', 'À l\'heure']];
+  g.font = '30px "Courier New", monospace';
+  flights.forEach((f, i) => {
+    const y = 104 + i * 52;
+    g.fillStyle = i % 2 ? '#10213f' : '#0d1c37'; g.fillRect(12, y - 34, 744, 48);
+    g.fillStyle = '#ffffff'; g.fillText(f[0], 24, y); g.fillText(f[1], 130, y); g.fillText(f[2], 290, y); g.fillText(f[3], 520, y);
+    g.fillStyle = f[4].startsWith('Retard') ? '#ff6a4a' : f[4].startsWith('Emb') ? '#5fe39a' : '#9fc3ff'; g.font = '24px Arial'; g.fillText(f[4], 600, y); g.font = '30px "Courier New", monospace';
+  });
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const fids = new THREE.MeshBasicMaterial({ map: tex });
+  const pole = new THREE.MeshLambertMaterial({ color: 0x2b2f35 });
+  const term = /Terminal\s*(\d)/.exec(this.st.name)?.[1] || '1';
+  const dir = new THREE.MeshBasicMaterial({ map: Textures.label(`✈  Terminal ${term} · Départs / Arrivées  ⬆`, { w: 1024, h: 96, bg: '#ffd000', fg: '#16233a', font: 'bold 50px Arial' }) });
+  for (const [a, b] of this.platformSpans()) {
+    const cx = (a + b) / 2;
+    for (const z of [-this.Lp / 2 + 14, this.Lp / 2 - 26]) {
+      this.box(0.18, 2.1, 0.18, pole, cx, PLATFORM_Y + 1.05, z);
+      this.box(1.75, 1.12, 0.1, pole, cx, PLATFORM_Y + 2.65, z);
+      this.plane(1.6, 1.0, fids, cx, PLATFORM_Y + 2.65, z + 0.056, 0);
+      this.plane(1.6, 1.0, fids, cx, PLATFORM_Y + 2.65, z - 0.056, Math.PI);
+    }
+    for (const z of [-9, 9]) { this.plane(3.4, 0.32, dir, cx, this.H - 0.95, z, 0); this.plane(3.4, 0.32, dir, cx, this.H - 0.95, z, Math.PI); }
+  }
+};
+
+/** Interchange station: transfer signs to the other metro lines. */
+StationView.prototype.buildTransferSigns = function buildTransferSigns(lines) {
+  const txt = `Correspondance  Ⓜ ${lines.join(' · ')}  ➜  Sortie / Transfer`;
+  const mat = new THREE.MeshBasicMaterial({ map: Textures.label(txt, { w: 1024, h: 96, bg: '#1f3c88', fg: '#ffffff', font: 'bold 46px Arial' }) });
+  for (const [a, b] of this.platformSpans()) {
+    const cx = (a + b) / 2;
+    for (const z of [-this.Lp / 2 + 9, this.Lp / 2 - 9]) { this.plane(3.6, 0.34, mat, cx, this.H - 1.05, z, 0); this.plane(3.6, 0.34, mat, cx, this.H - 1.05, z, Math.PI); }
+  }
 };
 
 export { PLATFORM_Y, EDGE_GAP };

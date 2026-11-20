@@ -138,6 +138,17 @@ export class Game {
     this.netModel = new NetworkModel((network || [line]).filter((l) => l.network === line.network));
     this.netView = null;
     this.mapModel = buildLineMapModel(line, [...this.svc.values()].map((d) => d.line), network || [], direction);
+    // Online: tell the session what we drive (the server keeps trains on the same track apart).
+    this.remoteModels = new Map();
+    // Another player's train already at the first platform of this track: start in the approach behind it and
+    // drive in once it has left (the server's authority holds us back until then).
+    const busy = this.remoteTrainsOn(route).filter((o) => o.rear < route.stops[0].stopR + 30);
+    if (busy.length) {
+      const rear = Math.min(...busy.map((o) => o.rear));
+      this.player.physics.s = Math.max(train.length + 5, Math.min(route.stops[0].stopR, rear - 50));
+      if (this.player.physics.s < route.stops[0].stopR - 1) { this.stations.atStop = null; this.stations.nextStop = 0; this.toast(`🌐 The first platform is occupied by ${busy[0].remote}'s train — wait in the approach, then drive in.`, 'warn', 7); }
+    }
+    this.mp?.startDriving({ kind: 'train', lineId: line.id, sourceId: line.sourceId, number: line.number, color: line.color, dir: direction, branch: line.branchId || '', trunkEnd: this.junction ? this.junction.divergeS : 1e6, length: train.length, maxSpeed: train.maxSpeed, model: train.id, uid: vehicleUid || '', cars: train.cars });
     this.mapAcc = 1;
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
   }
@@ -427,6 +438,12 @@ export class Game {
     });
     on('station:missed', ({ stop }) => this.toast(`Missed stop: ${stop.name}`, 'alarm', 4));
     on('station:departureAuthorized', () => { a.ding(); this.toast('Departure authorised — close the doors', 'ok', 3); });
+    // Online: share service events; server corrections and collisions.
+    on('station:arrived', ({ stop, delay }) => this.mp?.event({ e: stop.isTerminus ? 'terminus' : 'arrived', where: stop.name, delay }));
+    on('station:departed', ({ stop }) => { this.mp?.event({ e: 'departed', where: stop.name }); const n = this.passengers.boardedTotal - (this.mpBoarded || 0); this.mpBoarded = this.passengers.boardedTotal; if (n > 0) this.mp?.event({ e: 'passengers', n }); });
+    on('game:finished', (r) => this.mp?.event({ e: 'finished', km: r.distanceKm, grade: r.grade }));
+    on('mp:correction', (m) => { if (m.s != null) { this.player.physics.s = m.s; this.toast(`🌐 ${m.reason}`, 'warn', 3); } });
+    on('mp:collision', (m) => { if (m.kind === 'train' && !this.player.controller.isEB) { this.player.emergency(`Collision with ${m.with}'s train`); this.toast(`🌐 Collision with ${m.with}'s train`, 'alarm', 5); } });
     on('station:departed', ({ stop }) => {
       clearTimeout(this.annTimer);
       this.annTimer = setTimeout(() => { if (this.running) this.announcer.announce(this.route.stops[stop.k + 1], 'next'); }, 7000);
@@ -565,19 +582,22 @@ export class Game {
     }
     const staticLimit = Math.min(route.permittedFor(p.front, sp.length), sp.maxSpeed);
     const atp = this.settings.get('gameplay.atp') || this.signals.system === 'cbtc';
-    const auth = this.signals.authority;
+    // Movement authority: signalling, and (online) the server's limit behind another player's train.
+    let auth = this.signals.authority;
+    const mpAuth = this.mp?.inSession ? this.mp.authority : null;
+    if (mpAuth != null) auth = auth == null ? mpAuth : Math.min(auth, mpAuth);
     const authorityDist = atp && auth != null ? auth - p.front : null;
     if (this.ato) this.atoCtl.step(auth);
     p.update(dt, { staticLimit, authorityDist, brakeRate: this.line.signaling.atpBrakeRate });
     this.stations.update(dt, this.clock);
     this.traffic.step(dt, this.clock);
-    const others = this.traffic.activeOn(route).map((t) => ({ front: t.front, rear: t.rear }));
+    const others = [...this.traffic.activeOn(route).map((t) => ({ front: t.front, rear: t.rear })), ...this.remoteTrainsOn(route)];
     this.signals.update(others, { front: p.front, rear: p.rear });
     this.scoring.sample(dt, { jerk: p.physics.jerk, accel: p.physics.a, overspeed: p.safety.overspeed });
     this.clock += dt;
     this.time += dt;
     // Collisions: buffer stop or train ahead.
-    const aheadT = this.traffic.activeOn(route).filter((o) => o.rear > p.front - 1).sort((x, y) => x.rear - y.rear)[0];
+    const aheadT = [...this.traffic.activeOn(route), ...this.remoteTrainsOn(route)].filter((o) => o.rear > p.front - 1).sort((x, y) => x.rear - y.rear)[0];
     const hitBuffer = p.front > route.length - 9;
     const hitTrain = aheadT && aheadT.rear - p.front < 0.5;
     if (hitBuffer || hitTrain) {
@@ -640,6 +660,7 @@ export class Game {
     });
     this.guard('passengers', () => this.passengers.update(dt, p.front));
     this.guard('platform doors', () => this.updatePsd(dt));
+    this.guard('multiplayer', () => this.updateMultiplayer());
     const st = this.snapshot();
     this.state = st;
     this.guard('cab', () => this.cabin.update(dt, st, this.time));
@@ -674,6 +695,52 @@ export class Game {
         if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
       });
     }
+  }
+
+  // ---- Online multiplayer ----
+  /** Other players' trains running on `route` (same track and direction) as { front, rear } occupations. */
+  remoteTrainsOn(route) {
+    if (!this.mp?.inSession) return [];
+    const out = [];
+    for (const r of this.mp.remotes('train')) {
+      const d = r.drive;
+      if (d.dir !== route.dir || d.sourceId !== this.line.sourceId) continue;
+      const same = d.lineId === route.line.id || r.state.s < (this.junction?.divergeS ?? Infinity);
+      if (same) out.push({ front: r.state.s, rear: r.state.s - d.length, remote: r.name });
+    }
+    return out;
+  }
+  /** 10 Hz state to the server; models of the other players' trains on this line. */
+  updateMultiplayer() {
+    const mp = this.mp;
+    if (!mp?.inSession) { for (const m of this.remoteModels?.values() || []) m.model.dispose(this.scene); this.remoteModels?.clear(); return; }
+    const p = this.player, sm = this.stations, route = this.route;
+    const q = route.point(p.front, 0, 0, {}), h = this.geom.heading(route.toTrack(p.front)) + (route.sign < 0 ? Math.PI : 0);
+    mp.sendState({ s: p.front, v: p.speed, doors: p.doors.status, atStop: sm.atStop, next: route.stops[sm.atStop ?? sm.nextStop]?.name || '', load: Math.round((this.passengers.onboard / this.specs.capacity) * 100), x: q.x, z: q.z, h });
+    const seen = new Set();
+    for (const r of mp.remotes('train')) {
+      const d = r.drive, svc = this.svc.get(d.lineId) || (d.sourceId === this.line.sourceId ? this.svc.get(this.line.id) : null);
+      const rt = svc?.routes[d.dir];
+      if (!rt) continue;
+      seen.add(r.id);
+      let e = this.remoteModels.get(r.id);
+      const key = `${d.model}|${d.lineId}|${d.dir}`;
+      if (!e || e.key !== key) {
+        if (e) e.model.dispose(this.scene);
+        const specs = this.mp.trainSpecs?.(d.model) || this.specs;
+        e = { key, model: new TrainModel(specs, svc.line, rt.terminus) };
+        this.scene.add(e.model.group); this.remoteModels.set(r.id, e);
+      }
+      e.model.setPose(rt, r.state.s);
+      const side = rt.stops[Math.max(0, Math.min(rt.stops.length - 1, r.state.atStop ?? 0))]?.doorSide || 'right';
+      e.model.setDoors(side, r.state.doors === 'locked' ? 0 : r.state.doors === 'closing' ? 0.4 : 1);
+    }
+    for (const [id, e] of this.remoteModels) if (!seen.has(id)) { e.model.dispose(this.scene); this.remoteModels.delete(id); }
+  }
+  /** Other players' trains on the network map (any line). */
+  remoteMapMarkers() {
+    if (!this.mp?.inSession) return [];
+    return this.mp.remotes('train').filter((r) => r.state.x != null).map((r) => ({ x: r.state.x, z: r.state.z, heading: r.state.h || 0, color: r.color, label: `${r.name} · ${r.drive.number}` }));
   }
 
   // ---- Platform screen doors (Line D) ----
@@ -806,6 +873,7 @@ export class Game {
 
   dispose() {
     if (!this.scene) return;
+    this.mp?.stopDriving();
     clearTimeout(this.annTimer);
     this.running = false;
     this.crash?.dispose(); this.crash = null;

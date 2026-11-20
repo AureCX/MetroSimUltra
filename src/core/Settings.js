@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
     units: 'kmh',
   },
   controls: { bindings: null }, // null => defaults from Input.ACTIONS
+  multiplayer: { server: '', name: '', recent: [] },
 };
 
 export class Settings {

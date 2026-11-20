@@ -92,6 +92,12 @@ export class BusGame {
     else this.model.setDestination('', 'DÉPÔT / HORS SERVICE');
     this.traffic = new Traffic(scene, this.net, this.world, this.bus);
     this.passengers = new BusPassengers(scene, this.v, this.model, this.runner, this.bus);
+    // Online: announce the bus; other players' buses are drawn and collide physically.
+    this.remoteBuses = new Map();
+    // Other players' buses at the depot start: take the next parking bay.
+    const near = this.remoteBusBoxes().filter((b) => Math.hypot(b.cx - this.v.ph.x, b.cz - this.v.ph.z) < 12).length;
+    if (near) this.v.ph.x -= near * 5.5;
+    this.mp?.startDriving({ kind: 'bus', model: spec.id, uid: cfg.vehicleUid || '', route: route?.route || '', length: spec.length + (spec.trailerLength ? spec.trailerLength - 1.5 : 0), width: spec.width, maxSpeed: spec.maxSpeed || 90 });
     this.passengers.heightAt = this.net.heightAt;
     this.model.heightAt = this.net.heightAt;
     this.scoring = new BusScoring(this.bus);
@@ -170,6 +176,11 @@ export class BusGame {
     on('bus:reroute', () => this.toast('Off route — recalculating', 'warn', 2.5));
     on('bus:routeComplete', () => this.toast(this.mode === 'career' || this.mode === 'timetable' ? 'Route complete — return to the depot and apply the parking brake' : 'Route complete', 'ok', 6));
     on('bus:shiftComplete', () => this.finish(true));
+    on('bus:arrived', ({ stop }) => this.mp?.event({ e: 'arrived', where: stop.stop.name }));
+    on('bus:departed', ({ k }) => { this.mp?.event({ e: 'departed', where: this.runner.stops[k]?.stop.name || '' }); const n = this.passengers.validations - (this.mpCarried || 0); this.mpCarried = this.passengers.validations; if (n > 0) this.mp?.event({ e: 'passengers', n }); });
+    on('bus:collision', ({ what, severity }) => this.mp?.event({ e: 'collision', what: `${what}, ${severity}` }));
+    on('bus:finished', (r) => this.mp?.event({ e: 'finished', km: r.distanceKm, grade: r.grade }));
+    on('mp:correction', (m) => { if (m.x != null) { Object.assign(this.v.ph, { x: m.x, z: m.z, yaw: m.yaw ?? this.v.ph.yaw }); this.toast(`🌐 ${m.reason}`, 'warn', 3); } });
   }
 
   /** Interior "next stop" / exterior "line, direction" announcements: imported MP3 or speech. */
@@ -321,6 +332,12 @@ export class BusGame {
         const r = sat(b.pts, poly);
         if (r) hit(b, r, poly, c.kind, c);
       }
+      // Other players' buses: moving obstacles with their real mass and velocity.
+      for (const rb of this.remoteBusBoxes()) {
+        if (Math.hypot(rb.cx - b.cx, rb.cz - b.cz) > 30) continue;
+        const r = sat(b.pts, rb.pts);
+        if (r) hit(b, r, rb.pts, 'bus', `mp:${rb.id}`, { mass: rb.mass, vx: rb.vx, vz: rb.vz, label: `${rb.name}'s bus` });
+      }
       for (const cb of this.traffic.boxes()) {
         if (Math.hypot(cb.car.pos.x - b.cx, cb.car.pos.z - b.cz) > 20) continue;
         const r = sat(b.pts, cb.pts);
@@ -421,6 +438,44 @@ export class BusGame {
     }
   }
 
+  // ---- Online multiplayer ----
+  remoteBusBoxes() {
+    if (!this.mp?.inSession) return [];
+    return this.mp.remotes('bus').map((r) => {
+      const st = r.state, L = r.drive.length / 2, W = r.drive.width / 2;
+      const fx = Math.sin(st.yaw), fz = -Math.cos(st.yaw), rx = Math.cos(st.yaw), rz = Math.sin(st.yaw);
+      const P = (f, l) => ({ x: st.x + fx * f + rx * l, z: st.z + fz * f + rz * l });
+      return { id: r.id, name: r.name, pts: [P(L, -W), P(L, W), P(-L, W), P(-L, -W)], cx: st.x, cz: st.z, vx: fx * st.v, vz: fz * st.v, mass: (this.mp.busSpecs?.(r.drive.model)?.mass) || 12000 };
+    });
+  }
+  updateMultiplayer() {
+    const mp = this.mp;
+    if (!mp?.inSession) { for (const e of this.remoteBuses?.values() || []) e.model.dispose(this.scene); this.remoteBuses?.clear(); return; }
+    const v = this.v, ph = v.ph;
+    mp.sendState({ x: ph.x, z: ph.z, yaw: ph.yaw, v: ph.vx, doors: v.doors.map((d) => Math.round(d.amount * 100) / 100), trailerYaw: ph.trailerYaw, lights: v.lights > 0, brake: ph.brakeP > 0.05, ind: v.hazards ? 'hazard' : v.indicator || '' });
+    const seen = new Set();
+    for (const r of mp.remotes('bus')) {
+      seen.add(r.id);
+      let e = this.remoteBuses.get(r.id);
+      const spec = mp.busSpecs?.(r.drive.model);
+      if (!spec) continue;
+      if (!e || e.model.spec !== spec) {
+        if (e) e.model.dispose(this.scene);
+        const model = new BusModel(spec); model.heightAt = this.net.heightAt; this.scene.add(model.group);
+        model.setDestination(r.drive.route || '', r.name);
+        const proxy = { ph: { x: 0, z: 0, yaw: 0, pitch: 0, roll: 0, heave: 0, delta: 0, wheelSpin: 0, trailerYaw: 0, brakeP: 0, vx: 0 }, doors: spec.doors.map(() => ({ amount: 0 })), lights: 1, gearSel: 'D', blinkOn: false, indicator: null, hazards: false, interiorLights: true, parking: false, kneelT: 0, rampT: 0, damage: null, stopRequest: false };
+        e = { model, proxy }; this.remoteBuses.set(r.id, e);
+      }
+      const st = r.state, pr = e.proxy;
+      pr.ph.wheelSpin += (st.v / 0.5) * 0.016;
+      Object.assign(pr.ph, { x: st.x, z: st.z, yaw: st.yaw, trailerYaw: st.trailerYaw ?? st.yaw, vx: st.v, brakeP: st.brake ? 0.5 : 0 });
+      st.doors?.forEach((a, i) => { if (pr.doors[i]) pr.doors[i].amount = a; });
+      pr.lights = st.lights ? 1 : 0; pr.hazards = st.ind === 'hazard'; pr.indicator = st.ind === 'left' || st.ind === 'right' ? st.ind : null; pr.blinkOn = Math.floor(this.time * 2.5) % 2 === 0;
+      e.model.update(pr, this.time);
+    }
+    for (const [id, e] of this.remoteBuses) if (!seen.has(id)) { e.model.dispose(this.scene); this.remoteBuses.delete(id); }
+  }
+
   visuals(dt, ctl) {
     const v = this.v, w = this.weather;
     this.frame++;
@@ -439,6 +494,7 @@ export class BusGame {
     this.traffic.weatherWet = w.wet;
     this.traffic.update(dt, this.clock, { player: { x: ph.x, z: ph.z, v: ph.vx }, busFoot, hour, day: this.day, peds: this.traffic.peds, rain: w.raining });
     this.passengers.update(dt, this.time, { hour, day: this.day, rain: w.raining });
+    this.updateMultiplayer();
     this.updatePIDs();
     const st = this.snapshot(ctl);
     this.cockpit.update(dt, st);
@@ -526,6 +582,7 @@ export class BusGame {
       doors: v.doors.map((d) => d.amount), doorsClosed: v.doorsClosed, kneel: v.kneelT > 0.5,
       energyPct: v.energyPct, electric: v.electric, condition: v.condition, cleanliness: v.cleanliness,
       score: this.scoring.result(true).score, comfort: this.scoring.comfort, phase: R.phase, maneuver: R.nextManeuver(),
+      remotes: this.mp?.inSession ? this.mp.remotes('bus').map((r) => ({ x: r.state.x, z: r.state.z, yaw: r.state.yaw, color: r.color, name: r.name })) : [],
       navPath: nav, mapStops: R.stops.slice(k).map((s) => this.runner.viewFor(this.runner.stops.indexOf(s))?.polePoint).filter(Boolean),
       upcoming, weather: this.weather.w, weatherLabel: this.weather.kind, hour: this.weather.hour, service: this.serviceState, camMode: this.camMode,
       stopRequest: v.stopRequest, cashWaiting: this.passengers?.cashWaiting ?? 0, indicator: v.indicator, hazards: v.hazards, blinkOn: v.blinkOn, mode: this.mode,
@@ -565,6 +622,7 @@ export class BusGame {
 
   dispose() {
     if (!this.scene) return;
+    this.mp?.stopDriving();
     this.saveFleet?.();
     this.running = false;
     this.subs?.forEach((f) => f());

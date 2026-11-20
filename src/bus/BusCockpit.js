@@ -320,6 +320,12 @@ export class BusCockpit {
       g.strokeStyle = st.route?.color || '#5ab0ff'; g.lineWidth = 6;
       g.beginPath(); st.navPath.forEach((p, i) => { const [x, y] = toS(p.x, p.z); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
     }
+    // Other players' buses (online).
+    for (const r of st.remotes || []) {
+      const [x, y] = toS(r.x, r.z); g.save(); g.translate(x, y); g.rotate(r.yaw - ph.yaw);
+      g.fillStyle = r.color; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -12); g.lineTo(8, 9); g.lineTo(-8, 9); g.closePath(); g.fill(); g.stroke(); g.restore();
+      g.fillStyle = '#fff'; g.font = 'bold 16px Arial'; g.textAlign = 'left'; g.fillText(r.name, x + 12, y - 8);
+    }
     for (const s of st.mapStops || []) { const [x, y] = toS(s.x, s.z); g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.fillStyle = st.route?.color || '#ffd000'; g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill(); }
     // Bus arrow.
     g.fillStyle = '#ffd25a'; g.beginPath(); g.moveTo(cx, cy - 16); g.lineTo(cx + 10, cy + 12); g.lineTo(cx, cy + 6); g.lineTo(cx - 10, cy + 12); g.closePath(); g.fill();

@@ -20,8 +20,12 @@ export function earningsTable(st, v) {
 }
 
 export class Menu {
-  constructor(root, { repo, settings, save, input, bus, audio, busInput, economy, busRepo }) {
-    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput, economy, busRepo });
+  constructor(root, { repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp }) {
+    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp });
+    // Live refresh of the multiplayer screen.
+    bus.on('mp:status', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
+    bus.on('mp:sessions', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
+    bus.on('mp:feed', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
     this.handlers = {};
     this.context = 'main'; // main | pause
     const sel = save.selection;
@@ -62,6 +66,7 @@ export class Menu {
 
   hide() { this.root.innerHTML = ''; this.root.style.display = 'none'; }
   show(screen) {
+    this.current = screen;
     this.root.style.display = '';
     const fn = this[`screen_${screen}`];
     if (fn) fn.call(this);
@@ -98,12 +103,13 @@ export class Menu {
         <span class="sub">Train: ${esc(t?.name || '-')}${this.vehicle ? ` · ${esc(this.vehicle.uid)} · condition ${Math.round(this.vehicle.condition * 100)} %${this.economy.serviceDue(this.vehicle) ? ' · <b class="warn">maintenance due</b>' : ''}` : ''}</span>
         ${rec ? `<br><span class="sub">Best: ${rec.bestScore} pts (grade ${rec.bestGrade}) · ${rec.runs} run(s)</span>` : ''}</div>` : '<div>No line available. Import one in “Select Line”.</div>'}
       </div>
+      ${this.mp?.inSession ? `<div class="mp-chip">🌐 Online session <b>${esc(this.mp.session.code)}</b> · ${this.mp.players.filter((p) => p.online).length} player(s) — your service will be shared</div>` : ''}
       <div class="totals sub">Career: ${this.save.data.totals.runs} runs · ${this.save.data.totals.distanceKm.toFixed(1)} km · ${this.save.data.totals.stations} stations served</div>
       ${this.repo.errors.length ? `<div class="errors">${this.repo.errors.map(esc).join('<br>')}</div>` : ''}
     </div>`;
     this.root.querySelector('#m-bus').onclick = () => this.emit('bus');
     this.root.querySelector('#m-play').onclick = () => this.play(this.line);
-    this.root.querySelector('#m-mp').onclick = () => this.emit('multiplayer');
+    this.root.querySelector('#m-mp').onclick = () => this.show('multiplayer');
   }
 
   // ---------------- Lines ----------------
@@ -354,6 +360,64 @@ export class Menu {
     body.querySelectorAll('[data-buybus]').forEach(act((b) => E.buy('bus', b.dataset.buybus)));
   }
   // ---------------- Settings ----------------
+  // ---------------- Multiplayer ----------------
+  screen_multiplayer() {
+    const mp = this.mp, st = mp.status, ses = mp.session;
+    const server = mp.server || this.settings.get('multiplayer.server') || '';
+    const name = mp.name || this.settings.get('multiplayer.name') || '';
+    const dot = { online: '#3cff8a', connecting: '#ffb300', reconnecting: '#ffb300', error: '#ff4a3a', offline: '#8fa1b3' }[st];
+    const what = (p) => (!p.drive ? '<span class="sub">in the menus</span>' : p.drive.kind === 'train' ? `🚇 Line ${esc(p.drive.number)} · ${esc(p.drive.uid || p.drive.model)}` : `🚌 ${esc(p.drive.uid || p.drive.model)}${p.drive.route ? ` · route ${esc(p.drive.route)}` : ''}`);
+    const body = this.frame('Multiplayer', `
+      <div class="bus-layout"><div>
+        <h3>Server</h3>
+        <div class="cond-row"><label>Your name <input type="text" id="mp-name" value="${esc(name)}" maxlength="24" size="16"></label></div>
+        <div class="cond-row"><label>Server address <input type="text" id="mp-server" value="${esc(server)}" placeholder="https://your-server.onrender.com" size="34" list="mp-servers"></label>
+          <datalist id="mp-servers">${(this.settings.get('multiplayer.recent') || []).map((u) => `<option value="${esc(u)}">`).join('')}</datalist></div>
+        ${(this.settings.get('multiplayer.recent') || []).length ? `<p class="sub">Recent servers: ${(this.settings.get('multiplayer.recent') || []).map((u) => `<a href="#" data-srv="${esc(u)}">${esc(u.replace(/^https?:\/\//, ''))}</a>`).join(' · ')}</p>` : ''}
+        <div class="row-tools">
+          ${st === 'offline' || st === 'error' ? '<button class="btn primary" id="mp-connect">Connect</button>' : '<button class="btn" id="mp-disconnect">Disconnect</button>'}
+          <span class="mp-status"><i style="background:${dot}"></i>${{ online: 'Online', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Connection error', offline: 'Offline' }[st]}${mp.ping != null && st === 'online' ? ` · ${mp.ping} ms` : ''}</span></div>
+        ${mp.error ? `<p class="errors">${esc(mp.error)}</p>` : ''}${mp.lastError && st === 'online' ? `<p class="errors">${esc(mp.lastError)}</p>` : ''}
+        <p class="sub">The multiplayer server is a small Node program (<code>server/</code> in the project) that you host yourself, for example free on Render. Everyone connects to the same address. See <b>docs/MULTIPLAYER.md</b>.</p>
+        ${st === 'online' && !ses ? `
+          <h3>Sessions on this server</h3>
+          <table class="stations"><thead><tr><th>Name</th><th>Host</th><th>Players</th><th></th></tr></thead><tbody>
+          ${mp.sessions.map((x) => `<tr><td><b>${esc(x.name)}</b><br><span class="sub">code ${esc(x.code)}</span></td><td>${esc(x.host || '—')}</td><td>${x.players}/${x.max}</td><td><button class="btn small primary" data-join="${esc(x.code)}">Join</button></td></tr>`).join('') || '<tr><td colspan="4">No public session yet — create one.</td></tr>'}</tbody></table>
+          <div class="row-tools"><button class="btn small" id="mp-refresh">Refresh</button></div>
+          <h3>Create a session</h3>
+          <div class="cond-row"><label>Name <input type="text" id="mp-sname" value="${esc(name ? `${name}'s Grandville` : 'Grandville')}" maxlength="40" size="22"></label>
+            <label>Players <select id="mp-max">${[2, 4, 6, 8, 12].map((n) => `<option ${n === 8 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label><input type="checkbox" id="mp-public" checked> listed publicly</label></div>
+          <div class="row-tools"><button class="btn primary" id="mp-create">Create</button></div>
+          <h3>Join with a code</h3>
+          <div class="cond-row"><label>Code <input type="text" id="mp-code" maxlength="5" size="7" style="text-transform:uppercase"></label><button class="btn" id="mp-join">Join</button></div>` : ''}
+        ${ses ? `
+          <h3>Session ${esc(ses.name)} <span class="tag">${esc(ses.code)}</span></h3>
+          <p>Invite friends: send them this link (or the code <b>${esc(ses.code)}</b> and the server address).</p>
+          <div class="cond-row"><input type="text" id="mp-link" readonly value="${esc(mp.inviteLink())}" style="flex:1;min-width:260px"><button class="btn small" id="mp-copy">Copy link</button></div>
+          <p class="sub">Start any metro line or bus shift from the menus: the others see your vehicle and you see theirs. Trains on the same track are kept apart by the server.</p>
+          <div class="row-tools"><button class="btn primary" data-nav="main">Choose a service ▶</button><button class="btn danger" id="mp-leave">Leave session</button></div>` : ''}
+      </div><div>
+        ${ses ? `<h3>Players</h3><table class="stations"><tbody>${mp.players.map((p) => `<tr><td><span class="mp-dot" style="background:${p.online ? p.color : '#555'}"></span><b>${esc(p.name)}</b>${p.id === mp.me?.id ? ' <span class="tag">you</span>' : ''}<br><span class="sub">${p.online ? 'online' : 'reconnecting…'}</span></td><td>${what(p)}</td><td class="sub">${p.stats.stops} stops · ${p.stats.passengers} pax</td></tr>`).join('')}</tbody></table>
+          <h3>Activity</h3><ul class="mp-feed">${mp.feed.slice(0, 14).map((f) => `<li><span class="sub">${new Date(f.at).toLocaleTimeString().slice(0, 5)}</span> ${esc(f.text)}</li>`).join('') || '<li class="sub">Nothing yet.</li>'}</ul>` : '<h3>How it works</h3><p class="sub">1. Host the server (docs/MULTIPLAYER.md) or use a friend\'s.<br>2. Connect, then create a session or join one.<br>3. Share the invite link.<br>4. Each player drives their own train or bus in the same network: positions, doors, arrivals and passengers are shared in real time.</p>'}
+      </div></div>`, { wide: true });
+    const $ = (id) => body.querySelector(id);
+    $('#mp-connect') && ($('#mp-connect').onclick = () => {
+      const srv = $('#mp-server').value.trim(); if (!srv) { this.notice('Enter the server address.'); return; }
+      const recent = [srv, ...(this.settings.get('multiplayer.recent') || []).filter((u) => u !== srv)].slice(0, 5);
+      this.settings.set('multiplayer.recent', recent);
+      mp.connect(srv, $('#mp-name').value);
+    });
+    body.querySelectorAll('[data-srv]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#mp-server').value = a.dataset.srv; }));
+    $('#mp-disconnect') && ($('#mp-disconnect').onclick = () => mp.disconnect());
+    $('#mp-refresh') && ($('#mp-refresh').onclick = () => mp.list());
+    $('#mp-create') && ($('#mp-create').onclick = () => mp.create($('#mp-sname').value, $('#mp-public').checked, Number($('#mp-max').value)));
+    $('#mp-join') && ($('#mp-join').onclick = () => { const c = $('#mp-code').value.trim().toUpperCase(); if (c.length === 5) mp.join(c); else this.notice('A code has 5 characters.'); });
+    body.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => mp.join(b.dataset.join)));
+    $('#mp-leave') && ($('#mp-leave').onclick = () => { mp.leave(); this.screen_multiplayer(); });
+    $('#mp-copy') && ($('#mp-copy').onclick = async () => { try { await navigator.clipboard.writeText($('#mp-link').value); this.notice('Invite link copied.'); } catch { $('#mp-link').select(); document.execCommand?.('copy'); } });
+  }
+
   screen_settings() {
     const s = this.settings;
     const fmts = {};

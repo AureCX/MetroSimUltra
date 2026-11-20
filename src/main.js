@@ -17,6 +17,7 @@ import { BusHUD } from './ui/BusHUD.js';
 import { BusMenu } from './ui/BusMenu.js';
 import { Economy } from './economy/Economy.js';
 import { NetworkOverlay } from './ui/NetworkOverlay.js';
+import { Multiplayer, defaultServerUrl } from './net/Multiplayer.js';
 
 const bus = new EventBus();
 const settings = new Settings(bus);
@@ -40,9 +41,20 @@ const busHud = new BusHUD(document.getElementById('bushud'), bus, settings, busI
 busHud.show(false);
 const busGame = new BusGame({ renderer, bus, settings, input: busInput, audio, save });
 const netOverlay = new NetworkOverlay(document.body);
+// Online multiplayer: connection badge (always visible while connected), feed messages as toasts in game.
+const mp = new Multiplayer(bus, settings);
+game.mp = mp; busGame.mp = mp;
+const badge = document.createElement('div'); badge.id = 'mp-badge'; document.body.appendChild(badge);
+bus.on('mp:status', (st) => {
+  const col = { online: '#3cff8a', connecting: '#ffb300', reconnecting: '#ffb300', error: '#ff4a3a', offline: '#8fa1b3' }[st.status];
+  badge.style.display = st.status === 'offline' ? 'none' : 'inline-flex';
+  badge.innerHTML = `<i style="background:${col}"></i>${st.status === 'online' ? (st.session ? `Session ${st.session.code} · ${st.players.filter((p) => p.online).length} online` : 'Online') : st.status === 'error' ? 'Multiplayer: connection error' : st.status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…'}${st.ping != null && st.status === 'online' ? ` · ${st.ping} ms` : ''}`;
+});
+bus.on('mp:feed', (m) => { if (state === 'playing' && m.from !== mp.me?.id) active.toast?.(`🌐 ${m.text}`, 'info', 3.5); });
+bus.on('mp:error', (m) => { if (state === 'playing') active.toast?.(`🌐 ${m.message}`, 'warn', 4); });
 bus.on('ui:networkMap', () => { if (game.netModel && state === 'playing') netOverlay.toggle(game.netModel, () => game.networkState(false)); });
 let active = game; // the session currently running (metro or bus)
-window.__metro = { game, busGame, bus, settings }; // debugging handle
+window.__metro = { game, busGame, bus, settings, mp }; // debugging handle
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -66,7 +78,8 @@ async function boot() {
   economy = new Economy(save, { train: repo.trains, bus: busRepo.vehicles });
   game.economy = economy; busGame.economy = economy;
   window.__metro.economy = economy;
-  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput, economy, busRepo });
+  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp });
+  mp.trainSpecs = (id) => repo.train(id); mp.busSpecs = (id) => busRepo.vehicle(id);
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
   menu.on('restart', () => lastSession && startSession(lastSession));
@@ -75,6 +88,10 @@ async function boot() {
   menu.on('bus', () => busMenu.show());
   menu.on('busPlay', startBus);
   menu.show('main');
+  // Invite link (?server=…&join=CODE): connect and join straight away.
+  const q = new URLSearchParams(location.search), join = q.get('join'), srv = q.get('server') || settings.get('multiplayer.server') || defaultServerUrl();
+  if (join && srv) { mp.pendingJoin = join.toUpperCase(); mp.connect(srv, settings.get('multiplayer.name') || 'Driver'); menu.show('multiplayer'); }
+  else if (!settings.get('multiplayer.server') && defaultServerUrl()) settings.set('multiplayer.server', defaultServerUrl());
   game.applyGraphics();
   resize();
 }

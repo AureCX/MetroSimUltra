@@ -1,0 +1,8 @@
+{
+  "name": "grandville-multiplayer-server",
+  "private": true,
+  "type": "module",
+  "description": "Authoritative multiplayer server for the Grandville transport simulator (no dependencies).",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js" }
+}

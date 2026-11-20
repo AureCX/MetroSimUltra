@@ -15,7 +15,8 @@ import { Weather } from './Weather.js';
 import { BusAudio } from './BusAudio.js';
 import { CabInteraction } from '../cabin/Cabin.js';
 import { AssetStore } from '../core/AssetStore.js';
-import { clamp } from '../core/util.js';
+import { resolveImpact, contactPoint, obstacle } from './Crash.js';
+import { clamp, formatClock } from '../core/util.js';
 
 const STEP = 1 / 60;
 const CAMS = ['cab', 'chase', 'passenger', 'top'];
@@ -69,8 +70,11 @@ export class BusGame {
     this.weather = new Weather(scene, this.renderer, { hour, weather, dynamic: dynamicWeather });
     this.weather.snowMats = [this.world.mat.grass, this.world.mat.walk, this.world.mat.roofGrey, this.world.mat.roofTile].map((m) => { m.userData.base = m.color.clone(); return m; });
     // Vehicle at the depot.
-    const fleet = this.save.data.bus?.fleet?.[spec.id] || {};
+    // The player's own bus (economy fleet): condition, energy, body damage carry over between shifts.
+    this.owned = this.economy?.vehicle(cfg.vehicleUid) || null;
+    const fleet = this.owned || this.save.data.bus?.fleet?.[spec.id] || {};
     this.v = new BusVehicle(spec, this.bus, fleet);
+    this.energyStart = this.v.energy; this.energyBought = 0;
     const dp = this.net.data.depot;
     this.v.ph.x = dp.start.x; this.v.ph.z = dp.start.z; this.v.ph.yaw = (dp.start.heading * Math.PI) / 180; this.v.ph.trailerYaw = this.v.ph.yaw;
     this.model = new BusModel(spec); scene.add(this.model.group);
@@ -260,6 +264,33 @@ export class BusGame {
     void h;
   }
 
+  /** Consequences of one impact: damage, failures, passengers, sound, penalties and the incident report. */
+  impact(res, ob, cp, kind) {
+    const v = this.v, ph = v.ph;
+    const speed = res.vn * 3.6;
+    const d = v.damage.apply(res.local, res.dv, ob.hard ?? 1);
+    const sev = d.severity;
+    v.condition = clamp(v.condition - d.k * 0.45, 0, 1);
+    this.shake = Math.min(0.25, 0.015 + res.dv * 0.02);
+    this.busAudio.impact({ k: Math.min(1.4, res.dv / 8), glass: d.events.some((e) => /Windscreen|windows|light|mirror/i.test(e)), deform: d.k > 0.15, mechanical: d.events.some((e) => /Engine|Steering|Brake|Suspension|Electrical/.test(e)) });
+    const hurt = this.passengers.onImpact?.(res, ph) || 0;
+    if (hurt) this.busAudio.passengersReact?.(Math.min(1, res.dv / 8));
+    const pts = sev === 'scrape' ? 15 : sev === 'minor' ? 50 : sev === 'moderate' ? 150 : sev === 'severe' ? 350 : 600;
+    this.scoring.add(pts, `Collision with ${ob.label} (${Math.round(speed)} km/h, ${sev})`);
+    for (const e of d.events) this.toast(e, 'alarm', 4);
+    if (sev === 'severe' || sev === 'major') {
+      // Emergency stop: hazards on, brakes applied; a major impact stalls the engine.
+      v.hazards = true; v.emergency = true;
+      if (sev === 'major' && v.engineOn) { v.engineOn = false; this.bus.emit('bus:engine', false); }
+      this.busAudio.alarm?.();
+      this.toast(`${sev === 'major' ? 'MAJOR' : 'SEVERE'} COLLISION — emergency stop. Check on the passengers, then release the emergency stop (${this.input.labelFor('emergency')}).`, 'alarm', 8);
+    } else this.toast(`Collision with ${ob.label} — ${sev}`, sev === 'scrape' ? 'warn' : 'alarm', 3);
+    const street = this.net.nearestEdge(ph.x, ph.z)?.edge?.name || 'the road';
+    this.report(`${sev[0].toUpperCase() + sev.slice(1)} collision with ${ob.label} on ${street} at ${Math.round(speed)} km/h (Δv ${(res.dv * 3.6).toFixed(0)} km/h, ${d.zone || 'body'} damage)${hurt ? ` · ${hurt} passenger(s) fell` : ''}${d.events.length ? ` · ${d.events.join(', ')}` : ''}`);
+    this.bus.emit('bus:collision', { impact: res.vn, what: ob.label, severity: sev });
+  }
+  report(text) { (this.incidents ||= []).push(`${formatClock(this.clock, false)} — ${text}`); }
+
   limitHere() {
     if (this.inDepot()) return 20;
     const ne = this.net.nearestEdge(this.v.ph.x, this.v.ph.z);
@@ -270,40 +301,49 @@ export class BusGame {
   /** Collisions with buildings & street furniture, AI vehicles and pedestrians; kerb strikes. */
   collisions(dt) {
     const v = this.v, ph = v.ph, boxes = ph.footprint();
-    const hit = (depth, ax, speedN, what, soft) => {
-      ph.x += ax.x * depth; ph.z += ax.z * depth;
-      const h = ph.heading();
-      const vn = (h.fx * ph.vx + h.rx * ph.vy) * ax.x + (h.fz * ph.vx + h.rz * ph.vy) * ax.z; // world velocity along the normal
-      if (vn < 0) { const f = ph.vx * (h.fx * ax.x + h.fz * ax.z); ph.vx -= f * 1.1; ph.vy *= 0.5; ph.r *= 0.5; }
-      const impact = Math.abs(speedN ?? vn);
-      if (impact > 1 && this.time - (this.lastHit || -9) > 1) {
-        this.lastHit = this.time;
-        v.condition = clamp(v.condition - impact * 0.012, 0, 1);
-        this.busAudio.collision(Math.min(1.2, impact / 8));
-        this.shake = Math.min(0.12, impact * 0.012);
-        this.scoring.add(soft ? 40 : Math.round(60 + impact * 25), `Collision with ${what} (${Math.round(impact * 3.6)} km/h)`);
-        this.bus.emit('bus:collision', { impact, what });
-      }
+    this.hitCd ||= new Map();
+    for (const [k, t] of this.hitCd) if (this.time - t > 0.35) this.hitCd.delete(k); // secondary impacts on the same object after 0.35 s
+    const hit = (b, r, obstPts, kind, key, other = {}) => {
+      // Separate the bodies, then exchange momentum at the contact point.
+      ph.x += r.ax.x * r.depth; ph.z += r.ax.z * r.depth;
+      const cp = contactPoint(b.pts, obstPts, r.ax);
+      const ob = { ...obstacle(kind), ...other };
+      const res = resolveImpact(ph, r.ax, cp, ob, { mu: this.weather.w.mu });
+      if (!res || this.hitCd.has(key)) return res;
+      this.hitCd.set(key, this.time);
+      if (res.dv > 0.6) this.impact(res, ob, cp, kind);
+      return res;
     };
     for (const b of boxes) {
       for (const c of this.world.colliders) {
-        if (Math.abs((c.x0 + c.x1) / 2 - b.cx) > 40 || Math.abs((c.z0 + c.z1) / 2 - b.cz) > 40) continue;
-        const r = sat(b.pts, rectPoly(c));
-        if (r) hit(r.depth, r.ax, null, c.kind === 'building' || c.kind === 'house' ? 'a building' : `a ${c.kind}`, c.soft);
+        if (b.cx < c.x0 - 14 || b.cx > c.x1 + 14 || b.cz < c.z0 - 14 || b.cz > c.z1 + 14) continue; // near the rectangle (any size)
+        const poly = rectPoly(c);
+        const r = sat(b.pts, poly);
+        if (r) hit(b, r, poly, c.kind, c);
       }
       for (const cb of this.traffic.boxes()) {
         if (Math.hypot(cb.car.pos.x - b.cx, cb.car.pos.z - b.cz) > 20) continue;
         const r = sat(b.pts, cb.pts);
-        if (r) {
-          const rel = Math.abs(ph.vx - cb.car.v * 0.5);
-          cb.car.crashed = 25; cb.car.v = 0;
-          hit(r.depth * 0.6, r.ax, rel, cb.car.type === 'moto' ? 'a motorcycle' : 'a vehicle');
+        if (!r) continue;
+        const car = cb.car, cv = car.crashed ? 0 : car.v;
+        const res = hit(b, r, cb.pts, car.type, car, { vx: car.pos.dx * cv, vz: car.pos.dz * cv });
+        if (res) {
+          // The car takes the opposite impulse: pushed away (clamped), stops, hazards on.
+          const push = Math.min(2.5, res.otherDv * 0.25);
+          car.pos.x -= r.ax.x * push; car.pos.z -= r.ax.z * push;
+          car.crashed = Math.max(car.crashed || 0, 30); car.v = 0;
+          const yawKick = Math.max(-0.5, Math.min(0.5, (res.jt || 0) / 30000)); const cs = Math.cos(yawKick), sn = Math.sin(yawKick); const ndx = car.pos.dx * cs - car.pos.dz * sn; car.pos.dz = car.pos.dx * sn + car.pos.dz * cs; car.pos.dx = ndx; // the car is spun round
         }
       }
       for (const p of this.traffic.peds) {
         if (p.hit) continue;
         const pt = [{ x: p.x - 0.25, z: p.z - 0.25 }, { x: p.x + 0.25, z: p.z - 0.25 }, { x: p.x + 0.25, z: p.z + 0.25 }, { x: p.x - 0.25, z: p.z + 0.25 }];
-        if (sat(b.pts, pt)) { p.hit = true; this.scoring.add(400, 'Pedestrian struck'); this.busAudio.collision(0.4); this.toast('A pedestrian has been struck!', 'alarm', 5); }
+        if (sat(b.pts, pt)) {
+          p.hit = true; this.scoring.add(400, 'Pedestrian struck'); this.busAudio.collision(0.4);
+          this.toast('A pedestrian has been struck! Stop the bus and switch on the hazard lights.', 'alarm', 6);
+          this.report(`Pedestrian struck at ${Math.round(Math.abs(ph.vx) * 3.6)} km/h`);
+          v.hazards = true;
+        }
       }
     }
     // Kerb strikes: wheels leaving the carriageway.
@@ -357,10 +397,27 @@ export class BusGame {
     const v = this.v, p = v.ph;
     for (const [k, z] of Object.entries(this.world.zones)) {
       if (Math.hypot(p.x - z.x, p.z - z.z) > z.r) continue;
-      if (k === 'fuel' && !v.electric) { v.energy = Math.min(v.energyMax, v.energy + 3 * dt); this.serviceState = { label: 'Refuelling', pct: v.energyPct }; }
-      if (k === 'charge' && v.electric) { if (v.engineOn) { this.serviceState = { label: 'Switch the bus off to charge', pct: v.energyPct }; break; } v.energy = Math.min(v.energyMax, v.energy + (150 * 12 / 3600) * dt); this.serviceState = { label: 'Charging 150 kW (×12 time)', pct: v.energyPct }; }
+      const E = this.economy, price = v.electric ? 0.22 : 1.65; // € per kWh / per litre
+      const canPay = (cost) => !E || E.balance >= cost;
+      if (k === 'fuel' && !v.electric) {
+        const add = Math.min(v.energyMax - v.energy, 3 * dt);
+        if (add > 0 && canPay(add * price)) { v.energy += add; this.energyBought += add; this.serviceState = { label: `Refuelling · ${(this.energyBought * price).toFixed(2).replace('.', ',')} €`, pct: v.energyPct }; }
+        else if (add > 0) this.serviceState = { label: 'Not enough money to refuel', pct: v.energyPct };
+      }
+      if (k === 'charge' && v.electric) {
+        if (v.engineOn) { this.serviceState = { label: 'Switch the bus off to charge', pct: v.energyPct }; break; }
+        const add = Math.min(v.energyMax - v.energy, (150 * 12 / 3600) * dt);
+        if (add > 0 && canPay(add * price)) { v.energy += add; this.energyBought += add; this.serviceState = { label: `Charging 150 kW (×12 time) · ${(this.energyBought * price).toFixed(2).replace('.', ',')} €`, pct: v.energyPct }; }
+        else if (add > 0) this.serviceState = { label: 'Not enough money to charge', pct: v.energyPct };
+      }
       if (k === 'wash') { v.cleanliness = Math.min(1, v.cleanliness + 0.1 * dt); this.serviceState = { label: 'Washing', pct: v.cleanliness }; }
-      if (k === 'maintenance') { v.condition = Math.min(1, v.condition + 0.04 * dt); this.serviceState = { label: 'Maintenance', pct: v.condition }; }
+      if (k === 'maintenance') {
+        // Repairs in the hall are paid as they progress (also clear body damage).
+        const want = Math.min(1 - v.condition, 0.04 * dt);
+        const got = want > 0 ? (this.owned ? E.payPartialRepair(this.owned.uid, want) : want) : 0;
+        if (got > 0) { v.condition += got; v.damage.repair(got * 2.5); }
+        this.serviceState = { label: want > 0 && !got ? 'Not enough money for repairs' : `Maintenance · ${E ? `balance ${Math.round(E.balance).toLocaleString('fr-FR')} €` : ''}`, pct: v.condition };
+      }
     }
   }
 
@@ -484,11 +541,23 @@ export class BusGame {
     const res = this.scoring.result(completed);
     this.result = { ...res, completed, reason, kind: 'bus', route: this.route, dir: this.cfg.dir, spec: this.spec, mode: this.mode,
       distanceKm: this.v.ph.distance / 1000, seconds: this.time, carried: this.passengers.validations, contactless: this.passengers.contactless,
-      stopsServed: this.runner.stops.filter((s) => s.served).length, stopsTotal: this.runner.stops.length };
+      stopsServed: this.runner.stops.filter((s) => s.served).length, stopsTotal: this.runner.stops.length,
+      missed: this.runner.stops.filter((s) => s.missed).length, vehicleUid: this.owned?.uid || null, incidents: this.incidents || [] };
     this.saveFleet();
     this.bus.emit('bus:finished', this.result);
   }
+  /** Fuel and electricity are paid at the depot pumps / chargers (charged when the vehicle state is saved). */
   saveFleet() {
+    if (!this.v) return;
+    if (this.owned) {
+      // Pay for depot refills, then store the vehicle state on the owned bus.
+      if (this.energyBought > 0) { const c = this.energyBought * (this.v.electric ? 0.22 : 1.65); this.economy.d.balance -= c; this.economy.log(`${this.v.electric ? 'Charging' : 'Fuel'} ${this.owned.uid}`, -c, this.owned.uid); this.energyStart += this.energyBought; this.energyBought = 0; }
+      const km = this.v.ph.distance / 1000 - (this.kmSaved || 0); this.kmSaved = this.v.ph.distance / 1000;
+      Object.assign(this.owned, { condition: this.v.condition, cleanliness: this.v.cleanliness, energy: this.v.energy, damage: this.v.damage.state() });
+      this.economy.wear(this.owned.uid, { km, condition: Math.max(0, this.v.condition - km * 0.0008) });
+      this.v.condition = this.owned.condition;
+      return;
+    }
     const d = this.save.data; d.bus ||= {}; d.bus.fleet ||= {};
     d.bus.fleet[this.spec.id] = { condition: this.v.condition, cleanliness: this.v.cleanliness, energy: this.v.energy, coolant: 20 };
     this.save.save();

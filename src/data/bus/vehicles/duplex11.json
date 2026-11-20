@@ -2,6 +2,8 @@
  "id": "duplex11",
  "order": 6,
  "name": "Duplex 11 DD",
+ "price": 160000,
+ "serviceIntervalKm": 250,
  "type": "doubledecker",
  "description": "Double-decker: 4.2 m tall, top-heavy — strong body roll, take bends slowly.",
  "length": 11.2,

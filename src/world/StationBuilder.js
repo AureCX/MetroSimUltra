@@ -1,6 +1,7 @@
 // Station interiors. Three architectural styles (vault / pillars / modern), side or island
 // platforms, themed colours, name signs, adverts, exits, benches and live passenger information displays.
 import * as THREE from 'three';
+import { PlatformDoorSide, trainDoorOffsets } from './PlatformDoors.js';
 import { extrude, tunnelProfile, tunnelCrown, FLOOR_Y } from './Sweep.js';
 import { Textures, shade } from './Textures.js';
 import { hashString, seededRandom, formatClock } from '../core/util.js';
@@ -9,7 +10,7 @@ const PLATFORM_Y = 0.95;
 const EDGE_GAP = 1.45; // track centre to platform edge
 
 export class StationView {
-  constructor(line, geom, routes, st, index, quality) {
+  constructor(line, geom, routes, st, index, quality, opts = {}) {
     this.line = line; this.st = st; this.index = index; this.geom = geom; this.routes = routes;
     this.centerS = geom.stationS[index];
     this.group = new THREE.Group();
@@ -43,6 +44,22 @@ export class StationView {
     if (this.outdoor) this.buildCanopy();
     else this.buildPortals();
     if (this.style === 'grand' && !this.outdoor) this.buildGrand();
+    if (line.platformScreenDoors && opts.trainSpecs) this.buildScreenDoors(opts.trainSpecs);
+  }
+
+  /** Platform screen doors on each platform edge, openings in front of the train doors of each direction. */
+  buildScreenDoors(specs) {
+    const offs = trainDoorOffsets(specs);
+    this.psd = {};
+    for (const dir of ['A', 'B']) {
+      const route = this.routes[dir]; if (!route) continue;
+      const stp = route.stops.find((x) => (x.station.mirrorOf ?? x.station.index) === this.index && !x.station.mirrorOf);
+      if (!stp) continue;
+      const doorZ = offs.map((o) => route.toTrack(stp.stopR - o) - this.centerS).filter((z) => Math.abs(z) < this.Lp / 2 - 1);
+      const sideSign = dir === 'A' ? -1 : 1;                 // track A at −x, B at +x (station frame)
+      const facing = this.island ? -sideSign : sideSign;      // which way the platform lies from the screen line
+      this.psd[dir] = new PlatformDoorSide(this.group, { x: sideSign * this.e + facing * 0.15, facing, doorZ, Lp: this.Lp, doorWidth: specs.doorWidth, platformY: PLATFORM_Y, id: `${this.st.name}:${dir}` });
+    }
   }
 
   /** Height of the ceiling above local x. */

@@ -11,6 +11,9 @@ import { TrafficManager } from '../traffic/TrafficManager.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { SignalView } from '../world/SignalView.js';
 import { TrainModel, TRAIN_FLOOR } from '../world/TrainModel.js';
+import { NetworkModel, drawNetwork } from '../ui/NetworkScreen.js';
+import { PSD } from '../world/PlatformDoors.js';
+import { deriveTrainSpecs } from '../physics/TrainPhysics.js';
 import { PassengerSystem } from '../world/Passengers.js';
 import { Cabin, CabInteraction } from '../cabin/Cabin.js';
 import { CameraSystem } from '../camera/CameraSystem.js';
@@ -36,9 +39,16 @@ export class Game {
   }
 
   /** Builds the whole session. */
-  start({ line, train, direction, services, network }) {
+  start({ line, train, direction, services, network, vehicleUid }) {
     this.dispose();
     const bus = this.bus;
+    // The player's own train: a worn vehicle (condition < 60 %) develops less tractive effort.
+    this.vehicleUid = vehicleUid || null;
+    const owned = this.economy?.vehicle(vehicleUid);
+    if (owned) {
+      const perf = this.economy.performance(owned);
+      if (perf < 0.999) train = deriveTrainSpecs({ ...train, maxTractiveForce: train.maxTractiveForce * perf, maxPower: train.maxPower * perf });
+    }
     if (line.loop) direction = 'A'; // a terminal loop is one-way: every train runs the whole circuit
     this.line = line; this.specs = train; this.direction = direction;
     this.planned = line; // destination chosen in the menu
@@ -79,7 +89,8 @@ export class Game {
     const LP = this.geom.loop;
     const junctions = J ? [{ divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain }]
       : LP ? [{ divergeS: LP.J, wallS: LP.J + LP.chamber, inner: LP.inner }, { divergeS: LP.Jr - LP.chamber, wallS: LP.Jr, inner: LP.inner }] : [];
-    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions }).build();
+    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions, trainSpecs: train }).build();
+    this.player.interlock = () => this.psdLocked();
     this.worlds = new Map([[line.id, this.world]]);
     for (const [id, d] of this.svc) {
       if (id === line.id) continue;
@@ -124,6 +135,8 @@ export class Game {
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
     if (J && direction === 'A') this.buildRouteIndicator();
+    this.netModel = new NetworkModel((network || [line]).filter((l) => l.network === line.network));
+    this.netView = null;
     this.mapModel = buildLineMapModel(line, [...this.svc.values()].map((d) => d.line), network || [], direction);
     this.mapAcc = 1;
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
@@ -334,6 +347,7 @@ export class Game {
       cabLight: () => { p().cabLight = !p().cabLight; this.audio.click(); },
       routeSelect: () => this.selectRoute(),
       lineMap: () => this.bus.emit('ui:lineMap'),
+      networkMap: () => this.bus.emit('ui:networkMap'),
     };
   }
 
@@ -352,6 +366,11 @@ export class Game {
   }
   openDoors(side) {
     const al = this.stations.alignment();
+    // Platform screen doors line up with the train doors only when the train stops on the marker.
+    if (this.line.platformScreenDoors && al.ok && Math.abs(al.error) > PSD.TOLERANCE) {
+      this.bus.emit('doors:refused', { reason: `Platform screen doors: stop within ±${PSD.TOLERANCE} m of the marker (${al.error >= 0 ? '+' : ''}${al.error.toFixed(2)} m).` });
+      return;
+    }
     const s = side || (al.ok ? al.side : al.stop?.doorSide || 'right');
     const r = this.player.doors.open(s, { speed: this.player.speed, alignment: al });
     if (r.ok) this.audio.click();
@@ -377,7 +396,9 @@ export class Game {
       if (position >= 0 && this.lastNotch < -2) a.brakeRelease();
       this.lastNotch = position;
     });
-    on('doors:opening', () => a.doorOpen());
+    // The platform screen doors are commanded together with the train doors.
+    on('doors:opening', () => { a.doorOpen(); const psd = this.playerPsd(); if (psd) { psd.reset(); psd.open(); } });
+    on('doors:warning', () => { this.playerPsd()?.close(); });
     on('doors:warning', () => { a.doorChime(); if (this.line.announcements.doorsClosing && 'speechSynthesis' in window) { /* optional text handled by Announcer users */ } });
     on('doors:closing', () => a.doorClose());
     on('doors:locked', () => this.toast('Doors closed and locked', 'ok', 2));
@@ -398,6 +419,11 @@ export class Game {
       const acc = Math.abs(error) <= tolerance ? 'Precise stop' : 'Stop';
       this.toast(`${stop.name} — ${acc} ${error >= 0 ? '+' : ''}${error.toFixed(2)} m · ${delay >= 0 ? '+' : ''}${Math.round(delay)} s`, Math.abs(error) <= tolerance ? 'ok' : 'info', 4);
       this.announcer.announce(stop, stop.isTerminus ? 'terminus' : 'arrival');
+      if (stop.isTerminus) {
+        // Terminating: the destination display tells people on the platform not to board.
+        this.playerModel.setDestination(this.line, this.line.language.startsWith('fr') ? 'Terminus · Ne pas monter' : 'Terminating · Do not board');
+        this.toast(`${stop.name}: terminus — all passengers alight, boarding disabled`, 'info', 5);
+      }
     });
     on('station:missed', ({ stop }) => this.toast(`Missed stop: ${stop.name}`, 'alarm', 4));
     on('station:departureAuthorized', () => { a.ding(); this.toast('Departure authorised — close the doors', 'ok', 3); });
@@ -405,7 +431,19 @@ export class Game {
       clearTimeout(this.annTimer);
       this.annTimer = setTimeout(() => { if (this.running) this.announcer.announce(this.route.stops[stop.k + 1], 'next'); }, 7000);
     });
-    on('run:complete', () => setTimeout(() => this.finish(true), 2500));
+    on('run:complete', () => {
+      // Evacuation complete: the train changes ends for its return journey — new destination and announcement.
+      const ret = this.line.loop ? this.line.directions.A : this.line.directions[this.direction === 'A' ? 'B' : 'A'];
+      this.playerModel.setDestination(this.line, ret.terminus);
+      this.passengers.terminating = false;
+      const fr = this.line.language.startsWith('fr');
+      this.audio.started && 'speechSynthesis' in window && this.settings.get('audio.voiceFallback') && setTimeout(() => {
+        const u = new SpeechSynthesisUtterance(fr ? `Ce train est à destination de ${ret.terminus}.` : `This train is for ${ret.terminus}.`);
+        u.lang = this.line.language; speechSynthesis.speak(u);
+      }, 600);
+      this.toast(`Train empty — now ${ret.name}. Boarding resumes on the return journey.`, 'ok', 4);
+      setTimeout(() => this.finish(true), 2500);
+    });
   }
 
   toast(text, kind = 'info', dur = 3) { this.bus.emit('hud:toast', { text, kind, dur }); }
@@ -414,8 +452,14 @@ export class Game {
     if (this.result) return;
     if (!completed) this.player.physics.v = 0;
     const res = this.scoring.result(completed);
+    const stops = res.stops || [];
     this.result = {
       ...res, completed, reason,
+      vehicleUid: this.vehicleUid, crashed: !!this.crash,
+      carried: this.passengers?.boardedTotal ?? 0,
+      missed: this.stations.served.filter((s) => s.missed).length,
+      punctuality: stops.length ? stops.filter((s) => Math.abs(s.delay ?? 0) <= 60).length / stops.length : null,
+      incidents: res.penalties.filter((p) => /SPAD|emergency|EB|collision/i.test(p.text)).reduce((a, p) => a + p.count, 0),
       line: this.line, direction: this.direction, train: this.specs,
       distanceKm: this.player.physics.odometer / 1000,
       seconds: this.time,
@@ -492,6 +536,7 @@ export class Game {
       case 'cabLight': A.cabLight(); break;
       case 'routeSelect': A.routeSelect(); break;
       case 'lineMap': A.lineMap(); break;
+      case 'networkMap': A.networkMap(); break;
       case 'ato':
         if (this.line.automation !== 'ato') { this.toast('This line has no automatic train operation.', 'info', 2); break; }
         this.ato = !this.ato;
@@ -594,6 +639,7 @@ export class Game {
       }
     });
     this.guard('passengers', () => this.passengers.update(dt, p.front));
+    this.guard('platform doors', () => this.updatePsd(dt));
     const st = this.snapshot();
     this.state = st;
     this.guard('cab', () => this.cabin.update(dt, st, this.time));
@@ -620,6 +666,7 @@ export class Game {
     if (this.mapAcc > 0.5) {
       this.mapAcc = 0;
       const ms = { ...trainMapState(route, p.front, this.stations), activeId: this.line.id, plannedId: this.planned.id, directionName: route.directionName };
+      this.guard('network screen', () => this.drawNetworkScreens());
       this.guard('line map', () => {
         const lm = this.cabin.lineMap;
         drawLineMap(lm.c.getContext('2d'), lm.c.width, lm.c.height, this.mapModel, ms);
@@ -627,6 +674,60 @@ export class Game {
         if (this.mapTarget) drawLineMap(this.mapTarget.getContext('2d'), this.mapTarget.width, this.mapTarget.height, this.mapModel, ms);
       });
     }
+  }
+
+  // ---- Platform screen doors (Line D) ----
+  /** The screen doors facing the player's train at its current stop (null when none). */
+  playerPsd() {
+    if (!this.line.platformScreenDoors) return null;
+    const sm = this.stations, k = sm.atStop;
+    if (k == null) return null;
+    const stp = this.route.stops[k];
+    const sv = this.world.stations.find((v) => v.index === (stp.station.mirrorOf ?? stp.station.index));
+    return sv?.psd?.[this.route.dir] || null;
+  }
+  psdLocked() { const p = this.playerPsd(); return !p || p.locked; }
+  psdBeep() { if (!this.audio.started) return; for (let i = 0; i < 4; i++) this.audio.tone(2650, 0.11, { at: i * 0.32, gain: 0.045, type: 'square' }); }
+  updatePsd(dt) {
+    if (!this.line.platformScreenDoors) return;
+    const mine = this.playerPsd(), p = this.player;
+    for (const sv of this.world.stations) for (const [dir, side] of Object.entries(sv.psd || {})) {
+      if (side === mine) {
+        const ev = side.update(dt, { obstructed: () => this.passengers.isObstructing(), trainAmount: p.doors.sides[this.route.stops[this.stations.atStop].doorSide].amount, warnSound: () => this.psdBeep() });
+        if (ev === 'obstructed') { this.toast('Platform doors: obstruction detected — reopening', 'warn', 3); this.audio.tone(880, 0.4, { gain: 0.06, type: 'square' }); }
+        if (ev === 'fault') { this.toast('PLATFORM DOOR FAULT — doors not locked, departure blocked. Reopen and close the doors.', 'alarm', 6); this.scoring.penalty(20, 'Platform door fault (forced closing)'); if (this.ato) setTimeout(() => this.running && this.openDoors(), 3000); }
+        if (ev === 'locked') this.bus.emit('psd:locked');
+        continue;
+      }
+      // Other trains (AI) at this platform: the screen doors follow their doors.
+      const route = this.routes[dir];
+      let amt = 0;
+      for (const t of this.traffic.trains) if (t.route === route && t.mode === 'dwell' && (t.route.stops[t.k]?.station.mirrorOf ?? t.route.stops[t.k]?.station.index) === sv.index) amt = Math.max(amt, t.doorOpen);
+      side.state = amt > 0.01 ? 'open' : 'locked'; side.amount = amt; side.fault = null;
+      side.update(0, {});
+    }
+  }
+
+  /** Live state for the network maps: position and heading of the train, next / previous station, direction. */
+  networkState(compact) {
+    const p = this.player, route = this.route, sm = this.stations;
+    const q = route.point(p.front, 0, 0, {});
+    const t = route.toTrack(p.front);
+    const heading = this.geom.heading(t) + (route.sign < 0 ? Math.PI : 0);
+    const k = sm.atStop ?? sm.nextStop;
+    const next = route.stops[sm.atStop != null ? Math.min(route.stops.length - 1, sm.atStop + 1) : k]?.name;
+    const prev = sm.atStop != null ? route.stops[sm.atStop - 1]?.name : route.stops[k - 1]?.name;
+    return { number: this.line.number, train: { x: q.x, z: q.z, heading }, next, prev, direction: route.directionName, others: this.remoteMapMarkers?.() || [], compact };
+  }
+  drawNetworkScreens() {
+    const ns = this.cabin.netScreen; if (!ns || !this.netModel) return;
+    const g = ns.c.getContext('2d'); if (!g) return;
+    const st = this.networkState(true);
+    // Cab screen: the whole network, slightly zoomed towards the train.
+    const v = this.netModel.fit(ns.c.width, ns.c.height, 26);
+    const view = { cx: v.cx * 0.6 + st.train.x * 0.4, cz: v.cz * 0.6 + st.train.z * 0.4, scale: v.scale * 1.25 };
+    drawNetwork(g, ns.c.width, ns.c.height, this.netModel, view, st);
+    ns.tex.needsUpdate = true;
   }
 
   /** Estimated seconds until the next trains reach station `index` in direction `dir` (passenger displays). */
@@ -664,6 +765,7 @@ export class Game {
     else if (s.overspeed !== 'none') alarm = { text: `OVERSPEED · permitted ${Math.round(s.permitted)} km/h`, color: '#ffb300' };
     else if (s.vigAlarm) alarm = { text: 'VIGILANCE · acknowledge now', color: '#ff7a00' };
     else if (J && !J.passed && !J.set && J.divergeS - p.front < 500) alarm = { text: `SET ROUTE FOR ${this.planned.service.toUpperCase()} · press ${this.input.labelFor('routeSelect')}`, color: '#ffb300' };
+    else if (this.stations.atStop != null && p.doors.locked && !this.psdLocked()) alarm = { text: this.playerPsd()?.fault ? 'PLATFORM DOOR FAULT · departure blocked · reopen and close the doors' : 'PLATFORM DOORS NOT LOCKED · traction interlocked', color: '#ffb300' };
     else if (this.ato) alarm = { text: `ATO · automatic operation (${this.input.labelFor('ato')} to drive manually)`, color: '#5ab0ff' };
     else if (info.standing && !p.doors.locked && info.dwell.authorized) alarm = { text: 'DEPARTURE AUTHORISED · close doors', color: '#3cff8a' };
     const doorsOpenSide = p.doors.openSide();

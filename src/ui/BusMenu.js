@@ -1,6 +1,8 @@
 // Bus section of the menu: game modes, route selection with a printed-style route strip,
 // vehicle selection (career unlocks, depot status), time / day / weather, depot & departures,
 // career progress, custom route builder / import / export, MP3 announcements, bus controls.
+import { earningsTable } from './Menu.js';
+import { eur } from '../economy/Economy.js';
 import { escapeXml as esc } from './NetworkMap.js';
 import { BUS_ACTIONS } from '../bus/BusControls.js';
 import { CAREER, RouteError } from '../bus/BusRepository.js';
@@ -65,8 +67,13 @@ export class BusMenu {
     const s = save.data.bus ||= {};
     s.career ||= { xp: 0, shifts: 0, aeroval: false, carried: 0, km: 0 };
     this.sel = { mode: 'career', routeId: repo.routes[0]?.id, dir: 'A', vehicle: 'urbano12', hour: 8, day: 2, weather: 'clear', dynamic: false, ...(s.sel || {}) };
+    const eco = menu.economy;
+    if (eco && !eco.vehicle(this.sel.busUid)) { const first = eco.owned('bus')[0]; if (first) { this.sel.busUid = first.uid; this.sel.vehicle = first.model; } }
   }
   get career() { return this.save.data.bus.career; }
+  get economy() { return this.menu.economy; }
+  /** Owned buses (economy fleet) with their specifications. */
+  ownedBuses() { return (this.economy?.owned('bus') || []).map((v) => ({ v, spec: this.repo.vehicle(v.model) })).filter((x) => x.spec); }
   persist() { this.save.data.bus.sel = this.sel; this.save.save(); }
   root() { return this.menu.root; }
   frame(title, body) { this.menu.context = 'main'; return this.menu.frame(title, body, { wide: true }); }
@@ -87,7 +94,7 @@ export class BusMenu {
       <div class="row-tools"><span class="sub">Career level ${lvl} · ${this.career.xp} XP · ${this.career.shifts} shift(s) · ${this.career.carried} passengers · ${this.career.km.toFixed(1)} km</span>
         <button class="btn small" id="bm-depot">Depot & fleet</button><button class="btn small" id="bm-custom">Custom routes</button><button class="btn small" id="bm-controls">Bus controls</button></div>
       <div id="bm-setup"></div>`);
-    body.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { this.sel.mode = b.dataset.mode; const list = this.routesForMode(); if (!list.find((r) => r.id === this.sel.routeId)) this.sel.routeId = list[0]?.id; if (this.sel.mode === 'aeroval') this.sel.vehicle = 'aeroshuttle'; this.persist(); this.show(); }));
+    body.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { this.sel.mode = b.dataset.mode; const list = this.routesForMode(); if (!list.find((r) => r.id === this.sel.routeId)) this.sel.routeId = list[0]?.id; if (this.sel.mode === 'aeroval') { const a = this.economy?.owned('bus').find((v) => v.model === 'aeroshuttle'); if (a) { this.sel.busUid = a.uid; this.sel.vehicle = a.model; } } this.persist(); this.show(); }));
     body.querySelector('#bm-depot').onclick = () => this.depot();
     body.querySelector('#bm-custom').onclick = () => this.custom();
     body.querySelector('#bm-controls').onclick = () => this.controls();
@@ -107,11 +114,12 @@ export class BusMenu {
         ${r ? `<div class="dir-toggle"><button class="btn small ${this.sel.dir === 'A' ? 'primary' : ''}" data-dir="A">→ ${esc(r.stops.at(-1).name)}</button><button class="btn small ${this.sel.dir === 'B' ? 'primary' : ''}" data-dir="B">→ ${esc(r.stops[0].name)}</button></div>
         <canvas class="strip-map" id="bm-strip" width="1600" height="420"></canvas>` : ''}`}
       </div>
-      <div><h3>Vehicle</h3><div class="route-list">${this.repo.vehicles.map((v) => { const f = fleet[v.id] || {}; const ok = this.unlockedVehicle(v); const en = f.energy != null ? f.energy / (v.powertrain === 'electric' ? v.battery : v.fuelCapacity) : 0.9; return `<button class="line-item ${v.id === this.sel.vehicle ? 'sel' : ''} ${ok ? '' : 'locked'}" data-veh="${v.id}" ${ok ? '' : 'disabled'}>
+      <div><h3>Vehicle <span class="balance-chip">💶 ${eur(this.economy.balance)}</span></h3><div class="route-list">${this.ownedBuses().map(({ v: o, spec: v }) => { const ok = this.unlockedVehicle(v); const max = v.powertrain === 'electric' ? v.battery : v.fuelCapacity; const en = o.energy != null ? o.energy / max : 0.9; const dmg = o.damage && Object.values(o.damage.zones || {}).some((x) => x > 0.05); return `<button class="line-item ${o.uid === this.sel.busUid ? 'sel' : ''} ${ok ? '' : 'locked'}" data-veh="${o.uid}" ${ok ? '' : 'disabled'}>
           <span style="width:36px;height:20px;border-radius:4px;background:${v.livery.body};border-bottom:5px solid ${v.livery.stripe}"></span>
-          <span><b>${esc(v.name)}</b> <span class="sub">${v.length + (v.trailerLength || 0) > 13 ? `${(v.length + v.trailerLength - 1.5).toFixed(0)} m` : `${v.length} m`} · ${(v.mass / 1000).toFixed(1)} t · ${v.capacity} pax · ${v.power} kW ${v.powertrain}</span><br><span class="sub">${esc(v.description)}</span>
-          <div class="gauge"><i style="width:${Math.round((f.condition ?? 1) * 100)}%"></i></div><span class="sub">condition ${Math.round((f.condition ?? 1) * 100)} % · ${v.powertrain === 'electric' ? 'battery' : 'fuel'} ${Math.round(en * 100)} %</span></span>
+          <span><b>${esc(o.uid)}</b> · ${esc(v.name)} <span class="sub">${v.length + (v.trailerLength || 0) > 13 ? `${(v.length + v.trailerLength - 1.5).toFixed(0)} m` : `${v.length} m`} · ${v.capacity} pax · ${v.power} kW ${v.powertrain}</span><br>
+          <div class="gauge"><i style="width:${Math.round(o.condition * 100)}%"></i></div><span class="sub">condition ${Math.round(o.condition * 100)} % · ${v.powertrain === 'electric' ? 'battery' : 'fuel'} ${Math.round(en * 100)} % · ${Math.round(o.odometer)} km${this.economy.serviceDue(o) ? ' · <b class="warn">maintenance due</b>' : ''}${dmg ? ' · <b class="warn">body damage</b>' : ''}</span></span>
           ${ok ? '' : `<span class="tag">level ${CAREER.vehicleLevel[v.id]}</span>`}</button>`; }).join('')}</div>
+        <p class="sub">Buy more buses and repair them in <a href="#" data-nav="depot">Depot & fleet</a>.</p>
         <h3>Conditions</h3>
         <div class="cond-row"><label>Start <input type="range" id="bm-hour" min="0" max="23.5" step="0.5" value="${this.sel.hour}"><output>${formatClock(this.sel.hour * 3600, false)}</output></label>
           <label>Day <select id="bm-day">${DAYS.slice(1).map((d, i) => `<option value="${i + 1}" ${i + 1 === this.sel.day ? 'selected' : ''}>${d}</option>`).join('')}</select></label></div>
@@ -122,7 +130,7 @@ export class BusMenu {
       </div></div>`;
     el.querySelectorAll('[data-route]').forEach((b) => (b.onclick = () => { if (!this.unlockedRoute(this.repo.route(b.dataset.route))) return; this.sel.routeId = b.dataset.route; this.persist(); this.setup(el); }));
     el.querySelectorAll('[data-dir]').forEach((b) => (b.onclick = () => { this.sel.dir = b.dataset.dir; this.persist(); this.setup(el); }));
-    el.querySelectorAll('[data-veh]').forEach((b) => (b.onclick = () => { this.sel.vehicle = b.dataset.veh; this.persist(); this.setup(el); }));
+    el.querySelectorAll('[data-veh]').forEach((b) => (b.onclick = () => { this.sel.busUid = b.dataset.veh; this.sel.vehicle = this.economy.vehicle(b.dataset.veh)?.model || this.sel.vehicle; this.persist(); this.setup(el); }));
     const hr = el.querySelector('#bm-hour'); hr.oninput = () => { this.sel.hour = Number(hr.value); hr.nextElementSibling.textContent = formatClock(this.sel.hour * 3600, false); this.persist(); };
     el.querySelector('#bm-day').onchange = (e) => { this.sel.day = Number(e.target.value); this.persist(); };
     el.querySelector('#bm-weather').onchange = (e) => { this.sel.weather = e.target.value; this.persist(); };
@@ -141,13 +149,20 @@ export class BusMenu {
       this.menu.notice(msgs.join('\n'));
     });
     el.querySelector('#bm-start').onclick = () => {
-      const veh = this.repo.vehicle(this.sel.vehicle);
+      const own = this.economy.vehicle(this.sel.busUid);
+      if (!own) { this.menu.notice('Choose one of your buses (or buy one in Depot & fleet).'); return; }
+      const veh = this.repo.vehicle(own.model);
+      if (!this.unlockedVehicle(veh)) { this.menu.notice('This bus is not unlocked in career mode yet.'); return; }
       if (!free && !r) { this.menu.notice('Choose a route first.'); return; }
-      this.menu.emit('busPlay', { mode: this.sel.mode, route: free ? null : r, dir: this.sel.dir, spec: veh, netData: this.repo.network(r?.network), hour: this.sel.hour, day: this.sel.day, weather: this.sel.weather, dynamicWeather: this.sel.dynamic });
+      this.menu.emit('busPlay', { mode: this.sel.mode, route: free ? null : r, dir: this.sel.dir, spec: veh, vehicleUid: own.uid, netData: this.repo.network(r?.network), hour: this.sel.hour, day: this.sel.day, weather: this.sel.weather, dynamicWeather: this.sel.dynamic });
     };
   }
 
   depot() {
+    this.menu.show('depot');
+  }
+
+  depotTimetable() {
     const fleet = this.save.data.bus.fleet || {};
     const now = 6 * 3600;
     const deps = [];
@@ -198,6 +213,10 @@ export class BusMenu {
   }
 
   summary(r) {
+    if (r.vehicleUid && this.economy?.vehicle(r.vehicleUid)) {
+      r.settlement = this.economy.settleBus({ ...r, label: `${r.route?.route || 'free'} · ${r.vehicleUid}`, uid: r.vehicleUid, stopsSkipped: r.missed });
+      r.vehicleAfter = this.economy.vehicle(r.vehicleUid);
+    }
     const xp = r.completed ? Math.round(r.score * 0.8 + r.carried * 4 + (r.mode === 'career' ? 200 : 0)) : 0;
     const c = this.career;
     const before = CAREER.level(c.xp);
@@ -212,6 +231,8 @@ export class BusMenu {
       <div class="table-wrap"><table class="stations"><thead><tr><th>Stop</th><th>Position</th><th>Delay</th><th>Accuracy</th><th>Punctuality</th></tr></thead><tbody>
       ${r.stops.map((s) => `<tr><td>${esc(s.name)}</td><td>${s.error >= 0 ? '+' : ''}${s.error.toFixed(1)} m</td><td>${Math.round(s.delay)} s</td><td>${s.acc}</td><td>${s.punct}</td></tr>`).join('') || '<tr><td colspan="5">No stops served</td></tr>'}</tbody></table></div>
       ${r.penalties.length ? `<h3>Penalties (−${r.penaltyTotal})</h3><ul class="penalties">${r.penalties.map((p) => `<li>${esc(p.text)}${p.count > 1 ? ` ×${p.count}` : ''} <b>−${p.points}</b></li>`).join('')}</ul>` : '<p>No penalties.</p>'}
+      ${r.incidents?.length ? `<h3>Incident report</h3><ul class="penalties">${r.incidents.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+      ${earningsTable(r.settlement, r.vehicleAfter)}
       <div class="row-tools"><button class="btn primary" id="bs-again">Another shift</button><button class="btn ghost" data-nav="main">Main menu</button></div></div></div>`;
     this.menu.root.querySelector('#bs-again').onclick = () => this.show();
   }

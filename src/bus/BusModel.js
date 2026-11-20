@@ -25,6 +25,33 @@ export function drawLed(led, number, dest, color = '#ff9a1a') {
   led.t.needsUpdate = true;
 }
 
+let DMG_TEX;
+/** Procedural textures: scratched paint for dents, radial cracks for glass. */
+function damageTextures() {
+  if (DMG_TEX) return DMG_TEX;
+  const mk = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const scratch = mk(256, 256, (g) => {
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 140; i++) { g.strokeStyle = `rgba(${Math.random() < 0.5 ? '90,90,90' : '160,150,140'},${0.25 + Math.random() * 0.5})`; g.lineWidth = 0.5 + Math.random() * 1.8; g.beginPath(); const x = Math.random() * 256, y = Math.random() * 256, a = (Math.random() - 0.5) * 0.6; g.moveTo(x, y); g.lineTo(x + Math.cos(a) * (20 + Math.random() * 90), y + Math.sin(a) * (20 + Math.random() * 90)); g.stroke(); }
+    for (let i = 0; i < 18; i++) { g.fillStyle = 'rgba(70,60,55,0.35)'; g.beginPath(); g.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 7, 0, Math.PI * 2); g.fill(); }
+  });
+  const crack = mk(512, 512, (g) => {
+    g.clearRect(0, 0, 512, 512);
+    const cx = 230 + Math.random() * 50, cy = 220 + Math.random() * 60;
+    g.strokeStyle = 'rgba(235,240,245,0.85)'; g.lineCap = 'round';
+    for (let i = 0; i < 22; i++) {
+      let x = cx, y = cy, a = (i / 22) * Math.PI * 2 + Math.random() * 0.3;
+      g.lineWidth = 1.6; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 9; k++) { a += (Math.random() - 0.5) * 0.5; const L = 14 + Math.random() * 30; x += Math.cos(a) * L; y += Math.sin(a) * L; g.lineTo(x, y); }
+      g.stroke();
+    }
+    for (let r = 26; r < 220; r += 34 + Math.random() * 20) { g.lineWidth = 1; g.beginPath(); for (let k = 0; k <= 24; k++) { const a = (k / 24) * Math.PI * 2, rr = r * (0.85 + Math.random() * 0.3); const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr; k ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI * 2); g.fill();
+  });
+  DMG_TEX = { scratch, crack };
+  return DMG_TEX;
+}
+
 export class BusModel {
   constructor(spec) {
     this.spec = spec;
@@ -107,25 +134,31 @@ export class BusModel {
     // Front face: windscreen, destination display, lights, bumper.
     const zf = this.zFront;
     add(new THREE.PlaneGeometry(W - 0.15, dd ? 1.3 : 1.75), M.glass, 0, dd ? 1.85 : 1.95, zf - 0.01);
-    add(Bx(W, 0.3, 0.12), M.dark, 0, 0.5, zf - 0.03);
+    this.windscreen = { w: W - 0.15, h: dd ? 1.3 : 1.75, y: dd ? 1.85 : 1.95, z: zf - 0.02 };
+    this.bumperF = add(Bx(W, 0.3, 0.12), M.dark, 0, 0.5, zf - 0.03);
+    // Per-side lamp materials (they can be broken one at a time).
+    this.headMats = { '-1': M.head.clone(), '1': M.head.clone() };
+    this.tailMats = { '-1': M.brake.clone(), '1': M.brake.clone() };
     add(Bx(W, 0.8, 0.05), M.body, 0, 0.7, zf + 0.025); // front panel below the windscreen
     this.ledFront = ledTexture(512, 64);
     add(new THREE.PlaneGeometry(W - 0.4, 0.3), new THREE.MeshBasicMaterial({ map: this.ledFront.t }), 0, dd ? 2.55 : 3.0, zf - 0.02).rotation.y = Math.PI;
     if (dd) { add(new THREE.PlaneGeometry(W - 0.15, 1.1), M.glass, 0, 3.35, zf - 0.01); }
     for (const sx of [-1, 1]) {
-      add(new THREE.CircleGeometry(0.13, 16).rotateY(Math.PI), M.head, sx * (W / 2 - 0.35), 0.82, zf - 0.04);
+      add(new THREE.CircleGeometry(0.13, 16).rotateY(Math.PI), this.headMats[sx], sx * (W / 2 - 0.35), 0.82, zf - 0.04);
       add(Bx(0.18, 0.1, 0.05), sx < 0 ? M.indL : M.indR, sx * (W / 2 - 0.12), 0.82, zf - 0.04);
     }
     // Side destination display near the front door.
     this.ledSide = ledTexture(512, 64);
     add(new THREE.PlaneGeometry(1.6, 0.22).rotateY(Math.PI / 2), new THREE.MeshBasicMaterial({ map: this.ledSide.t }), W / 2 + 0.01, dd ? 2.5 : 2.48, zf + 3.2);
     // Mirrors (exterior arms) — the cockpit renders their images.
-    for (const sx of [-1, 1]) { add(Bx(0.06, 0.06, 0.5), M.dark, sx * (W / 2 + 0.15), 2.5, zf + 0.15); add(Bx(0.08, 0.45, 0.25), M.dark, sx * (W / 2 + 0.4), 2.25, zf + 0.25); }
+    this.mirrorParts = {};
+    for (const sx of [-1, 1]) { const arm = add(Bx(0.06, 0.06, 0.5), M.dark, sx * (W / 2 + 0.15), 2.5, zf + 0.15); const head = add(Bx(0.08, 0.45, 0.25), M.dark, sx * (W / 2 + 0.4), 2.25, zf + 0.25); this.mirrorParts[sx] = { arm, head }; }
     // Rear face of the last section (built below for trailers).
     const rearFace = (parent, zr) => {
       add(Bx(W, 2.3, 0.08), M.body, 0, 1.4, zr - 0.04, parent);
       add(new THREE.PlaneGeometry(W - 0.6, 0.7), M.glass, 0, 2.0, zr + 0.01, parent);
-      for (const sx of [-1, 1]) { add(Bx(0.2, 0.25, 0.05), M.brake, sx * (W / 2 - 0.25), 0.95, zr + 0.02, parent); add(Bx(0.18, 0.1, 0.05), sx < 0 ? M.indL : M.indR, sx * (W / 2 - 0.25), 1.18, zr + 0.02, parent); add(Bx(0.12, 0.1, 0.05), M.rev, sx * (W / 2 - 0.55), 0.95, zr + 0.02, parent); }
+      this.bumperR = add(Bx(W, 0.28, 0.12), M.dark, 0, 0.5, zr + 0.03, parent); this.bumperR.userData.parent = parent;
+      for (const sx of [-1, 1]) { add(Bx(0.2, 0.25, 0.05), this.tailMats[sx], sx * (W / 2 - 0.25), 0.95, zr + 0.02, parent); add(Bx(0.18, 0.1, 0.05), sx < 0 ? M.indL : M.indR, sx * (W / 2 - 0.25), 1.18, zr + 0.02, parent); add(Bx(0.12, 0.1, 0.05), M.rev, sx * (W / 2 - 0.55), 0.95, zr + 0.02, parent); }
       this.ledRear = ledTexture(128, 64);
       add(new THREE.PlaneGeometry(0.6, 0.3), new THREE.MeshBasicMaterial({ map: this.ledRear.t }), 0, 2.55, zr + 0.02, parent);
     };
@@ -271,8 +304,15 @@ export class BusModel {
     });
     // Lights.
     const night = v.lights > 0;
-    this.M.head.color.setHex(night ? (v.lights === 2 ? 0xffffff : 0xfff4d6) : 0x777777);
-    this.M.brake.color.setHex(ph.brakeP > 0.05 || v.parking ? 0xff1a00 : night ? 0x661100 : 0x330000);
+    const dmg = v.damage;
+    if (dmg && dmg.version !== this.dmgVersion) { this.dmgVersion = dmg.version; this.applyDamage(dmg); }
+    const flicker = dmg?.failures.includes('electrical') && Math.sin(t * 23) * Math.sin(t * 7.1) > 0.3;
+    const headCol = flicker ? 0x222222 : night ? (v.lights === 2 ? 0xffffff : 0xfff4d6) : 0x777777;
+    for (const sx of ['-1', '1']) this.headMats[sx].color.setHex(dmg?.broken[sx === '-1' ? 'headL' : 'headR'] ? 0x161616 : headCol);
+    const tailCol = ph.brakeP > 0.05 || v.parking ? 0xff1a00 : night ? 0x661100 : 0x330000;
+    for (const sx of ['-1', '1']) this.tailMats[sx].color.setHex(dmg?.broken[sx === '-1' ? 'tailL' : 'tailR'] ? 0x1a0a08 : tailCol);
+    if (dmg?.distortion) { this.body.rotation.z += dmg.distortion * 0.022; this.body.rotation.y = dmg.distortion * 0.012; }
+    if (dmg) this.body.position.y += dmg.rideDrop();
     this.M.rev.color.setHex(v.gearSel === 'R' ? 0xffffff : 0x444444);
     const bl = v.blinkOn;
     this.M.indL.color.setHex(bl && (v.indicator === 'left' || v.hazards) ? 0xffa000 : 0x553300);
@@ -281,6 +321,58 @@ export class BusModel {
     const sm = v.stopRequest ? this.stopSignTex.on : this.stopSignTex.off;
     if (this.stopSignMat.map !== sm) { this.stopSignMat.map = sm; this.stopSignMat.needsUpdate = true; }
     void t;
+  }
+
+  /**
+   * Visible damage: dents deformed into the panels where the bus was hit, scratched paint, cracked windscreen and
+   * side windows, broken lamps, torn-off mirrors, bumpers pushed in, a distorted body after major impacts.
+   */
+  applyDamage(d) {
+    if (this.dmgGroup) { this.body.remove(this.dmgGroup); this.dmgGroup.traverse((o) => o.geometry?.dispose()); }
+    const G = this.dmgGroup = new THREE.Group(); this.body.add(G);
+    const sp = this.spec, W = sp.width, zf = this.zFront, zr = this.zFront + (sp.trailerLength ? sp.length : sp.length);
+    const T = damageTextures();
+    const dentMat = this.M.body.clone(); dentMat.color.multiplyScalar(0.82); dentMat.map = T.scratch; dentMat.side = THREE.DoubleSide;
+    for (const dent of d.dents) {
+      const w = Math.min(2.6, dent.r * 2), h = Math.min(1.15, dent.r * 1.3);
+      const geo = new THREE.PlaneGeometry(w, h, 14, 8);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i) / (w / 2), y = pos.getY(i) / (h / 2), rr = x * x + y * y;
+        const push = dent.depth * Math.exp(-rr * 2.2) * (1 + 0.25 * Math.sin(x * 9 + dent.along) * Math.sin(y * 7));
+        pos.setZ(i, -push); // into the body
+      }
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, dentMat);
+      if (dent.side === 'left' || dent.side === 'right') {
+        const sx = dent.side === 'left' ? -1 : 1;
+        m.position.set(sx * (W / 2 + 0.012), 0.9, -dent.along); m.rotation.y = sx * Math.PI / 2;
+      } else {
+        const front = dent.side === 'front';
+        m.position.set(dent.along, 0.8, front ? zf - 0.015 : zr + 0.015); m.rotation.y = front ? Math.PI : 0;
+      }
+      G.add(m);
+    }
+    // Cracked glass overlays (visible from outside and from the cab).
+    const crack = (w, h, x, y, z, ry, amount) => {
+      const mat = new THREE.MeshBasicMaterial({ map: T.crack, transparent: true, opacity: Math.min(0.95, 0.3 + amount * 0.7), depthWrite: false, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); m.rotation.y = ry; m.renderOrder = 6; G.add(m);
+    };
+    if (d.broken.windscreen > 0.2) { const ws = this.windscreen; crack(ws.w * (0.5 + d.broken.windscreen * 0.5), ws.h, d.dents.find((x) => x.side === 'front')?.along * 0.5 || 0, ws.y, ws.z, 0, d.broken.windscreen); }
+    for (const [side, key] of [[-1, 'windowsL'], [1, 'windowsR']]) {
+      if (d.broken[key] < 0.2) continue;
+      for (const dent of d.dents.filter((x) => x.side === (side < 0 ? 'left' : 'right'))) crack(1.6, 1.1, side * (W / 2 + 0.02), 1.9, -dent.along, side * Math.PI / 2, d.broken[key]);
+    }
+    // Mirrors torn off / hanging.
+    for (const sx of [-1, 1]) {
+      const br = d.broken[sx < 0 ? 'mirrorL' : 'mirrorR'], mp = this.mirrorParts[sx];
+      mp.head.visible = !br; mp.arm.rotation.z = br ? sx * 0.9 : 0; mp.arm.position.y = br ? 2.32 : 2.5;
+    }
+    // Bumpers pushed in and twisted.
+    const fd = d.zones.front, rd = d.zones.rear;
+    const fDent = d.dents.filter((x) => x.side === 'front').sort((a, b) => b.depth - a.depth)[0];
+    this.bumperF.position.z = zf - 0.03 + fd * 0.22; this.bumperF.rotation.set(fd * 0.12, fDent ? Math.sign(fDent.along) * fd * 0.18 : 0, fd * 0.06);
+    if (this.bumperR) { this.bumperR.position.z = (this.bumperR.userData.z0 ??= this.bumperR.position.z) - rd * 0.2; this.bumperR.rotation.set(-rd * 0.1, 0, rd * 0.05); }
   }
 
   /** World transform helper for points in the front-section local frame. */

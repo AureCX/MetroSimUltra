@@ -174,6 +174,8 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
     elevated: raw.elevated ? { height: num(raw.elevated.height, 9, { min: 5, max: 30 }) } : null,
     // 'ato': trains run automatically (the driver can take over).
     automation: raw.automation === 'ato' ? 'ato' : null,
+    // Platform screen doors along every platform edge (Line D).
+    platformScreenDoors: !!raw.platformScreenDoors,
     speedRestrictions: restrictions,
     loop: loop ? { junctionIndex: loop.junctionIndex, returnIndex: loop.returnIndex, junction: stations[loop.junctionIndex].name, stations: stations.slice(loop.junctionIndex + 1, loop.returnIndex).map((s) => s.name) } : null,
     directions: loop ? {

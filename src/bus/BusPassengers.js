@@ -33,6 +33,56 @@ export class BusPassengers {
   get count() { return this.onboard.length + this.boarding.filter((b) => b.state === 'inside').length; }
   get capacity() { return this.v.spec.capacity; }
 
+  /**
+   * Collision: passengers are thrown opposite to the impulse. Standing passengers stumble (strong impacts: they
+   * fall and get up again after a while), seated ones lurch in their seat. Movement stays within each person's
+   * place so nobody passes through seats or walls. Returns the number of passengers who fell.
+   */
+  onImpact(res, ph) {
+    const h = ph.heading();
+    // Impulse direction in the bus frame (forward f, right l); people move the other way relative to the bus.
+    const jf = (res.Jx * h.fx + res.Jz * h.fz), jl = (res.Jx * h.rx + res.Jz * h.rz), jn = Math.hypot(jf, jl) || 1;
+    const df = -jf / jn, dl = -jl / jn, k = Math.min(1, res.dv / 7);
+    let fell = 0;
+    for (const o of this.onboard) {
+      const r = this.rand();
+      const falls = !o.seated && k > 0.35 && r < k * 0.9;
+      if (falls) fell++;
+      o.react = { t: 0, df, dl, k: k * (0.7 + r * 0.6), fall: falls, base: { x: o.p.g.position.x, z: o.p.g.position.z, ry: o.p.g.rotation.y }, recover: falls ? 4 + r * 4 : 1.2 + k * 1.5 };
+    }
+    if (fell) this.injured = (this.injured || 0) + fell;
+    this.comfortHits += Math.round(k * 6);
+    return fell;
+  }
+  stepReaction(o, dt) {
+    const R = o.react, p = o.p;
+    R.t += dt;
+    // Bus frame: −z forward, +x right (BusModel local frame).
+    const shift = Math.min(0.28, R.k * 0.35);                 // stays within the person's place
+    const ease = R.t < 0.25 ? R.t / 0.25 : Math.max(0, 1 - (R.t - R.recover) / 1.2);
+    const lx = R.dl * shift * ease, lz = -R.df * shift * ease;
+    p.g.position.x = R.base.x + lx; p.g.position.z = R.base.z + lz;
+    if (o.seated) {
+      p.torso.rotation.x = Math.max(-0.9, Math.min(0.9, R.df * 0.9 * R.k)) * ease;
+      p.torso.rotation.z = Math.max(-0.6, Math.min(0.6, -R.dl * 0.6 * R.k)) * ease;
+    } else if (R.fall) {
+      // Falls over (towards the throw direction), lies a moment, gets up.
+      const lie = R.t < 0.45 ? R.t / 0.45 : R.t < R.recover ? 1 : Math.max(0, 1 - (R.t - R.recover) / 1.5);
+      p.g.rotation.x = -R.df * 1.35 * lie; p.g.rotation.z = -R.dl * 1.35 * lie;
+      p.g.position.y = 0.38 - 0.25 * lie;
+      p.arms.forEach((a) => { a.sh.rotation.x = -1.2 * lie; });
+    } else {
+      // Stumbles: leans, catches the rail.
+      p.torso.rotation.x = R.df * 0.7 * R.k * ease; p.torso.rotation.z = -R.dl * 0.5 * R.k * ease;
+      p.arms[0].sh.rotation.x = -2.2 * ease;
+    }
+    if (R.t > R.recover + 1.6) {
+      p.g.position.set(R.base.x, o.seated ? p.g.position.y : 0.38, R.base.z);
+      p.g.rotation.set(0, R.base.ry, 0); p.torso.rotation.set(0, 0, 0);
+      o.react = null;
+    }
+  }
+
   /** Driver's ticket machine: sells a single ticket to the passenger paying cash (refused when nobody is waiting). */
   sellTicket() {
     if (this.cashWaiting > this.ticketsToHand) { this.ticketsToHand++; return true; }
@@ -199,6 +249,7 @@ export class BusPassengers {
     // On-board: standing passengers sway with the bus; harsh braking makes them stagger.
     const ax = v.ph.ax, ay = v.ph.ay;
     for (const o of this.onboard) {
+      if (o.react) { this.stepReaction(o, dt); o.p.animate(dt, t); continue; }
       if (o.seated) { o.p.torso.rotation.x = Math.max(-0.25, Math.min(0.25, ax * 0.03)); continue; }
       o.p.torso.rotation.x = Math.max(-0.5, Math.min(0.5, -ax * 0.06));
       o.p.torso.rotation.z = Math.max(-0.35, Math.min(0.35, ay * 0.05));

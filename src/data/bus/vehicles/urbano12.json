@@ -2,6 +2,8 @@
  "id": "urbano12",
  "order": 1,
  "name": "Urbano 12",
+ "price": 60000,
+ "serviceIntervalKm": 250,
  "type": "standard",
  "description": "Standard 12 m diesel city bus, 3 doors, 6-speed automatic.",
  "length": 12.0,

@@ -102,7 +102,7 @@ export class BusCockpit {
       const cam = new THREE.PerspectiveCamera(32, 160 / 240, 0.3, 160);
       cam.position.set(sx * (W / 2 + 0.4), 2.3, zf + 0.4);
       model.body.add(cam);
-      return { rt, cam, sx, i };
+      return { rt, cam, sx, i, face };
     });
     this.intCam = new THREE.PerspectiveCamera(80, 1.6, 0.1, 60);
     this.intCam.position.set(W / 2 - 0.3, sp.type === 'doubledecker' ? 2.2 : 2.45, model.zRear - (sp.trailerLength ? sp.length - 2 : 0.6) * 0.0 - 0.8);
@@ -271,10 +271,12 @@ export class BusCockpit {
       ['P', '#ff3020', v.parking], ['⇦', '#2fff6a', (v.indicator === 'left' || v.hazards) && v.blinkOn], ['⇨', '#2fff6a', (v.indicator === 'right' || v.hazards) && v.blinkOn],
       ['DOORS', '#ffb300', !v.doorsClosed], ['STOP', '#2fff6a', v.stopRequest], ['KNEEL', '#ffb300', v.kneelT > 0.2], ['AIR', '#ff3020', v.airPressure < 6.5],
       ['ABS', '#ffb300', ph.slipping], ['≣D', '#3a8bff', v.lights === 2], ['SOS', '#ff3020', v.emergency],
+      ['ENG', '#ff3020', v.damage.failures.includes('engine')], ['STEER', '#ffb300', v.damage.failures.includes('steering')],
+      ['BRK', '#ff3020', v.damage.failures.includes('brakes')], ['DMG', '#ffb300', v.damage.any],
     ];
     lamps.forEach(([t, c, on], i) => {
-      const x = 60 + i * 92, y = 352;
-      g.fillStyle = on ? c : '#1a1f25'; g.font = 'bold 22px Arial'; g.fillText(t, x, y);
+      const x = 46 + i * (W - 92) / (lamps.length - 1), y = 352;
+      g.fillStyle = on ? c : '#1a1f25'; g.font = 'bold 19px Arial'; g.fillText(t, x, y);
     });
     this.cluster.t.needsUpdate = true;
   }
@@ -342,7 +344,9 @@ export class BusCockpit {
     if (!this.visible) return;
     const prev = renderer.getRenderTarget();
     const m = this.mirrors[frame % 2];
-    if (frame % 3 !== 2) { renderer.setRenderTarget(m.rt); renderer.render(scene, m.cam); }
+    // A mirror torn off in a collision shows nothing.
+    for (const mm of this.mirrors) { const br = this.v.damage.broken[mm.sx < 0 ? 'mirrorL' : 'mirrorR']; mm.face.visible = !br; }
+    if (frame % 3 !== 2 && m.face.visible) { renderer.setRenderTarget(m.rt); renderer.render(scene, m.cam); }
     else if (frame % 6 === 2) { renderer.setRenderTarget(this.rtInterior); renderer.render(scene, this.intCam); }
     renderer.setRenderTarget(prev);
   }

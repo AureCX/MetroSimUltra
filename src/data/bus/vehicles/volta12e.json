@@ -2,6 +2,8 @@
  "id": "volta12e",
  "order": 3,
  "name": "Volta 12e",
+ "price": 140000,
+ "serviceIntervalKm": 350,
  "type": "electric",
  "description": "Battery-electric 12 m bus: silent, instant torque, regenerative braking, 350 kWh.",
  "length": 12.1,

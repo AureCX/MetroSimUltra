@@ -2,6 +2,8 @@
  "id": "urbano18",
  "order": 2,
  "name": "Urbano 18 G",
+ "price": 110000,
+ "serviceIntervalKm": 250,
  "type": "articulated",
  "description": "Articulated 18 m bus: long, heavy, wide turning circle, 4 doors.",
  "length": 12.1,

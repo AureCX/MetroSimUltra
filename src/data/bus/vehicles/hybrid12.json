@@ -2,6 +2,8 @@
  "id": "hybrid12",
  "order": 4,
  "name": "Hybride 12h",
+ "price": 95000,
+ "serviceIntervalKm": 300,
  "type": "hybrid",
  "description": "Diesel-electric hybrid: electric launch and regenerative braking, lower fuel use.",
  "length": 12.0,

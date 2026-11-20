@@ -143,7 +143,12 @@ export class Traffic {
   }
 
   drive(c, dt, t, player, busFoot, peds) {
-    if (c.crashed) { c.v = 0; this.blink(c, t, true, true); return; }
+    if (c.crashed) {
+      // Wrecked car: stays where the impact left it (pushed / spun), hazards flashing.
+      c.v = 0; this.blink(c, t, true, true);
+      c.g.position.set(c.pos.x, this.net.heightAt(c.pos.x, c.pos.z), c.pos.z); c.g.rotation.y = Math.atan2(-c.pos.dx, -c.pos.dz);
+      return;
+    }
     const link = c.links[0];
     const v0 = (Math.min(link.speed, c.T.vmax) / 3.6) * c.v0f * env_wet(this.weatherWet);
     let gap = Infinity, dv = 0;

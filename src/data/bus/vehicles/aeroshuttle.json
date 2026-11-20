@@ -2,6 +2,8 @@
  "id": "aeroshuttle",
  "order": 5,
  "name": "Aéroval Shuttle 13",
+ "price": 125000,
+ "serviceIntervalKm": 350,
  "type": "shuttle",
  "description": "Airport shuttle: few seats, wide doors on both sides, luggage racks.",
  "length": 13.0,

@@ -73,6 +73,39 @@ export class BusAudio {
   validate(ok) { this.a.tone(ok ? 1760 : 440, 0.12, { gain: 0.05 }); }
   stopRequest() { this.a.tone(1046, 0.25, { gain: 0.06, type: 'triangle' }); this.a.tone(784, 0.35, { at: 0.25, gain: 0.06, type: 'triangle' }); }
   collision(k) { this.a.crash(k, false); }
+
+  /** Layered impact sound scaled by severity k (0..~1.4): metal impact, glass, bodywork, mechanical, alarm. */
+  impact({ k, glass, deform, mechanical }) {
+    const a = this.a; if (!a.started) return;
+    const ctx = a.ctx, t0 = ctx.currentTime + 0.005;
+    const burst = (buf, f, q, type, gain, dur, at = 0, sweepTo = null) => {
+      const n = ctx.createBufferSource(); n.buffer = buf;
+      const fl = a.filter(type, f, q); const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, t0 + at); g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      if (sweepTo) fl.frequency.exponentialRampToValueAtTime(sweepTo, t0 + at + dur);
+      n.connect(fl).connect(g).connect(a.fx); n.start(t0 + at); n.stop(t0 + at + dur + 0.05);
+    };
+    if (k < 0.25) { a.thunk(0, 0.15 + k); burst(a.noise, 2600, 3, 'bandpass', 0.05 + k * 0.2, 0.25); return; } // scrape / knock
+    a.crash(Math.min(1.2, k), false);                                                 // metal impact
+    if (deform) for (let i = 0; i < 3; i++) burst(a.brown, 420 - i * 90, 6, 'bandpass', 0.12 * k, 0.5 + i * 0.25, 0.08 + i * 0.12, 160); // panels buckling
+    if (glass) for (let i = 0; i < 9; i++) burst(a.noise, 5200 + Math.random() * 3000, 8, 'bandpass', 0.06 + 0.05 * k, 0.05 + Math.random() * 0.12, 0.05 + Math.random() * 0.5); // glass shattering
+    if (mechanical) { burst(a.brown, 140, 4, 'bandpass', 0.2, 1.2, 0.3, 70); a.tone(55, 1.0, { at: 0.3, gain: 0.05, type: 'sawtooth' }); }
+  }
+  /** Passengers' reaction: gasps and cries (formant-filtered noise bursts). */
+  passengersReact(k) {
+    const a = this.a; if (!a.started) return;
+    const ctx = a.ctx;
+    for (let i = 0; i < 3 + Math.round(k * 5); i++) {
+      const at = ctx.currentTime + 0.15 + Math.random() * 0.6, dur = 0.25 + Math.random() * 0.5;
+      const n = ctx.createBufferSource(); n.buffer = a.noise;
+      const f1 = a.filter('bandpass', 650 + Math.random() * 500, 7), f2 = a.filter('bandpass', 1500 + Math.random() * 900, 9);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.06 + 0.06 * k, at + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      f1.frequency.exponentialRampToValueAtTime(f1.frequency.value * (1.2 + Math.random() * 0.5), at + dur);
+      n.connect(f1).connect(f2).connect(g).connect(a.amb); n.start(at); n.stop(at + dur + 0.05);
+    }
+  }
+  /** Dashboard emergency alarm after a severe collision. */
+  alarm() { for (let i = 0; i < 6; i++) { this.a.tone(1480, 0.18, { at: i * 0.4, gain: 0.07, type: 'square' }); this.a.tone(990, 0.18, { at: i * 0.4 + 0.2, gain: 0.07, type: 'square' }); } }
   kerb() { this.a.thunk(0, 0.35); }
   stop() { if (!this.on) return; for (const n of this.nodes) { try { n.stop(); } catch { /* */ } } this.on = false; for (const g of Object.values(this.c)) g.disconnect?.(); }
 }

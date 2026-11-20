@@ -43,7 +43,9 @@ export class PlayerTrain {
   update(dt, ctx) {
     const c = this.controller;
     this.safety.update(dt, { v: this.speed, staticLimit: ctx.staticLimit, authorityDist: ctx.authorityDist, brakeRate: ctx.brakeRate, controller: c });
-    this.tractionCut = !this.doors.locked || this.ebActive;
+    // Traction interlock: train doors closed & locked, and any external interlock (platform screen doors).
+    this.interlockOk = !this.interlock || this.interlock();
+    this.tractionCut = !this.doors.locked || !this.interlockOk || this.ebActive;
     if (c.traction > 0) this.holdBrake = false;
     if (Math.abs(this.speed) < 0.2 && c.position <= 0) this.holdBrake = true;
     let traction = this.tractionCut ? 0 : c.traction;

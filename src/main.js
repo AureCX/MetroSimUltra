@@ -15,6 +15,8 @@ import { BusRepository } from './bus/BusRepository.js';
 import { BUS_ACTIONS } from './bus/BusControls.js';
 import { BusHUD } from './ui/BusHUD.js';
 import { BusMenu } from './ui/BusMenu.js';
+import { Economy } from './economy/Economy.js';
+import { NetworkOverlay } from './ui/NetworkOverlay.js';
 
 const bus = new EventBus();
 const settings = new Settings(bus);
@@ -37,6 +39,8 @@ const game = new Game({ renderer, bus, settings, input, audio });
 const busHud = new BusHUD(document.getElementById('bushud'), bus, settings, busInput);
 busHud.show(false);
 const busGame = new BusGame({ renderer, bus, settings, input: busInput, audio, save });
+const netOverlay = new NetworkOverlay(document.body);
+bus.on('ui:networkMap', () => { if (game.netModel && state === 'playing') netOverlay.toggle(game.netModel, () => game.networkState(false)); });
 let active = game; // the session currently running (metro or bus)
 window.__metro = { game, busGame, bus, settings }; // debugging handle
 
@@ -52,13 +56,17 @@ const repo = new LineRepository();
 const busRepo = new BusRepository();
 let busMenu;
 let menu;
+let economy;
 let state = 'menu'; // menu | playing | paused | summary
 let lastSession = null;
 
 async function boot() {
   await repo.load();
   await busRepo.load();
-  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput });
+  economy = new Economy(save, { train: repo.trains, bus: busRepo.vehicles });
+  game.economy = economy; busGame.economy = economy;
+  window.__metro.economy = economy;
+  menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput, economy, busRepo });
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
   menu.on('restart', () => lastSession && startSession(lastSession));
@@ -97,7 +105,7 @@ function startSession(sel) {
   audio.init();
   busGame.dispose(); busHud.show(false); busInput.enabled = false; active = game; input.queue = [];
   lastSession = sel;
-  hud.setMapOpen(false); game.mapTarget = null;
+  hud.setMapOpen(false); game.mapTarget = null; netOverlay.close();
   menu.showLoading(`Building ${sel.line.name}…`);
   setTimeout(() => {
     try {
@@ -125,7 +133,7 @@ function setPaused(p) {
 }
 
 function quitToMenu() {
-  hud.setMapOpen(false); game.mapTarget = null;
+  hud.setMapOpen(false); game.mapTarget = null; netOverlay.close();
   active.setPaused(false);
   active.dispose();
   hud.show(false); busHud.show(false); busInput.enabled = false; active = game;
@@ -150,6 +158,11 @@ bus.on('game:pauseToggle', () => {
 });
 bus.on('game:finished', (r) => {
   const newBest = save.submitRun({ lineId: r.line.id, direction: r.direction, score: r.score, grade: r.grade, distanceKm: r.distanceKm, stations: r.stationsServed, seconds: r.seconds, finalDelay: r.finalDelay });
+  // Money & vehicle wear.
+  if (r.vehicleUid && economy.vehicle(r.vehicleUid)) {
+    r.settlement = economy.settleMetro({ ...r, label: `${r.line.number} · ${r.vehicleUid}`, uid: r.vehicleUid });
+    r.vehicleAfter = economy.wear(r.vehicleUid, { km: r.distanceKm, incidents: r.incidents || 0, crash: !!r.crashed });
+  }
   setTimeout(() => {
     state = 'summary';
     game.dispose();

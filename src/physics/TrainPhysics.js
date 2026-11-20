@@ -109,7 +109,7 @@ export class TrainPhysics {
 
     // Resistances.
     const tons = m / 1000;
-    const inTunnel = 1.35;
+    const inTunnel = this.route.geom?.outdoorAt?.(this.s - sp.length / 2) ? 1.0 : 1.35; // tunnel air drag
     const fr = tons * (sp.davis.a + sp.davis.b * vk) + sp.davis.c * (sp.cars / 5) * vk * vk * inTunnel;
     const grad = this.route.gradientAt(this.s - sp.length / 2);
     const fg = m * G * (grad / 1000);

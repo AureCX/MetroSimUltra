@@ -64,22 +64,25 @@ export class TrackGeometry {
     }
 
     if (loop) this.buildLoop(loop);
+    if (line.category === 'hst' && line.rail?.profile) this.applyProfile(line.rail.profile);
 
     // Surface sections: outdoor between an 'exit' portal and the next 'enter' portal (direction A).
     // Ground level of a surface section = track level at its portal + 5.5 m (tunnel roof + cover).
     this.outdoor = new Uint8Array(N);
     this.ground = new Float32Array(N).fill(NaN);
     const cover = 5.5;
+    if (line.category === 'hst') for (const [a, b] of line.rail?.tunnels || []) { this.portals.push({ s: a, type: 'enter' }, { s: b, type: 'exit' }); }
     const ev = [...this.portals].sort((a, b) => a.s - b.s);
-    let out = false, g = NaN, e = 0;
+    let out = line.category === 'hst', g = NaN, e = 0; // main lines run in the open; 'enter' portals start tunnels
     for (let i = 0; i < N; i++) {
       while (e < ev.length && ev[e].s <= i) {
         out = ev[e].type === 'exit';
         g = this.py[Math.min(N - 1, Math.round(ev[e].s))] + cover;
         e++;
       }
-      if (out) { this.outdoor[i] = 1; this.ground[i] = g; }
+      if (out) { this.outdoor[i] = 1; this.ground[i] = Number.isNaN(g) ? this.py[i] - 0.6 : g; }
     }
+    if (line.category === 'hst') for (let i = 0; i < N; i++) this.ground[i] = this.py[i] - 0.6; // ground follows the formation
     // Elevated line: open air throughout, the street lies `height` below the track bed.
     if (line.elevated) {
       const Hs = line.elevated.height;
@@ -153,6 +156,24 @@ export class TrackGeometry {
     const p = this.point(J + 60), q = this.point(Jr - 60), h = this.heading(J + 60);
     const side = Math.sign((q.x - p.x) * Math.cos(h) + (q.z - p.z) * Math.sin(h)) || -1;
     this.loop = { J, Jr, M, inner: side, closure: Math.hypot(ex, ez), junctionIndex: loop.junctionIndex, returnIndex: loop.returnIndex };
+  }
+
+  /**
+   * Main lines: the vertical profile is designed against the terrain by the line generator ([s, y] every
+   * ~100 m); it replaces the integrated gradients (smoothed into vertical curves).
+   */
+  applyProfile(profile) {
+    const N = this.N, y = new Float32Array(N);
+    let k = 0;
+    for (let i = 0; i < N; i++) {
+      while (k < profile.length - 2 && profile[k + 1][0] < i) k++;
+      const [s0, y0] = profile[k], [s1, y1] = profile[Math.min(profile.length - 1, k + 1)];
+      y[i] = s1 > s0 ? y0 + ((y1 - y0) * Math.max(0, Math.min(1, (i - s0) / (s1 - s0)))) : y0;
+    }
+    const sm = boxFilter(boxFilter(y, 90), 90);
+    for (let i = 0; i < N; i++) this.py[i] = sm[i];
+    for (let i = 0; i < N - 1; i++) this.grad[i] = (sm[i + 1] - sm[i]) * 1000;
+    this.grad[N - 1] = this.grad[N - 2];
   }
 
   /** The loop is single track: its centreline moves onto the track (spacing → 0) over the first/last metres. */

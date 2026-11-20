@@ -51,7 +51,7 @@ export function buildLineMapModel(line, services, network, direction) {
       if (l && !seen.has(`${n.key}${num}`)) { n.badges.push({ number: num, color: l.color, text: l.textColor }); seen.add(`${n.key}${num}`); }
     }
     n.walk = (n.st.connections || []).map(lineOf).filter(Boolean).map((l) => ({ number: l.number, color: l.color, text: l.textColor }));
-    n.bus = n.st.interchange?.bus || []; n.busWalk = !!n.st.interchange?.busWalk; n.airport = !!n.st.interchange?.airport;
+    n.bus = n.st.interchange?.bus || []; n.busWalk = !!n.st.interchange?.busWalk; n.airport = !!n.st.interchange?.airport; n.rail = !!n.st.interchange?.rail;
   }
   const ends = new Set();
   for (const p of paths.values()) { ends.add(p[0]); ends.add(p.at(-1)); }
@@ -201,6 +201,7 @@ export function drawLineMap(g, W, H, model, state) {
     for (const w of n.walk) rows.push({ kind: 'walk', list: [w] });
     for (const name of n.bus) rows.push({ kind: 'bus', name });
     if (n.airport) rows.push({ kind: 'airport' });
+    if (n.rail) rows.push({ kind: 'rail' });
     if (rows.length) {
       let by = p.y + r * 1.15 + lw * 1.7 + br; // below the train marker lane
       g.strokeStyle = '#555'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(p.x, p.y + r * 1.15); g.lineTo(p.x, by + (rows.length - 1) * br * 2.3 - br); g.stroke();
@@ -228,6 +229,11 @@ export function drawLineMap(g, W, H, model, state) {
           g.font = `bold ${br * 0.85}px Arial`; const tw = g.measureText(row.name).width + 8;
           g.fillStyle = '#ffd000'; g.fillRect(x0 - br * 0.6 + w, by - br * 0.6, tw, br * 1.2);
           g.fillStyle = '#16233a'; g.fillText(row.name, x0 - br * 0.6 + w + 4, by + 1);
+        } else if (row.kind === 'rail') {
+          const w = br * 3.6, h = br * 1.6;
+          g.fillStyle = '#1b2a4a'; g.strokeStyle = '#b48a3c'; g.lineWidth = 2;
+          g.fillRect(p.x - w / 2, by - h / 2, w, h); g.strokeRect(p.x - w / 2, by - h / 2, w, h);
+          g.fillStyle = '#ffffff'; g.font = `bold ${h * 0.68}px Arial`; g.textAlign = 'center'; g.fillText('TGV', p.x, by + 1);
         } else {
           const sz = br * 2;
           g.fillStyle = '#ffd000'; g.strokeStyle = '#2b2f35'; g.lineWidth = 2;

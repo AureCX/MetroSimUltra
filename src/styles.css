@@ -219,3 +219,10 @@ div.train-card { cursor: default; text-align: left; }
 .mp-feed li { padding: 4px 0; border-bottom: 1px solid var(--line); }
 #mp-badge { position: fixed; right: 12px; bottom: 12px; z-index: 70; padding: 6px 10px; border-radius: 999px; background: rgba(12,16,22,0.82); border: 1px solid var(--line); color: var(--text); font-size: 12px; display: none; align-items: center; gap: 6px; pointer-events: none; }
 #mp-badge i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+/* Grandes Lignes (TGV) */
+.tgv-btn { background: linear-gradient(90deg, #1b2a4a, #2c4478); border-color: #b48a3c; }
+.tgv-board td.mono, .tgv-board .mono { font-family: "Courier New", monospace; font-weight: bold; color: #f2c200; }
+.tgv-board tr.departed td, .tgv-board tr.cancelled td { opacity: 0.55; }
+.tgv-board select { max-width: 160px; }
+.tgv-status { font-weight: bold; font-size: 0.86em; }

@@ -18,7 +18,8 @@ export class SignalSystem {
   build() {
     const { stops } = this.route;
     const add = (r, kind, label) => this.signals.push({ id: this.signals.length, r, kind, label, aspect: 'green', aspectOthers: 'green' });
-    if (this.system === 'fixed-block') {
+    // TVM (high-speed lines): fixed blocks with cab signalling; block markers instead of lineside lights.
+    if (this.system === 'fixed-block' || this.system === 'tvm') {
       for (let k = 0; k < stops.length - 1; k++) {
         const a = stops[k].stopR + 12;
         const b = stops[k + 1].platformStartR - 25;

@@ -10,6 +10,7 @@ import { Timetable } from '../stations/Timetable.js';
 import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
 import { EXAMPLE_LINE } from '../lines/LineRepository.js';
+import { installTgvMenu } from './TgvMenu.js';
 
 /** Earnings breakdown of a run / shift (shared with the bus summary). */
 export function earningsTable(st, v) {
@@ -49,13 +50,16 @@ export class Menu {
   get train() { return this.repo.train(this.vehicle?.model || this.sel.trainId); }
   ensureOwnedTrain() {
     if (!this.economy) return;
+    const metro = (m) => this.repo.train(m) && this.repo.train(m).category !== 'hst';   // TGVs never run on the metro
     const v = this.economy.vehicle(this.sel.trainUid);
-    if (v && v.kind === 'train' && this.repo.train(v.model)) { this.sel.trainId = v.model; return; }
-    const first = this.economy.owned('train').find((x) => this.repo.train(x.model));
+    if (v && v.kind === 'train' && metro(v.model)) { this.sel.trainId = v.model; return; }
+    const first = this.economy.owned('train').find((x) => metro(x.model));
     if (first) { this.sel.trainUid = first.uid; this.sel.trainId = first.model; }
   }
   selectVehicle(uid) { const v = this.economy.vehicle(uid); if (!v) return; this.sel.trainUid = uid; this.sel.trainId = v.model; this.persist(); }
   play(line) {
+    if (line?.category === 'hst') { this.show('tgv'); return; }     // main lines: pick a departure on the TGV board
+    if (!line || line.category === 'hst') line = this.repo.lines.find((l) => l.category !== 'hst');
     this.ensureOwnedTrain();
     if (!line || !this.train || !this.vehicle) { this.notice('Choose a line and one of your trains first.'); return; }
     this.persist();
@@ -89,6 +93,7 @@ export class Menu {
       <nav>
         <button class="btn primary" id="m-play">▶ Play metro</button>
         <button class="btn primary bus-btn" id="m-bus">🚌 Bus — Grandville & Aéroval</button>
+        <button class="btn primary tgv-btn" data-nav="tgv">🚄 Grandes Lignes — TGV</button>
         <button class="btn" data-nav="lines">Select Line</button>
         <button class="btn" data-nav="trains">Trains & purchases</button>
         <button class="btn" data-nav="depot">Depot & fleet</button>
@@ -305,15 +310,16 @@ export class Menu {
           <h3>${esc(v.uid)} <span class="sub">${esc(t.name)}</span></h3>
           <div class="gauge"><i style="width:${Math.round(v.condition * 100)}%"></i></div>
           <p class="sub">Condition ${Math.round(v.condition * 100)} % · ${Math.round(v.odometer)} km · ${E.serviceDue(v) ? '<b class="warn">maintenance due</b>' : `service in ${Math.max(0, Math.round(E.serviceInterval(v) - v.sinceService))} km`}${v.condition < 0.6 ? ' · <b class="warn">reduced performance</b>' : ''}</p>
-          <div class="row-tools">${v.uid === this.sel.trainUid ? '<span class="tag">selected</span>' : `<button class="btn small primary" data-pick="${v.uid}">Use this train</button>`}<button class="btn small" data-nav="depot">Depot…</button></div>
+          <div class="row-tools">${t.category === 'hst' ? '<button class="btn small" data-nav="tgv">Grandes Lignes…</button>' : v.uid === this.sel.trainUid ? '<span class="tag">selected</span>' : `<button class="btn small primary" data-pick="${v.uid}">Use this train</button>`}<button class="btn small" data-nav="depot">Depot…</button></div>
         </div>`; }).join('')}</div>
-      <h3>Buy trains</h3>
-      <div class="train-grid">${this.repo.trains.map((t) => { const price = E.priceOf('train', t.id), afford = price <= E.balance; return `
+      <h3>Buy metro trains</h3>
+      <div class="train-grid">${this.repo.trains.filter((t) => t.category !== 'hst').map((t) => { const price = E.priceOf('train', t.id), afford = price <= E.balance; return `
         <div class="train-card">${strip(t)}
           <h3>${esc(t.name)} <span class="price">${eur(price)}</span></h3><p class="sub">${esc(t.description || '')}</p>${spec(t)}
           <div class="row-tools"><button class="btn small ${afford ? 'primary' : ''}" data-buy="${t.id}" ${afford ? '' : 'disabled'}>${afford ? 'Buy' : `Need ${eur(price - E.balance)} more`}</button>
           <span class="sub">${E.owned('train').filter((v) => v.model === t.id).length} owned</span></div>
-        </div>`; }).join('')}</div>`, { wide: true });
+        </div>`; }).join('')}</div>
+      <p class="sub">High-speed trainsets (TGV Duplex, TGV Classique) are bought and assigned in <button class="btn small" data-nav="tgv">🚄 Grandes Lignes</button>.</p>`, { wide: true });
     body.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { this.selectVehicle(b.dataset.pick); this.screen_trains(); }));
     body.querySelectorAll('[data-buy]').forEach((b) => (b.onclick = () => {
       const r = E.buy('train', b.dataset.buy);
@@ -531,11 +537,13 @@ export class Menu {
         ${r.penalties.length ? `<h3>Penalties (−${r.penaltyTotal})</h3><ul class="penalties">${r.penalties.map((p) => `<li>${esc(p.text)}${p.count > 1 ? ` ×${p.count}` : ''} <b>−${p.points}</b></li>`).join('')}</ul>` : '<p>No penalties — exemplary driving.</p>'}
         ${earningsTable(r.settlement, r.vehicleAfter)}
         <div class="row-tools">
-          <button class="btn primary" id="r-back">${r.line.loop ? 'Next circuit' : `Drive back (${esc(r.line.directions[other].name)})`}</button>
+          ${r.line.category === 'hst' ? '<button class="btn primary" data-nav="tgv">🚄 Departures board</button>' : `<button class="btn primary" id="r-back">${r.line.loop ? 'Next circuit' : `Drive back (${esc(r.line.directions[other].name)})`}</button>`}
           <button class="btn" id="r-again">Retry</button>
           <button class="btn ghost" data-nav="main">Main menu</button>
         </div></div></div>`;
-    this.root.querySelector('#r-back').onclick = () => { this.sel.direction = other; this.persist(); this.emit('play', { line: r.line, train: r.train, direction: other, vehicleUid: r.vehicleUid }); };
-    this.root.querySelector('#r-again').onclick = () => this.emit('play', { line: r.line, train: r.train, direction: r.direction, vehicleUid: r.vehicleUid });
+    const back = this.root.querySelector('#r-back');
+    if (back) back.onclick = () => { this.sel.direction = other; this.persist(); this.emit('play', { line: r.line, train: r.train, direction: other, vehicleUid: r.vehicleUid }); };
+    this.root.querySelector('#r-again').onclick = () => this.emit('play', { line: r.line, train: r.train, direction: r.direction, vehicleUid: r.vehicleUid, tgv: r.tgv });
   }
 }
+installTgvMenu(Menu);

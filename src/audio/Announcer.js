@@ -58,6 +58,7 @@ export class Announcer {
     if (ic.metro?.length) parts.push(fr ? `${ic.metro.length > 1 ? 'lignes' : 'ligne'} ${and(ic.metro)}` : `${ic.metro.length > 1 ? 'lines' : 'line'} ${and(ic.metro)}`);
     if (ic.bus?.length) parts.push(fr ? `bus ${and(ic.bus)}` : `${and(ic.bus)} buses`);
     if (ic.airport) parts.push(fr ? "accès aux terminaux de l'aéroport" : 'airport terminals');
+    if (ic.rail) parts.push(fr ? 'les TGV Grandes Lignes' : 'TGV main-line services');
     if (!parts.length) return '';
     const tpl = this.line.announcements.connections || (fr ? 'Correspondance : {list}.' : 'Change here for {list}.');
     return tpl.replaceAll('{list}', and(parts));

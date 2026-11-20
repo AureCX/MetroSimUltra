@@ -612,6 +612,16 @@ StationView.prototype.buildOutdoorSigns = function buildOutdoorSigns() {
   this.group.add(g);
   if (st.signage === 'airport') this.buildAirportSigns();
   if (st.interchange.metro.length) this.buildTransferSigns(st.interchange.metro);
+  if (st.interchange.rail && this.line.category !== 'hst') this.buildRailSigns();
+};
+
+/** Metro platforms under the main-line station: way-finding to the TGV hall (navy and gold, like the station). */
+StationView.prototype.buildRailSigns = function buildRailSigns() {
+  const mat = new THREE.MeshBasicMaterial({ map: Textures.label('🚄  Grandes Lignes · TGV  ·  Hall & Voies 1–12  ⬆', { w: 1024, h: 96, bg: '#1b2a4a', fg: '#e8cf8c', font: 'bold 46px Arial' }) });
+  for (const [a, b] of this.platformSpans()) {
+    const cx = (a + b) / 2;
+    for (const z of [-this.Lp / 4, this.Lp / 4]) { this.plane(3.6, 0.34, mat, cx, this.H - 0.62, z, 0); this.plane(3.6, 0.34, mat, cx, this.H - 0.62, z, Math.PI); }
+  }
 };
 
 /** Airport station: flight information displays and terminal direction signs. */

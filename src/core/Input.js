@@ -19,6 +19,8 @@ export const ACTIONS = {
   lineMap:        { label: 'Show / hide the line map',          keys: ['KeyM'], pad: [] },
   networkMap:     { label: 'Network map (cab screen)',           keys: ['KeyG'], pad: [] },
   ato:            { label: 'Automatic operation (ATO) on / off', keys: ['KeyT'], pad: [] },
+  timeWarp:       { label: 'Time acceleration ×1 / ×2 / ×5 / ×10 (main lines)', keys: ['KeyU'], pad: [] },
+  stationTour:    { label: 'Station tour camera (Gare Centrale)', keys: ['KeyO'], pad: [] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };

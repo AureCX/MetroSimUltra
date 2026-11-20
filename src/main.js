@@ -176,7 +176,11 @@ bus.on('game:pauseToggle', () => {
 bus.on('game:finished', (r) => {
   const newBest = save.submitRun({ lineId: r.line.id, direction: r.direction, score: r.score, grade: r.grade, distanceKm: r.distanceKm, stations: r.stationsServed, seconds: r.seconds, finalDelay: r.finalDelay });
   // Money & vehicle wear.
-  if (r.vehicleUid && economy.vehicle(r.vehicleUid)) {
+  if (r.line.category === 'hst') {
+    // Main-line journey: tickets, access charges, energy, punctuality; a hired trainset pays its hire fee.
+    r.settlement = economy.settleRail({ ...r, lease: r.tgv?.lease || 0, capacity: r.tgv?.capacity || r.train.capacity, service: `${r.tgv?.service || ''} · ${r.tgv?.destination || r.line.stations.at(-1).name}${r.vehicleUid ? ` · ${r.vehicleUid}` : ' · hired trainset'}`, uid: r.vehicleUid });
+    if (r.vehicleUid && economy.vehicle(r.vehicleUid)) r.vehicleAfter = economy.wear(r.vehicleUid, { km: r.distanceKm, incidents: r.incidents || 0, crash: !!r.crashed });
+  } else if (r.vehicleUid && economy.vehicle(r.vehicleUid)) {
     r.settlement = economy.settleMetro({ ...r, label: `${r.line.number} · ${r.vehicleUid}`, uid: r.vehicleUid });
     r.vehicleAfter = economy.wear(r.vehicleUid, { km: r.distanceKm, incidents: r.incidents || 0, crash: !!r.crashed });
   }

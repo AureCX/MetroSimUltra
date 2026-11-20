@@ -24,7 +24,7 @@ export class ATO {
     const k = sm.atStop != null ? sm.atStop + 1 : sm.nextStop;
     const target = this.route.stops[k];
     if (!target) { c.set(-c.bNotches); return; }
-    const a = autoDriveAccel(this.route, p.front, p.speed, target.stopR, sp.length, { accel: 0.85, decel: 0.7, margin: 0.95, authority });
+    const a = autoDriveAccel(this.route, p.front, p.speed, target.stopR, sp.length, { accel: 0.85, decel: Math.min(0.7, sp.serviceDecel * 0.62), margin: 0.95, authority });
     const maxA = Math.max(0.5, sp.maxAccel || 1);
     let notch = 0;
     if (a > 0.04) notch = Math.min(c.pNotches, Math.ceil((a / maxA) * c.pNotches));

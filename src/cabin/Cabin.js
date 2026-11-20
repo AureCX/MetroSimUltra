@@ -128,6 +128,20 @@ export class Cabin {
     const dmi = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.2875), new THREE.MeshBasicMaterial({ map: this.dmi.t }));
     dmi.position.set(0.2, 0.07, 0.006); panel.add(dmi);
     const dmiFrame = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.31, 0.01), m.black); dmiFrame.position.set(0.2, 0.07, 0.0); panel.add(dmiFrame);
+    // Network screen (touch screen built into the desk, left of the speedometer): live network map; a click opens
+    // the full-size interactive map.
+    {
+      const c = document.createElement('canvas'); c.width = 720; c.height = 400;
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+      this.netScreen = { c, tex: t };
+      const w = 0.5, h = w * (400 / 720);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.035, h + 0.035, 0.012), m.black); frame.position.set(-0.68, 0.085, 0.0); panel.add(frame);
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t }));
+      face.position.set(-0.68, 0.085, 0.0075); panel.add(face);
+      const lb = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.03), new THREE.MeshBasicMaterial({ map: labelTex('RÉSEAU · NETWORK', 320, 48, '#d8d8d8', '#2a2f35', 22), transparent: true }));
+      lb.position.set(-0.68, 0.085 - h / 2 - 0.028, 0.004); panel.add(lb);
+      this.register(face, 'Network map — click to open', { click: () => this.actions.networkMap?.() });
+    }
     // Clock on the shelf.
     const clk = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.07), new THREE.MeshBasicMaterial({ map: this.clock.t }));
     clk.position.set(-0.62, 2.04, zf - 0.37); clk.rotation.set(-0.35, Math.PI, 0, 'YXZ'); g.add(clk);

@@ -1,0 +1,168 @@
+// In-game economy: balance in euros, an owned fleet of trains and buses (each with a unique vehicle ID,
+// condition, odometer and maintenance interval), purchases, repairs and servicing, and the settlement of
+// every metro run and bus shift (revenue from service quality, distance and passengers, penalties for
+// incidents). Pure data over the save file: the UI and the games call into it, nothing else stores money.
+export const START_BALANCE = 80000;
+export const STARTER_FLEET = [{ kind: 'train', model: 'mx80' }, { kind: 'bus', model: 'urbano12' }];
+const LEDGER_MAX = 40;
+
+export const eur = (v) => `${v < 0 ? '−' : ''}${Math.abs(Math.round(v)).toLocaleString('fr-FR')} €`;
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+export class Economy {
+  /** save: SaveSystem; catalog: { train: [specs], bus: [specs] } (each spec with id, name, price). */
+  constructor(save, catalog = { train: [], bus: [] }) {
+    this.save = save; this.catalog = catalog;
+    const d = save.data;
+    const fresh = !d.economy;
+    if (fresh) d.economy = { balance: START_BALANCE, fleet: [], seq: {}, ledger: [], earned: 0, spent: 0 };
+    this.d = d.economy;
+    if (fresh) { for (const s of STARTER_FLEET) this._add(s.kind, s.model, 0, 'Starter vehicle'); this.persist(); }
+  }
+  persist() { this.save.save(); }
+
+  get balance() { return this.d.balance; }
+  get fleet() { return this.d.fleet; }
+  get ledger() { return this.d.ledger; }
+  spec(kind, model) { return (this.catalog[kind] || []).find((s) => s.id === model) || null; }
+  priceOf(kind, model) { const s = this.spec(kind, model); return s ? (s.price ?? Math.round((s.capacity || 500) * 250)) : 0; }
+  owned(kind) { return this.d.fleet.filter((v) => v.kind === kind); }
+  vehicle(uid) { return this.d.fleet.find((v) => v.uid === uid) || null; }
+  ownsModel(kind, model) { return this.d.fleet.some((v) => v.kind === kind && v.model === model); }
+
+  _uid(kind, model) {
+    const s = this.spec(kind, model);
+    const prefix = (s?.fleetPrefix || model).toUpperCase().replace(/[^A-Z0-9]+/g, '');
+    const seq = (this.d.seq[prefix] = (this.d.seq[prefix] || 0) + 1);
+    return `${kind === 'bus' ? 'BUS-' : ''}${prefix}-${String(seq).padStart(3, '0')}`;
+  }
+  _add(kind, model, price, note) {
+    const e = this.d;
+    const v = { uid: this._uid(kind, model), kind, model, bought: Date.now(), price, odometer: 0, sinceService: 0, condition: 1, incidents: 0 };
+    e.fleet.push(v);
+    this.log(note || `Purchase ${v.uid}`, -price, v.uid);
+    return v;
+  }
+  log(text, amount, uid = null) {
+    const e = this.d;
+    e.ledger.unshift({ t: Date.now(), text, amount: Math.round(amount), uid });
+    if (e.ledger.length > LEDGER_MAX) e.ledger.length = LEDGER_MAX;
+    if (amount > 0) e.earned += amount; else e.spent -= amount;
+  }
+  _pay(amount, text, uid) {
+    if (amount > this.d.balance + 1e-6) return { ok: false, reason: `Not enough money: ${eur(amount)} needed, balance ${eur(this.d.balance)}.` };
+    this.d.balance -= amount; this.log(text, -amount, uid); this.persist();
+    return { ok: true };
+  }
+
+  buy(kind, model) {
+    const s = this.spec(kind, model);
+    if (!s) return { ok: false, reason: 'Unknown vehicle.' };
+    const price = this.priceOf(kind, model);
+    if (price > this.d.balance) return { ok: false, reason: `Not enough money to buy ${s.name}: ${eur(price)} needed, balance ${eur(this.d.balance)}.` };
+    this.d.balance -= price;
+    const v = this._add(kind, model, price, `Purchase ${s.name}`);
+    this.persist();
+    return { ok: true, vehicle: v };
+  }
+  /** Resale: 60 % of the price, reduced by wear. The last vehicle of a kind cannot be sold. */
+  sellValue(v) { return Math.round(this.priceOf(v.kind, v.model) * 0.6 * (0.4 + 0.6 * v.condition)); }
+  sell(uid) {
+    const v = this.vehicle(uid); if (!v) return { ok: false, reason: 'Unknown vehicle.' };
+    if (this.owned(v.kind).length <= 1) return { ok: false, reason: `You need at least one ${v.kind === 'bus' ? 'bus' : 'train'}.` };
+    const value = this.sellValue(v);
+    this.d.fleet = this.d.fleet.filter((x) => x !== v);
+    this.d.balance += value; this.log(`Sale ${v.uid}`, value, v.uid); this.persist();
+    return { ok: true, value };
+  }
+
+  // ---- maintenance ----
+  serviceInterval(v) { return this.spec(v.kind, v.model)?.serviceIntervalKm ?? 400; }
+  serviceDue(v) { return v.sinceService >= this.serviceInterval(v); }
+  serviceCost(v) { return Math.round(this.priceOf(v.kind, v.model) * 0.012); }
+  repairCost(v) { return Math.round(this.priceOf(v.kind, v.model) * 0.3 * (1 - v.condition)); }
+  /** Scheduled maintenance: resets the interval and recovers some wear. */
+  service(uid) {
+    const v = this.vehicle(uid); if (!v) return { ok: false, reason: 'Unknown vehicle.' };
+    const r = this._pay(this.serviceCost(v), `Maintenance ${v.uid}`, uid); if (!r.ok) return r;
+    v.sinceService = 0; v.condition = Math.min(1, v.condition + 0.08); this.persist(); return r;
+  }
+  /** Full repair to 100 % (also clears bus body damage). */
+  repair(uid) {
+    const v = this.vehicle(uid); if (!v) return { ok: false, reason: 'Unknown vehicle.' };
+    const cost = this.repairCost(v);
+    if (cost <= 0) return { ok: false, reason: 'Nothing to repair.' };
+    const r = this._pay(cost, `Repair ${v.uid}`, uid); if (!r.ok) return r;
+    v.condition = 1; delete v.damage; v.incidents = 0; this.persist(); return r;
+  }
+  /** Pay for part of a repair done gradually (bus depot maintenance hall). Returns the condition bought. */
+  payPartialRepair(uid, dCondition) {
+    const v = this.vehicle(uid); if (!v) return 0;
+    const cost = this.priceOf(v.kind, v.model) * 0.3 * dCondition;
+    if (cost > this.d.balance) return 0;
+    this.d.balance -= cost; this.d.spent += cost;
+    const last = this.d.ledger[0];
+    if (last && last.uid === uid && last.text === `Repair ${uid} (depot hall)` && Date.now() - last.t < 600000) last.amount -= cost;
+    else this.log(`Repair ${uid} (depot hall)`, -cost, uid);
+    return dCondition;
+  }
+  /** Performance factor of a worn vehicle (1 = as new). */
+  performance(v) { return v ? 0.7 + 0.3 * clamp01(v.condition / 0.6) : 1; }
+
+  /** Wear after a service: distance, incidents and overdue maintenance. */
+  wear(uid, { km = 0, incidents = 0, crash = false, condition = null } = {}) {
+    const v = this.vehicle(uid); if (!v) return null;
+    v.odometer += km; v.sinceService += km;
+    const overdue = this.serviceDue(v) ? 2 : 1;
+    if (condition != null) v.condition = clamp01(condition);
+    else v.condition = clamp01(v.condition - km * 0.0012 * overdue - incidents * 0.01 - (crash ? 0.35 : 0));
+    if (incidents || crash) v.incidents += incidents + (crash ? 1 : 0);
+    this.persist();
+    return v;
+  }
+
+  // ---- settlement ----
+  /**
+   * Metro run. r: { completed, score, distanceKm, stationsServed, missed, carried, punctuality (0..1), penalties [{text, points}],
+   * crashed, uid }
+   */
+  settleMetro(r) {
+    const items = [];
+    const quality = 0.5 + (r.score / 1000) * 0.7; // 0.5 .. 1.2
+    if (r.completed) {
+      items.push({ label: `Service operated · ${r.distanceKm.toFixed(1)} km`, amount: r.distanceKm * 140 });
+      items.push({ label: `${r.stationsServed} station stops`, amount: r.stationsServed * 45 });
+      items.push({ label: `${r.carried} passengers carried`, amount: r.carried * 1.9 });
+      const base = items.reduce((a, i) => a + i.amount, 0);
+      items.push({ label: `Service quality (score ${r.score}/1000)`, amount: base * (quality - 1) });
+      if (r.punctuality != null) items.push({ label: `Regularity bonus (${Math.round(r.punctuality * 100)} % on time)`, amount: base * 0.25 * r.punctuality });
+    } else items.push({ label: 'Service not completed — no revenue', amount: 0 });
+    this.penaltyItems(r, items, { skipped: 250, perPoint: 3 });
+    return this.post(items, `Metro ${r.label || ''}`.trim(), r.uid);
+  }
+  /** Bus shift. r: { completed, score, distanceKm, stopsServed, stopsSkipped, carried, penalties, energyCost, uid } */
+  settleBus(r) {
+    const items = [];
+    const quality = 0.5 + (r.score / 1000) * 0.7;
+    if (r.completed) {
+      items.push({ label: `Route operated · ${r.distanceKm.toFixed(1)} km`, amount: r.distanceKm * 110 });
+      items.push({ label: `${r.stopsServed} stops served`, amount: r.stopsServed * 30 });
+      items.push({ label: `${r.carried} passengers carried`, amount: r.carried * 1.7 });
+      const base = items.reduce((a, i) => a + i.amount, 0);
+      items.push({ label: `Service quality (score ${r.score}/1000)`, amount: base * (quality - 1) });
+    } else items.push({ label: 'Shift not completed — no revenue', amount: 0 });
+    if (r.energyCost) items.push({ label: 'Fuel / electricity used', amount: -r.energyCost });
+    this.penaltyItems(r, items, { skipped: 150, perPoint: 3 });
+    return this.post(items, `Bus ${r.label || ''}`.trim(), r.uid);
+  }
+  penaltyItems(r, items, { skipped, perPoint }) {
+    if (r.missed) items.push({ label: `${r.missed} station(s) / stop(s) skipped`, amount: -r.missed * skipped });
+    for (const p of r.penalties || []) items.push({ label: `${p.text}${p.count > 1 ? ` ×${p.count}` : ''}`, amount: -p.points * perPoint });
+  }
+  post(items, text, uid) {
+    for (const i of items) i.amount = Math.round(i.amount);
+    const total = items.reduce((a, i) => a + i.amount, 0);
+    this.d.balance += total; this.log(text, total, uid); this.persist();
+    return { items, total, balance: this.d.balance };
+  }
+}

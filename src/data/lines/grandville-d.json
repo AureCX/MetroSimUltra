@@ -23,6 +23,7 @@
   "height": 9
  },
  "automation": "ato",
+ "platformScreenDoors": true,
  "train": "apm-aeroval",
  "directions": {
   "A": {

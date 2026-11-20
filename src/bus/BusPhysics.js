@@ -24,6 +24,8 @@ export class BusPhysics {
     this.mu = SURFACE_MU.dry;
     this.grade = 0;                                         // ‰ (positive uphill)
     this.payload = 0;                                       // kg
+    this.impactT = 0;                                       // s of fully dynamic handling after an impact
+    this.powerScale = 1; this.steerBias = 0;                // reduced by mechanical damage
     this.wheelSpin = 0;
     this.slipping = false;
     this.distance = 0;
@@ -79,7 +81,7 @@ export class BusPhysics {
     const v = this.vx;
     // Steering: wheel turns at a rate that drops with speed; front wheels follow via ratio.
     const rate = (sys.steerRate ?? 10) * (1 / (1 + Math.abs(v) / 14));
-    this.wheel += clamp(controls.wheelTarget - this.wheel, -rate * dt, rate * dt);
+    this.wheel += clamp(controls.wheelTarget + this.steerBias - this.wheel, -rate * dt, rate * dt);
     const maxWheel = sp.steerMax * 18;
     this.wheel = clamp(this.wheel, -maxWheel, maxWheel);
     this.delta = this.wheel / 18;
@@ -90,7 +92,7 @@ export class BusPhysics {
     const fill = pTarget > this.brakeP ? 2.6 : 4.0;
     this.brakeP += clamp(pTarget - this.brakeP, -fill * dt, fill * dt * (sys.airPressure > 6.5 ? 1 : 0.3));
     const throttle = sys.doorBrake || sys.parking ? 0 : controls.throttle;
-    let Fx = this.driveForce(throttle, dt, sys);
+    let Fx = this.driveForce(throttle, dt, sys) * this.powerScale;
     // Drive-away limiter (city buses cap launch acceleration for standing passengers).
     const aCap = (sp.maxAccel ?? 1.25) * m;
     Fx = clamp(Fx, -aCap, aCap);
@@ -124,14 +126,16 @@ export class BusPhysics {
 
     // Lateral / yaw: kinematic at low speed, dynamic (with tyre saturation) above.
     const vxs = this.vx;
-    const kin = clamp(1 - (Math.abs(vxs) - 2) / 4, 0, 1);
+    // After an impact the bus slides and rotates freely (tyres scrubbing), even at low speed.
+    if (this.impactT > 0) this.impactT -= dt;
+    const kin = this.impactT > 0 ? 0 : clamp(1 - (Math.abs(vxs) - 2) / 4, 0, 1);
     const L = sp.wheelbase;
     const rKin = (vxs * Math.tan(this.delta)) / L, vyKin = rKin * this.lr;
     let rDyn = this.r, vyDyn = this.vy;
     if (kin < 1) {
       const Fzf = (m * G * this.lr) / L, Fzr = (m * G * this.lf) / L;
       const Cf = 7 * Fzf, Cr = 8 * Fzr;
-      const u = Math.max(2, Math.abs(vxs)) * Math.sign(vxs || 1);
+      const u = Math.max(this.impactT > 0 ? 0.5 : 2, Math.abs(vxs)) * Math.sign(vxs || 1);
       const af = Math.atan2(this.vy + this.lf * this.r, Math.abs(u)) * Math.sign(u) - this.delta;
       const ar = Math.atan2(this.vy - this.lr * this.r, Math.abs(u)) * Math.sign(u);
       const sat = (F, Fmax) => Fmax * Math.tanh(F / Fmax);

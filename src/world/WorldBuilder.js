@@ -56,7 +56,7 @@ export class WorldBuilder {
     this.outdoor = new OutdoorBuilder(this).build();
     this.line.stations.forEach((st, i) => {
       if (i < this.opts.firstStation || st.mirrorOf != null) return;
-      const sv = new StationView(this.line, this.geom, this.routes, st, i, this.quality);
+      const sv = new StationView(this.line, this.geom, this.routes, st, i, this.quality, { trainSpecs: this.opts.trainSpecs });
       this.group.add(sv.group);
       this.stations.push(sv);
     });

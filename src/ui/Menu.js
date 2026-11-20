@@ -5,14 +5,27 @@ import { ACTIONS, PAD_LABELS } from '../core/Input.js';
 import { BUS_ACTIONS } from '../bus/BusControls.js';
 import { AssetStore } from '../core/AssetStore.js';
 import { formatClock, formatDelta, slugify } from '../core/util.js';
+import { eur } from '../economy/Economy.js';
 import { Timetable } from '../stations/Timetable.js';
 import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
 import { EXAMPLE_LINE } from '../lines/LineRepository.js';
 
+/** Earnings breakdown of a run / shift (shared with the bus summary). */
+export function earningsTable(st, v) {
+  if (!st) return '';
+  return `<h3>Earnings</h3><table class="stations earnings"><tbody>${st.items.map((i) => `<tr><td>${esc(i.label)}</td><td class="${i.amount < 0 ? 'neg' : 'pos'}">${eur(i.amount)}</td></tr>`).join('')}
+    <tr class="total"><td>Total</td><td class="${st.total < 0 ? 'neg' : 'pos'}">${eur(st.total)}</td></tr></tbody></table>
+    <p class="sub">Balance ${eur(st.balance)}${v ? ` · ${esc(v.uid)} condition ${Math.round(v.condition * 100)} %${v.condition < 0.6 ? ' — repair recommended (Depot & fleet)' : ''}` : ''}</p>`;
+}
+
 export class Menu {
-  constructor(root, { repo, settings, save, input, bus, audio, busInput }) {
-    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput });
+  constructor(root, { repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp }) {
+    Object.assign(this, { root, repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp });
+    // Live refresh of the multiplayer screen.
+    bus.on('mp:status', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
+    bus.on('mp:sessions', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
+    bus.on('mp:feed', () => { if (this.current === 'multiplayer') this.screen_multiplayer(); });
     this.handlers = {};
     this.context = 'main'; // main | pause
     const sel = save.selection;
@@ -20,7 +33,9 @@ export class Menu {
       lineId: repo.line(sel.lineId) ? sel.lineId : repo.lines[0]?.id,
       trainId: repo.train(sel.trainId) ? sel.trainId : repo.trains[0]?.id,
       direction: sel.direction === 'B' ? 'B' : 'A',
+      trainUid: sel.trainUid,
     };
+    this.ensureOwnedTrain();
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-nav]');
       if (b) { this.audio.started && this.audio.click(); this.show(b.dataset.nav); }
@@ -29,11 +44,29 @@ export class Menu {
   on(evt, fn) { this.handlers[evt] = fn; }
   emit(evt, ...a) { this.handlers[evt]?.(...a); }
   get line() { return this.repo.line(this.sel.lineId); }
-  get train() { return this.repo.train(this.sel.trainId); }
+  /** The selected train is one the player owns (vehicle record); its model gives the specifications. */
+  get vehicle() { return this.economy?.vehicle(this.sel.trainUid) || null; }
+  get train() { return this.repo.train(this.vehicle?.model || this.sel.trainId); }
+  ensureOwnedTrain() {
+    if (!this.economy) return;
+    const v = this.economy.vehicle(this.sel.trainUid);
+    if (v && v.kind === 'train' && this.repo.train(v.model)) { this.sel.trainId = v.model; return; }
+    const first = this.economy.owned('train').find((x) => this.repo.train(x.model));
+    if (first) { this.sel.trainUid = first.uid; this.sel.trainId = first.model; }
+  }
+  selectVehicle(uid) { const v = this.economy.vehicle(uid); if (!v) return; this.sel.trainUid = uid; this.sel.trainId = v.model; this.persist(); }
+  play(line) {
+    this.ensureOwnedTrain();
+    if (!line || !this.train || !this.vehicle) { this.notice('Choose a line and one of your trains first.'); return; }
+    this.persist();
+    this.emit('play', { line, train: this.train, direction: this.sel.direction, vehicleUid: this.vehicle.uid });
+  }
+  balanceChip() { return this.economy ? `<span class="balance-chip" title="Balance">💶 ${eur(this.economy.balance)}</span>` : ''; }
   persist() { this.save.setSelection(this.sel); }
 
   hide() { this.root.innerHTML = ''; this.root.style.display = 'none'; }
   show(screen) {
+    this.current = screen;
     this.root.style.display = '';
     const fn = this[`screen_${screen}`];
     if (fn) fn.call(this);
@@ -52,12 +85,14 @@ export class Menu {
     const l = this.line, t = this.train;
     const rec = l ? this.save.record(l.id, l.loop ? 'A' : this.sel.direction) : null;
     this.root.innerHTML = `<div class="menu-main">
-      <div class="brand"><div class="logo">M</div><div><h1>Metro Driver</h1><p>Underground railway simulator</p></div></div>
+      <div class="brand"><div class="logo">M</div><div><h1>Metro Driver</h1><p>Underground railway simulator</p></div>${this.balanceChip()}</div>
       <nav>
         <button class="btn primary" id="m-play">▶ Play metro</button>
         <button class="btn primary bus-btn" id="m-bus">🚌 Bus — Grandville & Aéroval</button>
         <button class="btn" data-nav="lines">Select Line</button>
-        <button class="btn" data-nav="trains">Select Train</button>
+        <button class="btn" data-nav="trains">Trains & purchases</button>
+        <button class="btn" data-nav="depot">Depot & fleet</button>
+        <button class="btn" id="m-mp">🌐 Multiplayer</button>
         <button class="btn" data-nav="settings">Settings</button>
         <button class="btn" data-nav="controls">Controls</button>
         <button class="btn" data-nav="credits">Credits</button>
@@ -65,14 +100,16 @@ export class Menu {
       <div class="selection-card">
         ${l ? `<div class="line-badge big" style="background:${l.color};color:${l.textColor}">${esc(l.number)}</div>
         <div><b>${esc(l.fullName)}</b> · ${esc(l.network)}<br><span class="sub">${esc(l.directions[this.sel.direction].name)} · ${l.stations.filter((x) => x.mirrorOf == null).length} stations</span><br>
-        <span class="sub">Train: ${esc(t?.name || '-')}</span>
+        <span class="sub">Train: ${esc(t?.name || '-')}${this.vehicle ? ` · ${esc(this.vehicle.uid)} · condition ${Math.round(this.vehicle.condition * 100)} %${this.economy.serviceDue(this.vehicle) ? ' · <b class="warn">maintenance due</b>' : ''}` : ''}</span>
         ${rec ? `<br><span class="sub">Best: ${rec.bestScore} pts (grade ${rec.bestGrade}) · ${rec.runs} run(s)</span>` : ''}</div>` : '<div>No line available. Import one in “Select Line”.</div>'}
       </div>
+      ${this.mp?.inSession ? `<div class="mp-chip">🌐 Online session <b>${esc(this.mp.session.code)}</b> · ${this.mp.players.filter((p) => p.online).length} player(s) — your service will be shared</div>` : ''}
       <div class="totals sub">Career: ${this.save.data.totals.runs} runs · ${this.save.data.totals.distanceKm.toFixed(1)} km · ${this.save.data.totals.stations} stations served</div>
       ${this.repo.errors.length ? `<div class="errors">${this.repo.errors.map(esc).join('<br>')}</div>` : ''}
     </div>`;
     this.root.querySelector('#m-bus').onclick = () => this.emit('bus');
-    this.root.querySelector('#m-play').onclick = () => { if (this.line && this.train) { this.persist(); this.emit('play', { line: this.line, train: this.train, direction: this.sel.direction }); } };
+    this.root.querySelector('#m-play').onclick = () => this.play(this.line);
+    this.root.querySelector('#m-mp').onclick = () => this.show('multiplayer');
   }
 
   // ---------------- Lines ----------------
@@ -113,7 +150,8 @@ export class Menu {
     const select = (id) => {
       this.sel.lineId = id;
       const pref = this.repo.line(id)?.raw?.train; // a line may name its own rolling stock (Line D: Aéroval APM)
-      if (pref && this.repo.train(pref)) this.sel.trainId = pref;
+      const own = pref && this.economy?.owned('train').find((v) => v.model === pref);
+      if (own) this.selectVehicle(own.uid);
       this.persist(); this.renderLines();
     };
     renderNetworkMap(this.root.querySelector('#l-map'), lines, this.sel.lineId, select);
@@ -173,7 +211,7 @@ export class Menu {
       <p class="sub">MP3 files are matched to stations by file name (e.g. <code>${esc(l.stations[1].id)}.mp3</code>, or <code>${esc(l.stations[1].id)}-arrival.mp3</code> for the arrival message).</p>`;
     el.querySelectorAll('[data-svc]').forEach((b) => (b.onclick = () => { this.sel.lineId = b.dataset.svc; this.persist(); this.renderLines(); }));
     el.querySelectorAll('[data-dir]').forEach((b) => (b.onclick = () => { this.sel.direction = b.dataset.dir; this.persist(); this.renderLineDetail(); }));
-    el.querySelector('#l-use').onclick = () => { this.persist(); this.emit('play', { line: l, train: this.train, direction: this.sel.direction }); };
+    el.querySelector('#l-use').onclick = () => this.play(l);
     el.querySelector('#l-export').onclick = () => this.showJson(`${l.name} — line file`, l.raw.branches || !l.service ? l.raw : l.raw);
     this.confirmButton(el.querySelector('#l-delete'), async () => {
       await this.repo.deleteLine(l.id);
@@ -246,12 +284,9 @@ export class Menu {
 
   // ---------------- Trains ----------------
   screen_trains() {
-    const body = this.frame('Select Train', `<div class="train-grid">${this.repo.trains.map((t) => `
-      <button class="train-card ${t.id === this.sel.trainId ? 'sel' : ''}" data-id="${t.id}">
-        <div class="train-strip" style="background:linear-gradient(90deg, ${t.livery?.body || '#ddd'} 70%, ${t.livery?.front || '#333'})"><i style="background:${t.livery?.stripe || '#ffcc00'}"></i></div>
-        <h3>${esc(t.name)}</h3><p class="sub">${esc(t.description || '')}</p>
-        <dl>
-          <dt>Formation</dt><dd>${t.cars} cars · ${t.length.toFixed(1)} m</dd>
+    const E = this.economy;
+    const spec = (t) => `<dl>
+          <dt>Formation</dt><dd>${t.cars} cars · ${t.length.toFixed(1)} m · ${t.capacity} passengers</dd>
           <dt>Mass (empty)</dt><dd>${t.massEmpty} t</dd>
           <dt>Power</dt><dd>${t.maxPower} kW · ${t.maxTractiveForce} kN</dd>
           <dt>Max speed</dt><dd>${t.maxSpeed} km/h</dd>
@@ -259,11 +294,130 @@ export class Menu {
           <dt>Service / EB</dt><dd>${t.serviceDecel} / ${t.emergencyDecel} m/s²</dd>
           <dt>Controller</dt><dd>P${t.tractionNotches} · B${t.brakeNotches} · EB</dd>
           <dt>Doors</dt><dd>${t.doorsPerSide} per side per car</dd>
-        </dl></button>`).join('')}</div>`);
-    body.querySelectorAll('.train-card').forEach((c) => (c.onclick = () => { this.sel.trainId = c.dataset.id; this.persist(); this.screen_trains(); }));
+          <dt>Maintenance</dt><dd>every ${t.serviceIntervalKm ?? 400} km · ${eur(E.serviceCost({ kind: 'train', model: t.id }))}</dd>
+        </dl>`;
+    const strip = (t) => `<div class="train-strip" style="background:linear-gradient(90deg, ${t.livery?.body || '#ddd'} 70%, ${t.livery?.front || '#333'})"><i style="background:${t.livery?.stripe || '#ffcc00'}"></i></div>`;
+    const mine = E.owned('train').filter((v) => this.repo.train(v.model));
+    const body = this.frame(`Trains <span class="balance-chip">💶 ${eur(E.balance)}</span>`, `
+      <h3>Your trains</h3>
+      <div class="train-grid">${mine.map((v) => { const t = this.repo.train(v.model); return `
+        <div class="train-card ${v.uid === this.sel.trainUid ? 'sel' : ''}">${strip(t)}
+          <h3>${esc(v.uid)} <span class="sub">${esc(t.name)}</span></h3>
+          <div class="gauge"><i style="width:${Math.round(v.condition * 100)}%"></i></div>
+          <p class="sub">Condition ${Math.round(v.condition * 100)} % · ${Math.round(v.odometer)} km · ${E.serviceDue(v) ? '<b class="warn">maintenance due</b>' : `service in ${Math.max(0, Math.round(E.serviceInterval(v) - v.sinceService))} km`}${v.condition < 0.6 ? ' · <b class="warn">reduced performance</b>' : ''}</p>
+          <div class="row-tools">${v.uid === this.sel.trainUid ? '<span class="tag">selected</span>' : `<button class="btn small primary" data-pick="${v.uid}">Use this train</button>`}<button class="btn small" data-nav="depot">Depot…</button></div>
+        </div>`; }).join('')}</div>
+      <h3>Buy trains</h3>
+      <div class="train-grid">${this.repo.trains.map((t) => { const price = E.priceOf('train', t.id), afford = price <= E.balance; return `
+        <div class="train-card">${strip(t)}
+          <h3>${esc(t.name)} <span class="price">${eur(price)}</span></h3><p class="sub">${esc(t.description || '')}</p>${spec(t)}
+          <div class="row-tools"><button class="btn small ${afford ? 'primary' : ''}" data-buy="${t.id}" ${afford ? '' : 'disabled'}>${afford ? 'Buy' : `Need ${eur(price - E.balance)} more`}</button>
+          <span class="sub">${E.owned('train').filter((v) => v.model === t.id).length} owned</span></div>
+        </div>`; }).join('')}</div>`, { wide: true });
+    body.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { this.selectVehicle(b.dataset.pick); this.screen_trains(); }));
+    body.querySelectorAll('[data-buy]').forEach((b) => (b.onclick = () => {
+      const r = E.buy('train', b.dataset.buy);
+      if (!r.ok) { this.notice(r.reason); return; }
+      this.audio.started && this.audio.click();
+      this.selectVehicle(r.vehicle.uid);
+      this.notice(`${r.vehicle.uid} delivered to the depot. Balance ${eur(E.balance)}.`);
+      this.screen_trains();
+    }));
   }
 
+  // ---------------- Depot & fleet ----------------
+  screen_depot() {
+    const E = this.economy, buses = this.busRepo?.vehicles || [];
+    const name = (v) => (v.kind === 'train' ? this.repo.train(v.model)?.name : buses.find((b) => b.id === v.model)?.name) || v.model;
+    const row = (v) => {
+      const rc = E.repairCost(v), sc = E.serviceCost(v), due = E.serviceDue(v);
+      const dmg = v.damage ? Object.entries(v.damage.zones || {}).filter(([, x]) => x > 0.05).map(([k]) => k).join(', ') : '';
+      return `<tr><td>${v.kind === 'bus' ? '🚌' : '🚇'} <b>${esc(v.uid)}</b><br><span class="sub">${esc(name(v))}</span></td>
+        <td><div class="gauge"><i style="width:${Math.round(v.condition * 100)}%"></i></div>${Math.round(v.condition * 100)} %${dmg ? `<br><span class="sub warn">body damage: ${esc(dmg)}</span>` : ''}</td>
+        <td>${Math.round(v.odometer)} km<br><span class="sub">${due ? '<b class="warn">maintenance due</b>' : `next service in ${Math.max(0, Math.round(E.serviceInterval(v) - v.sinceService))} km`}</span></td>
+        <td class="actions"><button class="btn small" data-svc="${v.uid}">Service ${eur(sc)}</button>
+          <button class="btn small ${rc > 0 ? 'primary' : ''}" data-rep="${v.uid}" ${rc > 0 ? '' : 'disabled'}>Repair ${eur(rc)}</button>
+          <button class="btn small danger" data-sell="${v.uid}">Sell ${eur(E.sellValue(v))}</button></td></tr>`;
+    };
+    const body = this.frame(`Depot & fleet <span class="balance-chip">💶 ${eur(E.balance)}</span>`, `
+      <div class="bus-layout"><div>
+        <h3>Fleet (${E.fleet.length})</h3>
+        <table class="stations fleet"><thead><tr><th>Vehicle</th><th>Condition</th><th>Odometer</th><th></th></tr></thead><tbody>${E.fleet.map(row).join('')}</tbody></table>
+        <p class="sub">Condition falls with distance (faster when maintenance is overdue) and with incidents. Below 60 % a vehicle loses performance. Repairs restore it to 100 %; servicing resets the maintenance interval.</p>
+        <h3>Buy buses</h3>
+        <table class="stations"><tbody>${buses.map((b) => { const p = E.priceOf('bus', b.id), ok = p <= E.balance; return `<tr><td><b>${esc(b.name)}</b><br><span class="sub">${b.capacity} pax · ${b.power} kW ${b.powertrain}</span></td><td>${eur(p)}</td><td><button class="btn small ${ok ? 'primary' : ''}" data-buybus="${b.id}" ${ok ? '' : 'disabled'}>${ok ? 'Buy' : 'Not enough money'}</button></td></tr>`; }).join('')}</tbody></table>
+        <p class="sub">Trains are bought in <a href="#" data-nav="trains">Trains & purchases</a>.</p>
+      </div><div>
+        <h3>Account</h3>
+        <p>Balance <b>${eur(E.balance)}</b> · earned ${eur(E.d.earned)} · spent ${eur(E.d.spent)}</p>
+        <table class="stations"><thead><tr><th>Operation</th><th>Amount</th></tr></thead><tbody>
+        ${E.ledger.map((l) => `<tr><td>${esc(l.text)}<br><span class="sub">${new Date(l.t).toLocaleString()}</span></td><td class="${l.amount < 0 ? 'neg' : 'pos'}">${eur(l.amount)}</td></tr>`).join('') || '<tr><td colspan="2">No operations yet.</td></tr>'}</tbody></table>
+      </div></div>`, { wide: true });
+    const act = (fn) => (b) => (b.onclick = () => { const r = fn(b); if (r && !r.ok) this.notice(r.reason); else this.screen_depot(); });
+    body.querySelectorAll('[data-svc]').forEach(act((b) => E.service(b.dataset.svc)));
+    body.querySelectorAll('[data-rep]').forEach(act((b) => E.repair(b.dataset.rep)));
+    body.querySelectorAll('[data-sell]').forEach((b) => this.confirmButton(b, () => { const r = E.sell(b.dataset.sell); if (!r.ok) this.notice(r.reason); else { this.ensureOwnedTrain(); this.persist(); this.screen_depot(); } }));
+    body.querySelectorAll('[data-buybus]').forEach(act((b) => E.buy('bus', b.dataset.buybus)));
+  }
   // ---------------- Settings ----------------
+  // ---------------- Multiplayer ----------------
+  screen_multiplayer() {
+    const mp = this.mp, st = mp.status, ses = mp.session;
+    const server = mp.server || this.settings.get('multiplayer.server') || '';
+    const name = mp.name || this.settings.get('multiplayer.name') || '';
+    const dot = { online: '#3cff8a', connecting: '#ffb300', reconnecting: '#ffb300', error: '#ff4a3a', offline: '#8fa1b3' }[st];
+    const what = (p) => (!p.drive ? '<span class="sub">in the menus</span>' : p.drive.kind === 'train' ? `🚇 Line ${esc(p.drive.number)} · ${esc(p.drive.uid || p.drive.model)}` : `🚌 ${esc(p.drive.uid || p.drive.model)}${p.drive.route ? ` · route ${esc(p.drive.route)}` : ''}`);
+    const body = this.frame('Multiplayer', `
+      <div class="bus-layout"><div>
+        <h3>Server</h3>
+        <div class="cond-row"><label>Your name <input type="text" id="mp-name" value="${esc(name)}" maxlength="24" size="16"></label></div>
+        <div class="cond-row"><label>Server address <input type="text" id="mp-server" value="${esc(server)}" placeholder="https://your-server.onrender.com" size="34" list="mp-servers"></label>
+          <datalist id="mp-servers">${(this.settings.get('multiplayer.recent') || []).map((u) => `<option value="${esc(u)}">`).join('')}</datalist></div>
+        ${(this.settings.get('multiplayer.recent') || []).length ? `<p class="sub">Recent servers: ${(this.settings.get('multiplayer.recent') || []).map((u) => `<a href="#" data-srv="${esc(u)}">${esc(u.replace(/^https?:\/\//, ''))}</a>`).join(' · ')}</p>` : ''}
+        <div class="row-tools">
+          ${st === 'offline' || st === 'error' ? '<button class="btn primary" id="mp-connect">Connect</button>' : '<button class="btn" id="mp-disconnect">Disconnect</button>'}
+          <span class="mp-status"><i style="background:${dot}"></i>${{ online: 'Online', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Connection error', offline: 'Offline' }[st]}${mp.ping != null && st === 'online' ? ` · ${mp.ping} ms` : ''}</span></div>
+        ${mp.error ? `<p class="errors">${esc(mp.error)}</p>` : ''}${mp.lastError && st === 'online' ? `<p class="errors">${esc(mp.lastError)}</p>` : ''}
+        <p class="sub">The multiplayer server is a small Node program (<code>server/</code> in the project) that you host yourself, for example free on Render. Everyone connects to the same address. See <b>docs/MULTIPLAYER.md</b>.</p>
+        ${st === 'online' && !ses ? `
+          <h3>Sessions on this server</h3>
+          <table class="stations"><thead><tr><th>Name</th><th>Host</th><th>Players</th><th></th></tr></thead><tbody>
+          ${mp.sessions.map((x) => `<tr><td><b>${esc(x.name)}</b><br><span class="sub">code ${esc(x.code)}</span></td><td>${esc(x.host || '—')}</td><td>${x.players}/${x.max}</td><td><button class="btn small primary" data-join="${esc(x.code)}">Join</button></td></tr>`).join('') || '<tr><td colspan="4">No public session yet — create one.</td></tr>'}</tbody></table>
+          <div class="row-tools"><button class="btn small" id="mp-refresh">Refresh</button></div>
+          <h3>Create a session</h3>
+          <div class="cond-row"><label>Name <input type="text" id="mp-sname" value="${esc(name ? `${name}'s Grandville` : 'Grandville')}" maxlength="40" size="22"></label>
+            <label>Players <select id="mp-max">${[2, 4, 6, 8, 12].map((n) => `<option ${n === 8 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label><input type="checkbox" id="mp-public" checked> listed publicly</label></div>
+          <div class="row-tools"><button class="btn primary" id="mp-create">Create</button></div>
+          <h3>Join with a code</h3>
+          <div class="cond-row"><label>Code <input type="text" id="mp-code" maxlength="5" size="7" style="text-transform:uppercase"></label><button class="btn" id="mp-join">Join</button></div>` : ''}
+        ${ses ? `
+          <h3>Session ${esc(ses.name)} <span class="tag">${esc(ses.code)}</span></h3>
+          <p>Invite friends: send them this link (or the code <b>${esc(ses.code)}</b> and the server address).</p>
+          <div class="cond-row"><input type="text" id="mp-link" readonly value="${esc(mp.inviteLink())}" style="flex:1;min-width:260px"><button class="btn small" id="mp-copy">Copy link</button></div>
+          <p class="sub">Start any metro line or bus shift from the menus: the others see your vehicle and you see theirs. Trains on the same track are kept apart by the server.</p>
+          <div class="row-tools"><button class="btn primary" data-nav="main">Choose a service ▶</button><button class="btn danger" id="mp-leave">Leave session</button></div>` : ''}
+      </div><div>
+        ${ses ? `<h3>Players</h3><table class="stations"><tbody>${mp.players.map((p) => `<tr><td><span class="mp-dot" style="background:${p.online ? p.color : '#555'}"></span><b>${esc(p.name)}</b>${p.id === mp.me?.id ? ' <span class="tag">you</span>' : ''}<br><span class="sub">${p.online ? 'online' : 'reconnecting…'}</span></td><td>${what(p)}</td><td class="sub">${p.stats.stops} stops · ${p.stats.passengers} pax</td></tr>`).join('')}</tbody></table>
+          <h3>Activity</h3><ul class="mp-feed">${mp.feed.slice(0, 14).map((f) => `<li><span class="sub">${new Date(f.at).toLocaleTimeString().slice(0, 5)}</span> ${esc(f.text)}</li>`).join('') || '<li class="sub">Nothing yet.</li>'}</ul>` : '<h3>How it works</h3><p class="sub">1. Host the server (docs/MULTIPLAYER.md) or use a friend\'s.<br>2. Connect, then create a session or join one.<br>3. Share the invite link.<br>4. Each player drives their own train or bus in the same network: positions, doors, arrivals and passengers are shared in real time.</p>'}
+      </div></div>`, { wide: true });
+    const $ = (id) => body.querySelector(id);
+    $('#mp-connect') && ($('#mp-connect').onclick = () => {
+      const srv = $('#mp-server').value.trim(); if (!srv) { this.notice('Enter the server address.'); return; }
+      const recent = [srv, ...(this.settings.get('multiplayer.recent') || []).filter((u) => u !== srv)].slice(0, 5);
+      this.settings.set('multiplayer.recent', recent);
+      mp.connect(srv, $('#mp-name').value);
+    });
+    body.querySelectorAll('[data-srv]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#mp-server').value = a.dataset.srv; }));
+    $('#mp-disconnect') && ($('#mp-disconnect').onclick = () => mp.disconnect());
+    $('#mp-refresh') && ($('#mp-refresh').onclick = () => mp.list());
+    $('#mp-create') && ($('#mp-create').onclick = () => mp.create($('#mp-sname').value, $('#mp-public').checked, Number($('#mp-max').value)));
+    $('#mp-join') && ($('#mp-join').onclick = () => { const c = $('#mp-code').value.trim().toUpperCase(); if (c.length === 5) mp.join(c); else this.notice('A code has 5 characters.'); });
+    body.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => mp.join(b.dataset.join)));
+    $('#mp-leave') && ($('#mp-leave').onclick = () => { mp.leave(); this.screen_multiplayer(); });
+    $('#mp-copy') && ($('#mp-copy').onclick = async () => { try { await navigator.clipboard.writeText($('#mp-link').value); this.notice('Invite link copied.'); } catch { $('#mp-link').select(); document.execCommand?.('copy'); } });
+  }
+
   screen_settings() {
     const s = this.settings;
     const fmts = {};
@@ -375,12 +529,13 @@ export class Menu {
         <div class="table-wrap"><table class="stations"><thead><tr><th>Station</th><th>Stop error</th><th>Delay</th><th>Accuracy</th><th>Punctuality</th></tr></thead>
         <tbody>${r.stops.map((s) => `<tr><td>${esc(s.name)}</td><td>${s.error >= 0 ? '+' : ''}${s.error.toFixed(2)} m</td><td>${formatDelta(s.delay)}</td><td>${s.acc}</td><td>${s.punct}</td></tr>`).join('') || '<tr><td colspan="5">No stops served</td></tr>'}</tbody></table></div>
         ${r.penalties.length ? `<h3>Penalties (−${r.penaltyTotal})</h3><ul class="penalties">${r.penalties.map((p) => `<li>${esc(p.text)}${p.count > 1 ? ` ×${p.count}` : ''} <b>−${p.points}</b></li>`).join('')}</ul>` : '<p>No penalties — exemplary driving.</p>'}
+        ${earningsTable(r.settlement, r.vehicleAfter)}
         <div class="row-tools">
           <button class="btn primary" id="r-back">${r.line.loop ? 'Next circuit' : `Drive back (${esc(r.line.directions[other].name)})`}</button>
           <button class="btn" id="r-again">Retry</button>
           <button class="btn ghost" data-nav="main">Main menu</button>
         </div></div></div>`;
-    this.root.querySelector('#r-back').onclick = () => { this.sel.direction = other; this.persist(); this.emit('play', { line: r.line, train: r.train, direction: other }); };
-    this.root.querySelector('#r-again').onclick = () => this.emit('play', { line: r.line, train: r.train, direction: r.direction });
+    this.root.querySelector('#r-back').onclick = () => { this.sel.direction = other; this.persist(); this.emit('play', { line: r.line, train: r.train, direction: other, vehicleUid: r.vehicleUid }); };
+    this.root.querySelector('#r-again').onclick = () => this.emit('play', { line: r.line, train: r.train, direction: r.direction, vehicleUid: r.vehicleUid });
   }
 }

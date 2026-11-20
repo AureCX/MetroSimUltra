@@ -2,6 +2,8 @@
  "id": "midi10",
  "order": 7,
  "name": "Midi 10.5 LF",
+ "price": 45000,
+ "serviceIntervalKm": 250,
  "type": "lowfloor",
  "description": "Low-floor accessible midibus: fully flat floor, kneeling and ramp, nimble.",
  "length": 10.5,

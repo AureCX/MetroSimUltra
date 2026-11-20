@@ -1,16 +1,44 @@
 {
-  "id": "hx6",
-  "order": 3,
-  "name": "HX-6 Heavy",
-  "description": "Long, heavy high-capacity stock: 4 doors per side, demanding precise stops on 110 m platforms.",
-  "cars": 6, "carLength": 16.5, "carGap": 0.9, "width": 2.8, "height": 3.6,
-  "doorsPerSide": 4, "doorWidth": 1.3,
-  "massEmpty": 190, "capacity": 1050,
-  "maxPower": 2000, "maxTractiveForce": 240, "maxSpeed": 80,
-  "serviceDecel": 1.0, "emergencyDecel": 1.3,
-  "tractionNotches": 4, "brakeNotches": 7,
-  "tractionResponse": 1.0, "brakeResponse": 1.2, "tractionDeadTime": 0.3, "brakeDeadTime": 0.5,
-  "davis": { "a": 13, "b": 0.08, "c": 0.7 },
-  "livery": { "body": "#c8ccd2", "front": "#c62828", "stripe": "#c62828", "doors": "#b5b9bf", "roof": "#7d8287" },
-  "sound": { "inverter": "gto", "motorPitch": 0.85 }
+ "id": "hx6",
+ "order": 3,
+ "name": "HX-6 Heavy",
+ "price": 380000,
+ "serviceIntervalKm": 450,
+ "description": "Long, heavy high-capacity stock: 4 doors per side, demanding precise stops on 110 m platforms.",
+ "cars": 6,
+ "carLength": 16.5,
+ "carGap": 0.9,
+ "width": 2.8,
+ "height": 3.6,
+ "doorsPerSide": 4,
+ "doorWidth": 1.3,
+ "massEmpty": 190,
+ "capacity": 1050,
+ "maxPower": 2000,
+ "maxTractiveForce": 240,
+ "maxSpeed": 80,
+ "serviceDecel": 1.0,
+ "emergencyDecel": 1.3,
+ "tractionNotches": 4,
+ "brakeNotches": 7,
+ "tractionResponse": 1.0,
+ "brakeResponse": 1.2,
+ "tractionDeadTime": 0.3,
+ "brakeDeadTime": 0.5,
+ "davis": {
+  "a": 13,
+  "b": 0.08,
+  "c": 0.7
+ },
+ "livery": {
+  "body": "#c8ccd2",
+  "front": "#c62828",
+  "stripe": "#c62828",
+  "doors": "#b5b9bf",
+  "roof": "#7d8287"
+ },
+ "sound": {
+  "inverter": "gto",
+  "motorPitch": 0.85
+ }
 }

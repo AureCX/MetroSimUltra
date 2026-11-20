@@ -1,16 +1,44 @@
 {
-  "id": "apm-aeroval",
-  "order": 4,
-  "name": "Aéroval APM",
-  "description": "Automated airport metro for Line D: 4 short cars with large windows and wide doors for luggage, smooth ATO driving.",
-  "cars": 4, "carLength": 14.0, "carGap": 0.8, "width": 2.7, "height": 3.4,
-  "doorsPerSide": 2, "doorWidth": 1.9,
-  "massEmpty": 92, "capacity": 480,
-  "maxPower": 1400, "maxTractiveForce": 120, "maxSpeed": 80,
-  "serviceDecel": 1.0, "emergencyDecel": 1.4,
-  "tractionNotches": 5, "brakeNotches": 7,
-  "tractionResponse": 0.7, "brakeResponse": 0.8, "tractionDeadTime": 0.15, "brakeDeadTime": 0.3,
-  "davis": { "a": 7, "b": 0.05, "c": 0.4 },
-  "livery": { "body": "#eef0f2", "front": "#FF8000", "stripe": "#FF8000", "doors": "#d9dde2", "roof": "#a7adb3" },
-  "sound": { "inverter": "igbt", "motorPitch": 1.3 }
+ "id": "apm-aeroval",
+ "order": 4,
+ "name": "Aéroval APM",
+ "price": 220000,
+ "serviceIntervalKm": 600,
+ "description": "Automated airport metro for Line D: 4 short cars with large windows and wide doors for luggage, smooth ATO driving.",
+ "cars": 4,
+ "carLength": 14.0,
+ "carGap": 0.8,
+ "width": 2.7,
+ "height": 3.4,
+ "doorsPerSide": 2,
+ "doorWidth": 1.9,
+ "massEmpty": 92,
+ "capacity": 480,
+ "maxPower": 1400,
+ "maxTractiveForce": 120,
+ "maxSpeed": 80,
+ "serviceDecel": 1.0,
+ "emergencyDecel": 1.4,
+ "tractionNotches": 5,
+ "brakeNotches": 7,
+ "tractionResponse": 0.7,
+ "brakeResponse": 0.8,
+ "tractionDeadTime": 0.15,
+ "brakeDeadTime": 0.3,
+ "davis": {
+  "a": 7,
+  "b": 0.05,
+  "c": 0.4
+ },
+ "livery": {
+  "body": "#eef0f2",
+  "front": "#FF8000",
+  "stripe": "#FF8000",
+  "doors": "#d9dde2",
+  "roof": "#a7adb3"
+ },
+ "sound": {
+  "inverter": "igbt",
+  "motorPitch": 1.3
+ }
 }

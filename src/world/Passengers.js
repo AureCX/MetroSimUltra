@@ -144,7 +144,9 @@ export class PassengerSystem {
     this.group = new THREE.Group(); scene.add(this.group);
     this.crowds = new Map();
     this.tmp = {};
-    this.onboard = Math.round(line.stations.length * 30);
+    this.onboard = 0;              // the train leaves its first station empty
+    this.boardedTotal = 0;
+    this.terminating = false;      // boarding disabled: the train is terminating
     this.time = 0;
     bus.on('doors:opening', () => this.onDoorsOpen());
   }
@@ -184,7 +186,9 @@ export class PassengerSystem {
   addWaiting(crowd, rand, initial) {
     const stp = crowd.stp, st = stp.station;
     const p = new Person(rand);
-    p.boarding = rand() < 0.88;
+    // Only people travelling in this train's direction board it: everyone on a side platform (it serves one
+    // direction), about half on an island platform. Nobody boards at the terminus.
+    p.boarding = !stp.isTerminus && (stp.station.platformType === 'island' ? rand() < 0.55 : rand() < 0.94);
     if (initial) {
       p.along = stp.platformStartR + 8 + rand() * (st.platformLength - 16);
       p.depth = 0.9 + rand() * (crowd.maxDepth - 1.1);
@@ -240,9 +244,14 @@ export class PassengerSystem {
     c.served = true;
     const doors = this.doorPositions();
     c.doors = doors.map((along) => ({ along, alightQueue: 0, boardRank: 0, lastBoard: -9 }));
-    // Alighting passengers queue inside each door.
-    const nAlight = c.stp.isTerminus ? Math.min(40, doors.length * 3) : Math.round(Math.min(30, c.people.length * (0.4 + c.rand() * 0.6)));
-    for (let i = 0; i < nAlight; i++) {
+    // Who gets off: nobody at the first station (the train comes in empty), everyone at the terminus, elsewhere a
+    // share of those on board that grows towards the end of the line. Only people who are on board can alight.
+    const stops = this.route.stops, remaining = stops.length - 1 - c.k;
+    const terminus = c.stp.isTerminus;
+    const nAlight = c.k === 0 ? 0 : terminus ? this.onboard : Math.min(this.onboard, Math.round(this.onboard * Math.min(0.8, (1.4 + c.rand() * 0.6) / Math.max(1, remaining))));
+    this.terminating = terminus;
+    const shown = Math.min(nAlight, 60); // figures walking out (the rest leave unseen through other doors)
+    for (let i = 0; i < shown; i++) {
       const d = c.doors[i % doors.length];
       const p = new Person(Math.random);
       p.along = d.along + (Math.random() - 0.5) * 0.4; p.depth = -0.9;
@@ -253,9 +262,13 @@ export class PassengerSystem {
       c.alighting.push(p);
     }
     this.onboard = Math.max(0, this.onboard - nAlight);
+    // Terminating train: nobody boards (those waiting here are for the next departure).
+    if (terminus) return;
     // Boarders pick the nearest door and stand beside it, leaving the doorway clear.
+    let room = Math.max(0, (this.train?.specs?.capacity ?? 1e9) - this.onboard); // a full train takes nobody else
     for (const p of c.people) {
       if (!p.boarding || p.state === 'gone') continue;
+      if (room-- <= 0) break;
       let best = c.doors[0];
       for (const d of c.doors) if (Math.abs(d.along - p.along) < Math.abs(best.along - p.along)) best = d;
       p.door = best; p.assigned = true;
@@ -331,7 +344,7 @@ export class PassengerSystem {
       case 'board': {
         if (!(openAmt > 0.5)) { p.state = 'queue'; break; }
         const dist = this.steer(p, { along: p.door.along, depth: -0.95 }, p.pref);
-        if (dist < 0.15 || p.depth < -0.75) { p.state = 'gone'; p.g.visible = false; this.onboard++; }
+        if (dist < 0.15 || p.depth < -0.75) { p.state = 'gone'; p.g.visible = false; this.onboard++; this.boardedTotal = (this.boardedTotal || 0) + 1; }
         break;
       }
       default: break;

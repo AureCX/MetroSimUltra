@@ -2,6 +2,7 @@
 // brake interlock, kneeling, indicators / hazards, lights, wipers, compressed air, fuel or
 // battery energy, coolant temperature, vehicle condition and stop request. Wraps BusPhysics.
 import { BusPhysics } from './BusPhysics.js';
+import { BusDamage } from './Crash.js';
 import { clamp } from '../core/util.js';
 
 const DOOR_TIME = 1.8;
@@ -25,6 +26,7 @@ export class BusVehicle {
     this.hybridSoc = 0.6;
     this.coolant = saved.coolant ?? 25;
     this.condition = saved.condition ?? 1;      // 1 = perfect
+    this.damage = new BusDamage(spec, saved.damage);
     this.cleanliness = saved.cleanliness ?? 1;
     this.stopRequest = false;
     this.emergency = false;
@@ -56,6 +58,7 @@ export class BusVehicle {
   toggleParking() { this.parking = !this.parking; this.bus.emit('bus:parking', this.parking); }
   door(i, open) {
     const d = this.doors[i]; if (!d) return;
+    if (open && this.damage.jammed.includes(i)) { this.bus.emit('bus:refused', `Door ${i + 1} is jammed (crash damage) — repair at the depot`); return; }
     if (!open && i === this.rampDoor && this.rampT > 0.02) { this.bus.emit('bus:refused', 'Stow the ramp before closing this door'); return; }
     if (open && Math.abs(this.speed) > 0.8) { this.bus.emit('bus:doorWhileMoving', i); return; }
     d.target = open ? 1 : 0;
@@ -111,13 +114,17 @@ export class BusVehicle {
     if (this.rampT > 0.02) c.throttle = 0;
     if (!this.engineOn) c.throttle = 0;
     this.ph.mu = env.mu; this.ph.grade = env.grade || 0;
+    // Mechanical damage: power, steering pull.
+    this.ph.powerScale = this.damage.powerScale() * (this.condition < 0.6 ? 0.7 + this.condition / 2 : 1);
+    this.ph.steerBias = this.damage.steerBias();
     this.ph.step(dt, c, {
       engineOn: this.engineOn, gearSel: this.gearSel, parking: this.parking || this.airPressure < 5.5,
       doorBrake: !this.doorsClosed, airPressure: this.airPressure, kneel: this.kneelT > 0.5, hybridSoc: this.hybridSoc,
       onShift: (g) => this.bus.emit('bus:shift', g), retarderLevel: this.retarder,
     });
     const used = Math.max(0, this.ph.brakeP - prevP) * 0.9;
-    this.airPressure = clamp(this.airPressure - used + (this.engineOn ? 0.35 * dt : 0), 0, 10);
+    this.airPressure = clamp(this.airPressure - used + (this.engineOn ? 0.35 * dt : 0) - this.damage.airLeak() * dt, 0, 10);
+    if (this.damage.failures.includes('engine') && this.engineOn) this.coolant += dt * 0.4;
     // Energy.
     const P = this.ph.lastPower || { drive: 0, regen: 0 };
     if (this.electric) {

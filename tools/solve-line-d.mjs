@@ -50,6 +50,7 @@ const raw = {
   tunnel: { profile: 'box' }, map: { origin: [0, 0], heading: 330 },
   elevated: { height: 9 },
   automation: 'ato',
+  platformScreenDoors: true,
   train: 'apm-aeroval',
   directions: { A: { name: 'Aéroval · Direction Grandville Sud' }, B: { name: 'Aéroval · Direction Aéroport – Terminal 1' } },
   defaults: { platformLength: 105, platformWidth: 8, platformType: 'island', approachSpeedLimit: 45, approachDistance: 100, stopDuration: 25, style: 'modern' },

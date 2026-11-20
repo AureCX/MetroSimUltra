@@ -48,9 +48,12 @@ export class CameraSystem {
   resetView() { this.yaw = 0; this.pitch = -0.12; this.zoom = 1; this.orbit = { yaw: 0.2, pitch: 0.12, dist: 16 }; }
 
   cycle() {
+    if (this.mode === 'tour') { this.setMode('cab'); return; }
     const i = (CAMERA_MODES.indexOf(this.mode) + 1) % CAMERA_MODES.length;
     this.setMode(CAMERA_MODES[i]);
   }
+  /** Preset viewpoints (station tour): { name, pos:[x,y,z], look:[x,y,z] }. */
+  setTour(view) { this.tourView = view; this.tourT = 0; this.orbit.yaw = 0.2; this.orbit.pitch = 0.12; this.mode = 'tour'; this.bus.emit('camera:mode', 'tour'); }
   setMode(m) {
     this.mode = m;
     this.trackside = null;
@@ -92,6 +95,15 @@ export class CameraSystem {
     }
     if (cam.parent !== null && cam.parent !== ctx.scene) ctx.scene.add(cam);
     cam.fov = base; cam.updateProjectionMatrix();
+    if (this.mode === 'tour' && this.tourView) {
+      // Slow cinematic drift around a preset viewpoint; mouse drag looks around.
+      const v = this.tourView, t = (this.tourT = (this.tourT || 0) + dt);
+      const drift = Math.sin(t * 0.08) * 6;
+      cam.position.set(v.pos[0] + drift, v.pos[1] + Math.sin(t * 0.05) * 1.5, v.pos[2] + Math.cos(t * 0.08) * 3);
+      cam.lookAt(v.look[0], v.look[1], v.look[2]);
+      cam.rotateY(this.orbit.yaw - 0.2); cam.rotateX(clamp(this.orbit.pitch - 0.12, -0.6, 0.6));
+      return;
+    }
     const { route, front, geom } = ctx;
     if (this.mode === 'chase') {
       const o = this.orbit;

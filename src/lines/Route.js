@@ -77,6 +77,26 @@ export class Route {
     this.limits = lim;
   }
 
+  /**
+   * Braking envelope (m/s) for a deceleration and margin: the highest speed at each metre from which every limit
+   * ahead can still be respected. Computed once per (decel, margin) in O(length); used by the automatic drivers on
+   * long main lines, where a step-by-step look-ahead over several kilometres would be too slow.
+   */
+  envelope(decel, margin) {
+    const key = `${decel}|${margin}`;
+    this._env ||= new Map();
+    if (this._env.has(key)) return this._env.get(key);
+    const L = this.limits, n = L.length, E = new Float32Array(n);
+    let next = Infinity;
+    for (let r = n - 1; r >= 0; r--) {
+      const lim = (L[Math.min(n - 1, r + 8)] / 3.6) * margin;
+      next = Math.min(lim, Math.sqrt(next * next + 2 * decel));
+      E[r] = next;
+    }
+    this._env.set(key, E);
+    return E;
+  }
+
   /** Static line speed limit (km/h) at a single point. */
   limitAt(r) { return this.limits[Math.min(this.limits.length - 1, Math.max(0, Math.floor(r)))]; }
 

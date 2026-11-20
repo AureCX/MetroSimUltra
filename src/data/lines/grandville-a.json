@@ -163,6 +163,7 @@
   },
   {
    "name": "Gare Centrale",
+   "interchange": { "rail": true },
    "distanceToNext": 900,
    "speedLimit": 65,
    "stopDuration": 35,

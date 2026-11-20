@@ -18,8 +18,19 @@ export class SignalView {
     const bodyMat = new THREE.MeshLambertMaterial({ color: 0x151515 });
     const postMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
     const glowTex = glowTexture();
+    // TVM: block marker boards (blue with a yellow triangle); the aspects are shown in the cab only.
+    const tvm = signalSystem.system === 'tvm';
+    const markerMat = tvm && new THREE.MeshBasicMaterial({ map: tvmMarkerTexture(), side: THREE.DoubleSide });
     for (const s of signalSystem.signals) {
-      if (s.kind === 'end' && signalSystem.system === 'cbtc') { /* still shown: permanent stop */ }
+      if (tvm && s.kind !== 'end') {
+        const p = route.point(s.r, 2.6, 2.4);
+        const g = new THREE.Group(); g.position.set(p.x, p.y, p.z);
+        g.rotation.y = -geom.heading(route.toTrack(s.r)) + (route.sign < 0 ? Math.PI : 0);
+        const board = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.62), markerMat); board.position.z = 0.02; g.add(board);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.6), postMat); post.position.y = -1.6; g.add(post);
+        this.group.add(g);
+        continue;
+      }
       const zone = geom.stationZoneAt(route.toTrack(s.r));
       const side = zone && geom.line.stations[zone.index].platformType === 'side' ? -1.55 : 1.75;
       const p = route.point(s.r, side, 2.1);
@@ -64,6 +75,18 @@ export class SignalView {
     }
   }
   dispose() { this.scene.remove(this.group); }
+}
+
+let tvmTex;
+function tvmMarkerTexture() {
+  if (tvmTex) return tvmTex;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1d4fa0'; g.fillRect(0, 0, 128, 160);
+  g.strokeStyle = '#ffffff'; g.lineWidth = 6; g.strokeRect(3, 3, 122, 154);
+  g.fillStyle = '#f2c200'; g.beginPath(); g.moveTo(64, 30); g.lineTo(108, 122); g.lineTo(20, 122); g.closePath(); g.fill();
+  tvmTex = new THREE.CanvasTexture(c); tvmTex.colorSpace = THREE.SRGBColorSpace;
+  return tvmTex;
 }
 
 let glowCache;

@@ -80,7 +80,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
   const number = String(raw.number ?? (name.match(/\d+[A-Za-z]?/)?.[0] ?? name.slice(0, 2)));
   const d = { ...LINE_DEFAULTS, ...(raw.defaults || {}) };
   const sig = { ...LINE_DEFAULTS.signaling, ...(raw.signaling || {}) };
-  if (!['fixed-block', 'cbtc'].includes(sig.system)) sig.system = 'fixed-block';
+  if (!['fixed-block', 'cbtc', 'tvm'].includes(sig.system)) sig.system = 'fixed-block';
 
   const errors = [];
   const stations = stationsRaw.map((s, i) => {
@@ -95,9 +95,9 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
       id: s.id ? String(s.id) : slugify(s.name || `station-${i}`),
       name: String(s.name || `Station ${i + 1}`),
       distanceToNext: last ? 0 : dist,
-      speedLimit: num(s.speedLimit, d.maxSpeed, { min: 10, max: 160 }),
-      approachSpeedLimit: num(s.approachSpeedLimit, d.approachSpeedLimit, { min: 10, max: 160 }),
-      approachDistance: num(s.approachDistance, d.approachDistance, { min: 0, max: 1000 }),
+      speedLimit: num(s.speedLimit, d.maxSpeed, { min: 10, max: 360 }),
+      approachSpeedLimit: num(s.approachSpeedLimit, d.approachSpeedLimit, { min: 10, max: 360 }),
+      approachDistance: num(s.approachDistance, d.approachDistance, { min: 0, max: 8000 }),
       stopDuration: num(s.stopDuration, d.stopDuration, { min: 5, max: 600 }),
       runTime: s.runTime != null ? num(s.runTime, null, { min: 10 }) : null,
       platformLength,
@@ -122,6 +122,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
         bus: Array.isArray(s.interchange?.bus) ? s.interchange.bus.map(String) : [],
         busWalk: !!s.interchange?.busWalk,
         airport: !!s.interchange?.airport,
+        rail: !!s.interchange?.rail,          // main-line (TGV) station in the same complex
       },
       signage: s.signage === 'airport' || s.signage === 'interchange' ? s.signage : null,
     };
@@ -162,7 +163,7 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
     color: raw.color || '#ffcc00',
     textColor: raw.textColor || pickTextColor(raw.color || '#ffcc00'),
     language: raw.language || d.language,
-    maxSpeed: num(raw.maxSpeed, d.maxSpeed, { min: 20, max: 160 }),
+    maxSpeed: num(raw.maxSpeed, d.maxSpeed, { min: 20, max: 360 }),
     startTime: raw.startTime || d.startTime,
     headway: num(raw.headway, d.headway, { min: 60, max: 1800 }),
     trackSpacing: num(raw.trackSpacing, d.trackSpacing, { min: 3.2, max: 6 }),
@@ -176,6 +177,9 @@ export function normalizeLine(raw, { id, builtIn = false, sourceId = null } = {}
     automation: raw.automation === 'ato' ? 'ato' : null,
     // Platform screen doors along every platform edge (Line D).
     platformScreenDoors: !!raw.platformScreenDoors,
+    // Main-line railway (TGV): open air by default, streamed landscape, long distances.
+    category: raw.category === 'hst' ? 'hst' : 'metro',
+    rail: raw.rail && typeof raw.rail === 'object' ? raw.rail : null,
     speedRestrictions: restrictions,
     loop: loop ? { junctionIndex: loop.junctionIndex, returnIndex: loop.returnIndex, junction: stations[loop.junctionIndex].name, stations: stations.slice(loop.junctionIndex + 1, loop.returnIndex).map((s) => s.name) } : null,
     directions: loop ? {

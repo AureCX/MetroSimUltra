@@ -1,0 +1,21 @@
+{
+ "id": "tgv-classic",
+ "name": "Grande Vitesse Classique",
+ "category": "hst",
+ "order": 11,
+ "price": 380000,
+ "serviceIntervalKm": 3500,
+ "description": "Single-deck high-speed trainset: 2 power cars and 8 articulated trailers, 377 seats, 300 km/h.",
+ "style": "hst", "decks": 1,
+ "cars": 10, "carLength": 19.5, "carGap": 0.4, "width": 2.9, "height": 3.5,
+ "doorsPerSide": 1, "doorWidth": 0.95,
+ "massEmpty": 385, "capacity": 377,
+ "maxPower": 8800, "maxTractiveForce": 215, "maxSpeed": 300,
+ "serviceDecel": 0.75, "emergencyDecel": 1.1,
+ "tractionNotches": 8, "brakeNotches": 8,
+ "tractionResponse": 1.6, "brakeResponse": 1.4, "tractionDeadTime": 0.4, "brakeDeadTime": 0.5,
+ "davis": { "a": 1.6, "b": 0.022, "c": 0.32 },
+ "livery": { "body": "#f2f2ee", "front": "#8a1f2b", "stripe": "#8a1f2b", "doors": "#e2e2dc", "roof": "#b9bcc0", "accent": "#5a6470" },
+ "classes": { "first": 3, "second": 5 },
+ "sound": { "inverter": "gto", "motorPitch": 0.75 }
+}

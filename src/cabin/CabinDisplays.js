@@ -26,16 +26,18 @@ export class Speedometer {
     g.lineWidth = 20;
     g.strokeStyle = '#1e6e3a'; g.beginPath(); g.arc(cx, cy, R - 30, a0, ang(st.permitted)); g.stroke();
     g.strokeStyle = '#8a1c14'; g.beginPath(); g.arc(cx, cy, R - 30, ang(st.permitted), a1); g.stroke();
-    if (st.nextLimit && st.nextLimit.distance < 400) {
+    if (st.nextLimit && st.nextLimit.distance < (this.max > 200 ? 6000 : 400)) {
       g.strokeStyle = '#ffb300'; g.lineWidth = 10; g.beginPath(); g.arc(cx, cy, R - 52, ang(st.nextLimit.limit) - 0.03, ang(st.nextLimit.limit) + 0.03); g.stroke();
     }
     // Ticks.
     g.fillStyle = '#e8ecef'; g.strokeStyle = '#e8ecef'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (let v = 0; v <= this.max; v += 5) {
-      const a = ang(v), big = v % 10 === 0;
+    // High-speed dials (> 200 km/h) use a coarser scale.
+    const hi = this.max > 200, minor = hi ? 10 : 5, major = hi ? 20 : 10, label = hi ? 40 : 20;
+    for (let v = 0; v <= this.max; v += minor) {
+      const a = ang(v), big = v % major === 0;
       g.lineWidth = big ? 5 : 2;
       g.beginPath(); g.moveTo(cx + Math.cos(a) * (R - (big ? 26 : 16)), cy + Math.sin(a) * (R - (big ? 26 : 16))); g.lineTo(cx + Math.cos(a) * (R - 2), cy + Math.sin(a) * (R - 2)); g.stroke();
-      if (v % 20 === 0) { g.font = 'bold 34px Arial'; g.fillText(String(v), cx + Math.cos(a) * (R - 78), cy + Math.sin(a) * (R - 78)); }
+      if (v % label === 0) { g.font = `bold ${hi ? 30 : 34}px Arial`; g.fillText(String(v), cx + Math.cos(a) * (R - 78), cy + Math.sin(a) * (R - 78)); }
     }
     // Permitted marker triangle.
     const pa = ang(st.permitted);
@@ -73,7 +75,7 @@ export class DMI {
     g.textAlign = 'left'; g.fillStyle = '#dfe6ee'; g.font = 'bold 28px Arial';
     g.fillText(st.directionName, 86, 36);
     g.textAlign = 'right'; g.fillStyle = '#8fa1b3'; g.font = '24px Arial';
-    g.fillText(`${st.signalSystem === 'cbtc' ? 'CBTC' : 'BLOCK'} · ATP ${st.atpEnabled ? 'ON' : 'OFF'}`, W - 20, 36);
+    g.fillText(`${st.signalSystem === 'cbtc' ? 'CBTC' : st.signalSystem === 'tvm' ? 'TVM 430' : 'BLOCK'} · ATP ${st.atpEnabled ? 'ON' : 'OFF'}`, W - 20, 36);
 
     // Left column: speed supervision.
     g.textAlign = 'left';
@@ -96,7 +98,7 @@ export class DMI {
 
     // Signal.
     this.box(16, 350, 300, 130, '#121820');
-    g.fillStyle = '#8fa1b3'; g.font = '22px Arial'; g.fillText(st.signalSystem === 'cbtc' ? 'MOVING BLOCK' : 'NEXT SIGNAL', 34, 380);
+    g.fillStyle = '#8fa1b3'; g.font = '22px Arial'; g.fillText(st.signalSystem === 'cbtc' ? 'MOVING BLOCK' : st.signalSystem === 'tvm' ? 'NEXT BLOCK' : 'NEXT SIGNAL', 34, 380);
     if (st.signal) {
       g.fillStyle = ASPECT_COL[st.signal.aspect]; g.beginPath(); g.arc(70, 435, 30, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#dfe6ee'; g.font = 'bold 30px Arial'; g.fillText(st.signal.number, 120, 425);

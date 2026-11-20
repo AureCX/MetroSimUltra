@@ -39,6 +39,34 @@ any line or bus route — the others see your vehicle in 3D and on the maps, tra
 by the server, arrivals and departures appear in the session feed. The server is in `server/` (Node, no
 dependencies). **GitHub Pages can host the game but not the server** — see `docs/MULTIPLAYER.md` for free hosting.
 
+## Grandes Lignes — Gare Centrale & the TGV network
+
+Main menu → **🚄 Grandes Lignes — TGV**. Gare Centrale (above metro A · B · C) is the main-line station: monumental
+façade with clock tower and copper domes, landscaped forecourt with fountains, taxis and buses, a great hall under a
+coffered vault with a skylight (marble, colonnades, chandeliers, split-flap departure/arrival boards, cafés, brasserie,
+boutiques, ticket offices and machines, first-class lounge, indoor trees, fountain, suspended sculpture), and a
+glass-and-steel train shed over six islands (voies 1–12) reached by a footbridge. Travellers follow the boards to the
+island of an upcoming departure and board only a train standing there; crowds follow rush hours.
+
+| Departure (examples) | Destination | Journey | Identity |
+|---|---|---|---|
+| 06:30 | Montreval | 35 min | regional city, cathedral, river |
+| 07:15 | Valdor | 55 min | coastal town, harbour, lighthouse |
+| 08:00 | Clairmont | 1 h 10 | industrial & cultural, factories, opera |
+| 09:00 | Saint-Roch-les-Alpes | 1 h 20 | mountain town, cable car, tunnels |
+| 10:30 | Belle-Rive | 1 h 45 | large western river city |
+| 12:00 | Port-Azur | 2 h 15 | southern coastal metropolis, marina |
+
+- The country between the cities is streamed around the train: terrain, embankments, cuttings, viaducts, tunnels,
+  catenary, forests, villages, sea coasts. TVM cab signalling (marker boards), 300–320 km/h, station zones at 160.
+- Fleet: **TGV Duplex** (bi-level, 512 seats) and **TGV Classique** (377 seats), 1st/2nd class saloons, power cars.
+- Board: train number, destination, calling points, track, duration, live status (on time, boarding, delayed, departed,
+  arrived, cancelled). Assign owned trainsets to departures, drive one, hire a trainset, or run it with a company driver.
+- Economy: tickets by distance, punctuality bonus (≤ 5 min), compensation (> 30 min), access charges, energy, crew, hire.
+- Keys: **U** time acceleration ×1/×2/×5/×10 (main lines), **O** station tour camera (façade, forecourt, hall, shed,
+  platforms, aerial). Lighting follows the clock: morning, day, golden hour, evening, night floodlighting.
+- Regenerate the lines with `node tools/build-tgv.mjs` (alignment, terrain-fitted profile, tunnels, timing).
+
 ## Bus simulator (Grandville buses & Aéroval)
 
 Choose **🚌 Bus** in the main menu. The bus mode is a separate simulator that shares only the core services

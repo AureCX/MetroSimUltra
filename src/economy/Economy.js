@@ -115,7 +115,7 @@ export class Economy {
     v.odometer += km; v.sinceService += km;
     const overdue = this.serviceDue(v) ? 2 : 1;
     if (condition != null) v.condition = clamp01(condition);
-    else v.condition = clamp01(v.condition - km * 0.0012 * overdue - incidents * 0.01 - (crash ? 0.35 : 0));
+    else v.condition = clamp01(v.condition - km * 0.0012 * (400 / this.serviceInterval(v)) * overdue - incidents * 0.01 - (crash ? 0.35 : 0));
     if (incidents || crash) v.incidents += incidents + (crash ? 1 : 0);
     this.persist();
     return v;
@@ -154,6 +154,48 @@ export class Economy {
     if (r.energyCost) items.push({ label: 'Fuel / electricity used', amount: -r.energyCost });
     this.penaltyItems(r, items, { skipped: 150, perPoint: 3 });
     return this.post(items, `Bus ${r.label || ''}`.trim(), r.uid);
+  }
+  /**
+   * Main-line (TGV) journey. r: { completed, score, distanceKm, carried, capacity, finalDelay (s, at the
+   * destination), penalties, missed, lease (€ hire fee when driving a leased trainset), service, uid }.
+   * Revenue = tickets (distance-based fares, first class dearer) — track access charges and traction energy;
+   * a punctuality bonus when arriving within 5 minutes, passenger compensation beyond 30 minutes late.
+   */
+  settleRail(r) {
+    const items = [], km = r.distanceKm;
+    if (r.completed) {
+      const pax = Math.max(r.carried || 0, Math.round((r.capacity || 400) * 0.35));
+      const fare = 0.16 * km + 6, firstShare = 0.22;
+      const tickets = pax * fare * (1 + firstShare * 0.6);
+      items.push({ label: `${pax} travellers · ${km.toFixed(0)} km (1st & 2nd class tickets)`, amount: tickets });
+      const quality = 0.5 + (r.score / 1000) * 0.7;
+      items.push({ label: `Service quality (score ${r.score}/1000)`, amount: tickets * 0.25 * (quality - 1) });
+      const late = Math.max(0, r.finalDelay ?? 0) / 60;
+      if (late <= 5) items.push({ label: `Punctuality bonus (arrived ${late < 1 ? 'on time' : `+${Math.round(late)} min`})`, amount: tickets * 0.12 });
+      else if (late > 30) items.push({ label: `Passenger compensation (+${Math.round(late)} min late)`, amount: -tickets * (late > 60 ? 0.5 : 0.25) });
+    } else items.push({ label: 'Journey not completed — tickets refunded', amount: 0 });
+    items.push({ label: `Track access charges · ${km.toFixed(0)} km`, amount: -km * 8 });
+    items.push({ label: 'Traction energy', amount: -km * 11 });
+    if (r.lease) items.push({ label: 'Trainset hire (leased)', amount: -r.lease });
+    this.penaltyItems(r, items, { skipped: 1500, perPoint: 6 });
+    return this.post(items, `TGV ${r.service || ''}`.trim(), r.uid);
+  }
+  /**
+   * A service operated by a company driver with one of the player's trainsets (assigned in the Grandes Lignes
+   * screen): the journey is simulated from the vehicle's condition and the service's own delay, then settled.
+   */
+  operateRail(uid, sv, { km, capacity, seed = Date.now() }) {
+    const v = this.vehicle(uid); if (!v) return { ok: false, reason: 'Unknown trainset.' };
+    if (v.condition < 0.25) return { ok: false, reason: `${uid} is unfit for service (condition ${Math.round(v.condition * 100)} %). Repair it first.` };
+    const rnd = (k) => { let h = Math.imul((seed + k) | 0, 2654435761) >>> 0; h ^= h >>> 15; return (h >>> 0) / 4294967295; };
+    const failure = rnd(1) < (1 - v.condition) * 0.25 + (this.serviceDue(v) ? 0.08 : 0);
+    const delay = (sv.delay || 0) + (failure ? 1200 + rnd(2) * 2400 : rnd(3) * 240);
+    const load = 0.55 + rnd(4) * 0.4;
+    const res = this.settleRail({ completed: true, score: failure ? 600 : 860, distanceKm: km, carried: Math.round(capacity * load), capacity, finalDelay: delay, service: `${sv.no} · ${sv.destination} (company driver)`, uid });
+    res.items.push({ label: 'Driver & on-board crew', amount: -Math.round(km * 3.5) });
+    const crew = res.items.at(-1).amount; this.d.balance += crew; this.d.ledger[0].amount += crew; res.total += crew; res.balance = this.d.balance; this.persist();
+    this.wear(uid, { km });
+    return { ok: true, ...res, delay, failure };
   }
   penaltyItems(r, items, { skipped, perPoint }) {
     if (r.missed) items.push({ label: `${r.missed} station(s) / stop(s) skipped`, amount: -r.missed * skipped });

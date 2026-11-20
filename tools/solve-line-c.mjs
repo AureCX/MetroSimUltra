@@ -37,7 +37,7 @@ const raw = {
     S('Saint-Michel', 'vault', { theme: { wall: '#f1ede2', accent: '#1f3c88' } }),
     S('Place des Nations', 'vault', { passengers: 24, theme: { accent: '#00DDF5' } }),
     S('République', 'vault', { passengers: 34, theme: { wall: '#f4f1e8', accent: '#00DDF5' } }),
-    S('Gare Centrale', 'vault', { passengers: 40, platformLength: 120, platformWidth: 5.5, theme: { wall: '#e9e2cf', accent: '#00DDF5' } }),
+    S('Gare Centrale', 'vault', { interchange: { rail: true }, passengers: 40, platformLength: 120, platformWidth: 5.5, theme: { wall: '#e9e2cf', accent: '#00DDF5' } }),
     S('Palais Royal', 'grand', { passengers: 30, platformLength: 115, platformWidth: 6, theme: { wall: '#efe6d2', accent: '#00DDF5', vault: '#1b2a4a' } }),
     S('Opéra', 'vault', { distanceToNext: 0, passengers: 26, theme: { wall: '#f3eee0', accent: '#b3121b' } }),
   ],

@@ -9,6 +9,7 @@ import { PlayerTrain } from '../driving/PlayerTrain.js';
 import { SignalSystem } from '../signaling/SignalSystem.js';
 import { TrafficManager } from '../traffic/TrafficManager.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
+import { HighSpeedWorld } from '../rail/HighSpeedWorld.js';
 import { SignalView } from '../world/SignalView.js';
 import { TrainModel, TRAIN_FLOOR } from '../world/TrainModel.js';
 import { NetworkModel, drawNetwork } from '../ui/NetworkScreen.js';
@@ -39,7 +40,8 @@ export class Game {
   }
 
   /** Builds the whole session. */
-  start({ line, train, direction, services, network, vehicleUid }) {
+  start({ line, train, direction, services, network, vehicleUid, tgv }) {
+    this.tgvRun = tgv || null;
     this.dispose();
     const bus = this.bus;
     // The player's own train: a worn vehicle (condition < 60 %) develops less tractive effort.
@@ -89,7 +91,12 @@ export class Game {
     const LP = this.geom.loop;
     const junctions = J ? [{ divergeS: J.divergeS, wallS: J.wallS, inner: J.innerMain }]
       : LP ? [{ divergeS: LP.J, wallS: LP.J + LP.chamber, inner: LP.inner }, { divergeS: LP.Jr - LP.chamber, wallS: LP.Jr, inner: LP.inner }] : [];
-    this.world = new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions, trainSpecs: train }).build();
+    this.hst = line.category === 'hst';
+    this.warp = 1;
+    // Main lines (TGV): a streamed country landscape, the grand station at Gare Centrale and the destination towns.
+    this.world = this.hst
+      ? new HighSpeedWorld(scene, line, this.geom, this.routes, q, { renderer: this.renderer, trainSpecs: train, allLines: (network || [line]).filter((l) => l.category === 'hst'), makeTrain: () => new TrainModel(train, line, 'Grandville') }).build()
+      : new WorldBuilder(scene, line, this.geom, this.routes, q, { junctions, trainSpecs: train }).build();
     this.player.interlock = () => this.psdLocked();
     this.worlds = new Map([[line.id, this.world]]);
     for (const [id, d] of this.svc) {
@@ -156,7 +163,7 @@ export class Game {
   /** Sky dome, sun and haze for lines with open-air sections. */
   buildDaylight() {
     this.daylight = null;
-    if (![...this.svc.values()].some((d) => d.geom.portals.length || d.line.elevated)) return;
+    if (![...this.svc.values()].some((d) => d.geom.portals.length || d.line.elevated || d.line.category === 'hst')) return;
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
     const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 256);
     grd.addColorStop(0, '#2f6bc4'); grd.addColorStop(0.3, '#5f97de'); grd.addColorStop(0.46, '#a9c8ea'); grd.addColorStop(0.5, '#c6d8ea'); grd.addColorStop(0.52, '#8f9a80'); grd.addColorStop(1, '#6f7d64');
@@ -184,6 +191,7 @@ export class Game {
     const target = this.geom.outdoorAt(tr) ? 1 : 0;
     d.o += (target - d.o) * Math.min(1, dt * 1.3); // eyes adapting to daylight / tunnel darkness
     const o = d.o;
+    if (this.hst) { this.updateSky(o, camPos); return; }
     this.scene.fog.color.setRGB(0.02 + 0.76 * o, 0.024 + 0.83 * o, 0.03 + 0.9 * o);
     this.scene.background.copy(this.scene.fog.color);
     const draw = this.settings.get('graphics.drawDistance');
@@ -201,6 +209,38 @@ export class Game {
     d.sky.visible = d.sunDisc.visible = o > 0.01;
     d.sky.position.copy(camPos); d.sky.scale.setScalar(R);
     d.sunDisc.position.copy(camPos).addScaledVector(d.dir, R * 0.8); d.sunDisc.scale.setScalar(R * 0.16);
+  }
+
+  /**
+   * Main-line sky: the sun follows the clock (warm morning light, bright midday, golden hour, blue hour, night),
+   * the haze reaches ~10 km so the far landscape stays visible; tunnels darken it as on the metro.
+   */
+  updateSky(o, camPos) {
+    const d = this.daylight, h = ((this.clock / 3600) % 24 + 24) % 24;
+    const el = Math.sin(((h - 6.2) / 13.6) * Math.PI);                // sun elevation proxy: <0 at night
+    const az = ((h - 6) / 12) * Math.PI;                                // east → south → west
+    d.dir.set(Math.cos(az) * 0.9, Math.max(0.04, el) * 1.1, Math.sin(az) * 0.6 + 0.2).normalize();
+    const day = Math.max(0, Math.min(1, (el + 0.08) / 0.35)), low = Math.max(0, 1 - Math.abs(el - 0.12) / 0.22) * (el > -0.1 ? 1 : 0);
+    const C = (r, g, b) => new THREE.Color(r, g, b);
+    const night = C(0.03, 0.045, 0.09), noon = C(0.68, 0.8, 0.94), gold = C(0.96, 0.62, 0.36);
+    const sky = night.clone().lerp(noon, day).lerp(gold, low * 0.65);
+    const fog = sky.clone().multiplyScalar(o).add(C(0.02, 0.024, 0.03).multiplyScalar(1 - o));
+    this.scene.fog.color.copy(fog); this.scene.background.copy(fog);
+    this.scene.fog.near = 60 + o * 900; this.scene.fog.far = (this.settings.get('graphics.drawDistance')) * (1 - o) + o * 11000;
+    d.sky.material.color.copy(sky.clone().multiplyScalar(1 / Math.max(0.35, noon.r)).lerp(C(1, 1, 1), 0.2 * day));
+    d.sun.color.copy(C(1, 0.95, 0.86).lerp(C(1, 0.62, 0.32), low));
+    d.sun.intensity = 2.3 * o * day;
+    this.hemi.intensity = (0.25 + 0.85 * day) * (0.55 + 0.45 * o);
+    this.hemi.color.copy(C(0.45, 0.5, 0.65).lerp(C(0.85, 0.88, 0.95), day).lerp(gold, low * 0.3));
+    this.ambient.intensity = 0.18 + 0.22 * day;
+    const far = Math.round(o > 0.5 ? 14000 : this.settings.get('graphics.drawDistance') + 50);
+    if (Math.abs(this.camera.far - far) > 5) { this.camera.far = far; this.camera.updateProjectionMatrix(); }
+    d.sun.position.copy(camPos).addScaledVector(d.dir, 200); d.sun.target.position.copy(camPos);
+    const R = Math.min(this.camera.far * 0.85, 9000);
+    d.sky.visible = o > 0.01; d.sunDisc.visible = o > 0.01 && el > -0.05;
+    d.sky.position.copy(camPos); d.sky.scale.setScalar(R);
+    d.sunDisc.position.copy(camPos).addScaledVector(d.dir, R * 0.8); d.sunDisc.scale.setScalar(R * 0.12);
+    this.headlight.intensity = Math.max(this.headlight.intensity, day < 0.5 ? 140 : 0);
   }
 
   /** Locates where the branches part (first chainage where the alignments differ) and where their tunnels separate. */
@@ -482,6 +522,7 @@ export class Game {
       seconds: this.time,
       stationsServed: this.stations.served.filter((s) => !s.missed).length,
       finalDelay: this.stations.lastDelay,
+      tgv: this.tgvRun,
     };
     this.bus.emit('game:finished', this.result);
   }
@@ -511,8 +552,10 @@ export class Game {
     for (const a of actions) this.handleAction(a);
     if (this.paused || this.result) { this.render(); return; }
     dt = Math.min(dt, 0.1);
-    this.acc = (this.acc || 0) + dt;
-    this.guard('simulation', () => { while (this.acc >= STEP) { this.simStep(STEP); this.acc -= STEP; } });
+    // Time acceleration (main lines): more fixed steps per frame, never a longer step (physics stay exact).
+    const warp = this.warp || 1;
+    this.acc = (this.acc || 0) + dt * warp;
+    this.guard('simulation', () => { let n = 0; while (this.acc >= STEP && n++ < 1400) { this.simStep(STEP); this.acc -= STEP; } });
     this.acc = Math.min(this.acc, STEP); // never let a failed step snowball
     this.guard('visuals', () => this.updateVisuals(dt));
     this.render();
@@ -554,6 +597,19 @@ export class Game {
       case 'routeSelect': A.routeSelect(); break;
       case 'lineMap': A.lineMap(); break;
       case 'networkMap': A.networkMap(); break;
+      case 'timeWarp': {
+        if (!this.hst) { this.toast('Time acceleration is available on main lines (TGV).', 'info', 2); break; }
+        const W = [1, 2, 5, 10]; this.warp = W[(W.indexOf(this.warp) + 1) % W.length];
+        this.toast(this.warp > 1 ? `⏩ Time ×${this.warp}` : '▶ Real time', 'info', 1.5); break;
+      }
+      case 'stationTour': {
+        const views = this.world.gare?.views;
+        if (!views) { this.toast('The station tour is available at Gare Centrale (main lines).', 'info', 2); break; }
+        this.tourIndex = this.cameraSys.mode === 'tour' ? ((this.tourIndex ?? -1) + 1) : 0;
+        if (this.tourIndex >= views.length) { this.tourIndex = -1; this.cameraSys.setMode('cab'); this.toast('Station tour ended.', 'info', 1.5); break; }
+        this.cameraSys.setTour(views[this.tourIndex]);
+        this.toast(`🎥 ${views[this.tourIndex].name} (${this.tourIndex + 1}/${views.length}) — ${this.input.labelFor('stationTour')}: next view`, 'info', 3); break;
+      }
       case 'ato':
         if (this.line.automation !== 'ato') { this.toast('This line has no automatic train operation.', 'info', 2); break; }
         this.ato = !this.ato;
@@ -629,6 +685,7 @@ export class Game {
     this.playerModel.setLights('forward', p.headlightsHigh);
     this.headlight.intensity = p.headlightsHigh ? 80 : 30;
     this.playerModel.setCabExteriorVisible(this.cameraSys.mode !== 'cab');
+    if (this.hst) this.cabin.group.visible = this.cameraSys.mode === 'cab';   // the desk sits inside the TGV nose
 
     // AI train models.
     const seen = new Set();

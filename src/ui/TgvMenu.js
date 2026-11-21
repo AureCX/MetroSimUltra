@@ -41,7 +41,7 @@ export function installTgvMenu(Menu) {
       const body = this.frame(`🚄 Grandes Lignes — Gare Centrale <span class="balance-chip">💶 ${eur(E.balance)}</span>`, `
         <p class="sub">Six TGV destinations from Gare Centrale (metro A · B · C). Assign your trainsets to departures, drive a service yourself
         from the platform to its destination, or let a company driver operate it. Statuses follow the current time (${fmt(clock)}). Without a
-        trainset of your own you can hire one for a journey (Duplex ${eur(LEASE['tgv-duplex'])}, Classique ${eur(LEASE['tgv-classic'])}).</p>
+        trainset of your own, a TGV inOui Duplex is hired for the journey (${eur(LEASE['tgv-duplex'])}).</p>
         <div class="row-tools"><button class="btn" id="tgv-map">🗺 Network map — choose a destination</button></div>
         <div class="table-wrap"><table class="stations tgv-board">
           <thead><tr><th>Heure</th><th>Train</th><th>Destination</th><th>Voie</th><th>Durée</th><th>État</th><th>Trainset</th><th></th></tr></thead>
@@ -88,7 +88,7 @@ export function installTgvMenu(Menu) {
         const uid = A[b.dataset.drive], v = uid && E.vehicle(uid);
         let model = v?.model, lease = 0;
         if (!v) {
-          model = this.tgvTrains().find((t) => (sv.train === 'Duplex' ? t.decks === 2 : t.decks !== 2))?.id || this.tgvTrains()[0]?.id;
+          model = this.tgvTrains().find((t) => t.model3d)?.id || this.tgvTrains()[0]?.id;   // default: the inOui Duplex (3D model)
           lease = LEASE[model] ?? 2000;
           if (lease > E.balance) return this.notice(`Hiring a trainset costs ${eur(lease)} (settled after the journey); your balance is ${eur(E.balance)}.`);
         } else if (v.condition < 0.25) return this.notice(`${uid} is unfit for service. Repair it in the depot or hire a trainset.`);

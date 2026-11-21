@@ -60,6 +60,22 @@ export function buildDestinationCity(parent, { line, geom, index, terrain, ident
   for (let i = -5; i <= 5; i++) { cyl(M.trunk, 0.2, 0.3, 3, i * 10, Y + 1.2, SB.z + 46); if (identity === 'southern' || identity === 'coastal') { for (let f = 0; f < 6; f++) { const g = new THREE.BoxGeometry(0.4, 0.1, 3.2); g.translate(0, 0, 1.5); g.rotateX(-0.4); g.rotateY((f / 6) * Math.PI * 2); g.translate(i * 10, Y + 6.8, SB.z + 46); put(M.palm, g); } cyl(M.trunk, 0.18, 0.25, 4, i * 10, Y + 4.6, SB.z + 46, 6); } else { const g = new THREE.IcosahedronGeometry(2.6, 0); g.translate(i * 10, Y + 4.6, SB.z + 46); put(M.leaves, g); } }
   for (let i = -6; i <= 6; i += 2) { cyl(M.dark, 0.08, 0.1, 4.5, i * 8, Y + 1.8, SB.z + 14); const l = new THREE.SphereGeometry(0.3, 8, 6); l.translate(i * 8, Y + 4.2, SB.z + 14); put(M.lamp, l); }
 
+  // ---------- Platform canopy over the island (steel columns on the platform axis, glazed butterfly roof) ----------
+  {
+    const PT = Y + 0.95, H = 5.6, L = 220, accent = lam({ color: new THREE.Color(S.accent).getHex() });
+    for (let x = -L / 2; x <= L / 2; x += 15) {
+      cyl(M.steel, 0.16, 0.2, H, x, PT + H / 2, 0, 10);
+      cyl(M.steel, 0.32, 0.32, 0.12, x, PT + 0.06, 0, 12);                    // base plate on the platform
+      for (const sd of [-1, 1]) { const arm = new THREE.BoxGeometry(0.14, 0.14, 4.6); arm.rotateX(sd * 0.12); arm.translate(x, PT + H + 0.25, sd * 2.2); put(M.steel, arm); }
+    }
+    for (const sd of [-1, 1]) {
+      const roof = new THREE.BoxGeometry(L + 4, 0.1, 4.9); roof.rotateX(sd * 0.12); roof.translate(0, PT + H + 0.36, sd * 2.35); put(M.glass, roof);
+      box(accent, L + 4, 0.35, 0.12, 0, PT + H + 0.62, sd * 4.85);              // fascia in the town colour
+    }
+    box(M.steel, L + 4, 0.3, 0.3, 0, PT + H, 0);
+    for (let x = -L / 2 + 7.5; x < L / 2; x += 15) { const l = new THREE.BoxGeometry(1.2, 0.08, 0.3); l.translate(x, PT + H - 0.2, 1.2); put(M.lamp, l); const l2 = l.clone(); l2.translate(0, 0, -2.4); put(M.lamp, l2); }
+  }
+
   // ---------- Town fabric: a street grid filled with instanced houses / blocks ----------
   const R = S.radius, cell = identity === 'western' || identity === 'southern' ? 70 : 48;
   const houses = [], towers = [];

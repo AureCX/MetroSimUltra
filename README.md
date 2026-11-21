@@ -67,6 +67,28 @@ island of an upcoming departure and board only a train standing there; crowds fo
   platforms, aerial). Lighting follows the clock: morning, day, golden hour, evening, night floodlighting.
 - Regenerate the lines with `node tools/build-tgv.mjs` (alignment, terrain-fitted profile, tunnels, timing).
 
+### Saves, cab, weather, voices (daily update)
+
+- **Station saves**: every station you stop at gets its own checkpoint (train, service, position, time, passengers,
+  vehicle condition) plus station progress (visits, arrivals, best stop). Auto-save on arrival, manual save with
+  **P** or *Pause → Save at this station*, confirmation toasts, *💾 Continue* on the main menu, *💾 Station saves*
+  screen (resume / delete). Saves are checksummed with a backup copy; a damaged file is recovered from the backup.
+- **TGV cab**: the driver sits in the nose behind a real wrap-around windscreen; TVM driver display (speed, permitted
+  speed, next block, next restriction and distance, traction / brake, next stop, delay, doors, wipers, weather,
+  train condition), manipulator, backup speedometer, network map screen.
+- **Wipers**: **I** cycles OFF / INT / LOW / HIGH (also the rotary switch), **B** single wipe. Rain lands on the glass
+  and builds into a haze that really reduces visibility; each sweep clears its sector.
+- **Weather** (main lines): auto (rain belts along the line), clear, cloudy, rain, storm — key **Y** or the setting;
+  rain streaks, darker sky, shorter visibility.
+- **Announcement voices**: four French voice profiles (female, male, calm, formal) with their own chime; each service
+  has its own voice in *Auto*, or choose one in Settings (test buttons). Departure call, welcome, safety, next stop,
+  slowing down, delay, door closing, arrival, terminus — queued (never overlapping), each played once. Custom MP3s:
+  name them after a station or an event (depart, welcome, safety, doors, delay, slowdown, final).
+- **Main-line map**: routes in their own colours, live trains (yours, other players', AI) from the same positions as
+  the 3D trains, progress / next stop / ETA panel, zoom / pan, click a station for details; from the departures board
+  pick a destination and drive its next departure.
+- **Audio sessions**: leaving a run (menu, summary, new run) stops every loop, announcement and timer of that run.
+
 ## Bus simulator (Grandville buses & Aéroval)
 
 Choose **🚌 Bus** in the main menu. The bus mode is a separate simulator that shares only the core services

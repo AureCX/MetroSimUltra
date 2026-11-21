@@ -11,6 +11,7 @@ import { TrackGeometry } from '../lines/TrackGeometry.js';
 import { Route } from '../lines/Route.js';
 import { EXAMPLE_LINE } from '../lines/LineRepository.js';
 import { installTgvMenu } from './TgvMenu.js';
+import { VOICE_PROFILES, VOICE_KEYS, pickVoice, voicesFor } from '../audio/Voices.js';
 
 /** Earnings breakdown of a run / shift (shared with the bus summary). */
 export function earningsTable(st, v) {
@@ -94,7 +95,9 @@ export class Menu {
         <button class="btn primary" id="m-play">▶ Play metro</button>
         <button class="btn primary bus-btn" id="m-bus">🚌 Bus — Grandville & Aéroval</button>
         <button class="btn primary tgv-btn" data-nav="tgv">🚄 Grandes Lignes — TGV</button>
+        ${this.save.data.rail.last && this.save.loadStation(this.save.data.rail.last) && !this.save.loadStation(this.save.data.rail.last).checkpoint.final ? `<button class="btn primary" id="m-continue">💾 Continue — ${esc(this.save.loadStation(this.save.data.rail.last).checkpoint.stationName)}</button>` : ''}
         <button class="btn" data-nav="lines">Select Line</button>
+        <button class="btn" data-nav="saves">💾 Station saves</button>
         <button class="btn" data-nav="trains">Trains & purchases</button>
         <button class="btn" data-nav="depot">Depot & fleet</button>
         <button class="btn" id="m-mp">🌐 Multiplayer</button>
@@ -115,6 +118,7 @@ export class Menu {
     this.root.querySelector('#m-bus').onclick = () => this.emit('bus');
     this.root.querySelector('#m-play').onclick = () => this.play(this.line);
     this.root.querySelector('#m-mp').onclick = () => this.show('multiplayer');
+    const cont = this.root.querySelector('#m-continue'); if (cont) cont.onclick = () => this.resumeStation(this.save.data.rail.last);
   }
 
   // ---------------- Lines ----------------
@@ -227,8 +231,10 @@ export class Menu {
       for (const f of e.target.files) {
         const base = slugify(f.name.replace(/\.mp3$/i, ''));
         const m = base.match(/^(.*?)(?:-(arrival|terminus))?$/);
+        const EVENTS = ['depart', 'welcome', 'safety', 'doors', 'delay', 'slowdown', 'final'];
+        if (EVENTS.includes(base)) { await AssetStore.putAudio(`${l.sourceId}/_${base}`, f); msgs.push(`✓ ${f.name} → announcement “${base}”`); continue; }
         const st = l.stations.find((s) => s.id === m[1] || slugify(s.name) === m[1]);
-        if (!st) { msgs.push(`✗ ${f.name}: no station named “${m[1]}”`); continue; }
+        if (!st) { msgs.push(`✗ ${f.name}: no station named “${m[1]}” (or event: ${EVENTS.join(', ')})`); continue; }
         await AssetStore.putAudio(`${l.sourceId}/${st.id}${m[2] ? `:${m[2]}` : ''}`, f);
         msgs.push(`✓ ${f.name} → ${st.name}${m[2] ? ` (${m[2]})` : ''}`);
       }
@@ -436,6 +442,9 @@ export class Menu {
         ${range('audio.ambient', 'Ambience', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`)}
         ${range('audio.announcements', 'Announcements', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`)}
         ${check('audio.voiceFallback', 'Speech synthesis when no MP3 is available')}
+        <label class="field"><span>Announcement voice</span><select data-path="audio.voice">${[['auto', 'Auto — one voice per service / destination'], ...VOICE_KEYS.map((k) => [k, VOICE_PROFILES[k].label])].map(([k, l]) => `<option value="${k}" ${s.get('audio.voice') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        <div class="row-tools">${VOICE_KEYS.map((k) => `<button class="btn small" data-voicetest="${k}">▶ ${esc(VOICE_PROFILES[k].label)}</button>`).join('')}</div>
+        <p class="sub">French voices found on this device: ${(() => { const v = voicesFor('fr-FR'); return v.any.length ? `${v.any.length} (${v.f.length} female, ${v.m.length} male)` : 'none (the browser default voice is used with each profile\'s pitch and pace)'; })()}. Custom MP3s: name them after a station, or after an event (depart, welcome, safety, doors, delay, slowdown, final) and import them in Select Line.</p>
       </section>
       <section><h3>Graphics</h3>
         <label class="field"><span>Quality</span><select data-path="graphics.quality">${['low', 'medium', 'high'].map((q) => `<option ${s.get('graphics.quality') === q ? 'selected' : ''}>${q}</option>`).join('')}</select></label>
@@ -464,6 +473,19 @@ export class Menu {
       };
       inp.addEventListener(inp.type === 'range' ? 'input' : 'change', apply);
     });
+    body.querySelectorAll('[data-voicetest]').forEach((b) => (b.onclick = () => {
+      const k = b.dataset.voicetest, P = VOICE_PROFILES[k];
+      this.audio.init?.();
+      if (this.audio.started) P.chime.forEach((f, i) => this.audio.tone(f, 0.36, { at: i * P.gap, gain: 0.07, dest: this.audio.ui, ui: true, attack: 0.02 }));
+      if (!('speechSynthesis' in window)) return this.notice('Speech synthesis is not available in this browser.');
+      speechSynthesis.cancel();
+      setTimeout(() => {
+        const u = new SpeechSynthesisUtterance(`Mesdames et messieurs, le TGV numéro 6 2 0 1 à destination de Montreval va partir. ${P.label}.`);
+        u.lang = 'fr-FR'; const v = pickVoice(k, 'fr-FR'); if (v) { try { u.voice = v; } catch { /* */ } } u.pitch = P.pitch; u.rate = P.rate;
+        u.volume = Math.min(1, s.get('audio.master') * s.get('audio.announcements'));
+        speechSynthesis.speak(u);
+      }, P.gap * 3000 + 300);
+    }));
     body.querySelector('#s-reset').onclick = () => { s.reset(); this.input.loadBindings(); this.screen_settings(); };
     this.confirmButton(body.querySelector('#s-wipe'), () => { this.save.resetAll(); this.notice('Career data cleared.'); });
   }
@@ -509,12 +531,14 @@ export class Menu {
     this.root.innerHTML = `<div class="menu-pause"><h2>Paused</h2>
       <button class="btn primary" id="p-resume">Resume</button>
       <button class="btn" id="p-restart">Restart run</button>
+      <button class="btn" id="p-save" title="Train services: saves a checkpoint at the station where the train stands">💾 Save at this station</button>
       <button class="btn" data-nav="settings">Settings</button>
       <button class="btn" data-nav="controls">Controls</button>
       <button class="btn ghost" id="p-quit">Quit to main menu</button></div>`;
     this.root.querySelector('#p-resume').onclick = () => this.emit('resume');
     this.root.querySelector('#p-restart').onclick = () => this.emit('restart');
     this.root.querySelector('#p-quit').onclick = () => this.emit('quit');
+    this.root.querySelector('#p-save').onclick = () => this.emit('saveStation');
   }
 
   showLoading(text) {

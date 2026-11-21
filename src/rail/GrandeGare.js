@@ -10,19 +10,21 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { stationTextures, signTexture } from './StationTextures.js';
 import { TgvTimetable, fmt } from './TgvTimetable.js';
+import { PLATFORM_Y } from '../world/StationBuilder.js';
 
 export const GC = { x: 3570, z: 220 };
 export const SLOT = 22, SLOTS = 6;
 export const slotZ = (k) => (k - 2.5) * SLOT;
-const PLAT_Y = 0.95, HALF_P = 135;
+// Platform top = the standard platform height used by trains (door sills) and boarding passengers.
+const PLAT_Y = PLATFORM_Y + 0.45, HALF_P = 135;
 const SHED = { x0: -175, x1: 175, hw: 78, rise: 40, spring: 8 };
 const HALL = { x0: -115, x1: 115, z0: 84, z1: 152, h: 21, vault: 22 };
 let envCache = null;
 // Ground levels around the station (world): the building footprint at rail level, the forecourt 1.6 m lower
 // (reached by the grand stairs). Used by the country terrain so the landscape meets the architecture.
 export const GARE_PADS = [
-  { x0: GC.x - 270, x1: GC.x + 270, z0: GC.z - 100, z1: GC.z + HALL.z1 + 4, y: 6 - 0.05, blend: 30 },
-  { x0: GC.x - 230, x1: GC.x + 230, z0: GC.z + HALL.z1 + 6, z1: GC.z + HALL.z1 + 210, y: 6 - 1.9, blend: 60 },
+  { x0: GC.x - 270, x1: GC.x + 270, z0: GC.z - 100, z1: GC.z + HALL.z1 + 4, y: 6 - 0.62, blend: 30 },   // under the track bed
+  { x0: GC.x - 230, x1: GC.x + 230, z0: GC.z + HALL.z1 + 6, z1: GC.z + HALL.z1 + 210, y: 6 + PLATFORM_Y - 1.55 - 0.8, blend: 60 },
 ];
 
 export function buildGrandeGare(parent, opts) {
@@ -43,8 +45,9 @@ export function buildGrandeGare(parent, opts) {
     marble: std({ map: T.marble, color: 0xd9d3c8, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.1 }),
     rose: std({ map: T.rose, roughness: 0.1, metalness: 0.05, envMapIntensity: 1.3 }),
     coffer: std({ map: T.coffer, roughness: 0.7, side: THREE.DoubleSide }),
-    glass: new THREE.MeshPhysicalMaterial({ color: 0xcfe2ec, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.2, envMap: env, envMapIntensity: 1.6, side: THREE.DoubleSide, depthWrite: false }),
-    glassTint: new THREE.MeshPhysicalMaterial({ color: 0x9fbfd2, metalness: 0.2, roughness: 0.08, transparent: true, opacity: 0.35, envMap: env, side: THREE.DoubleSide, depthWrite: false }),
+    // Glazing: light, slightly blue, no black reflections at grazing angles (the reflection probe is an interior).
+    glass: new THREE.MeshStandardMaterial({ color: 0xdcebf3, emissive: 0x1a2a33, metalness: 0, roughness: 0.25, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }),
+    glassTint: new THREE.MeshStandardMaterial({ color: 0xa9c6d8, emissive: 0x18242c, metalness: 0.1, roughness: 0.2, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
     steel: std({ color: 0x33404b, metalness: 0.7, roughness: 0.38 }),
     steelLight: std({ color: 0x8e9aa4, metalness: 0.75, roughness: 0.32 }),
     gold: std({ color: 0xc8a24a, metalness: 1, roughness: 0.28, envMapIntensity: 1.4 }),
@@ -144,9 +147,14 @@ export function buildGrandeGare(parent, opts) {
   const pids = [];
   for (let k = 0; k < SLOTS; k++) {
     const z = slotZ(k);
-    box('ext', M.platform, 270, PLAT_Y, 10, 0, PLAT_Y / 2 - 0.45, z);
-    box('ext', M.stoneDark, 270, PLAT_Y + 0.5, 9.6, 0, PLAT_Y / 2 - 0.75, z);
-    for (const sd of [-1, 1]) { plane('ext', M.yellow, 270, 0.3, 0, PLAT_Y - 0.44, z + sd * 4.45, -Math.PI / 2); plane('ext', M.white, 270, 0.08, 0, PLAT_Y - 0.44, z + sd * 4.0, -Math.PI / 2); }
+    const top = PLAT_Y - 0.45;
+    box('ext', M.platform, 270, 0.12, 10, 0, top - 0.06, z);                       // paved surface
+    box('ext', M.stoneDark, 270, top + 0.6 - 0.12, 9.9, 0, (top - 0.12 - 0.6) / 2, z); // platform wall
+    for (const sd of [-1, 1]) {
+      box('ext', M.stoneDark, 270, 0.06, 0.4, 0, PLAT_Y - 0.45 + 0.03, z + sd * 4.8);                    // coping stones
+      plane('ext', M.yellow, 270, 0.3, 0, PLAT_Y - 0.44, z + sd * 4.35, -Math.PI / 2);                   // tactile warning strip
+      plane('ext', M.white, 270, 0.08, 0, PLAT_Y - 0.44, z + sd * 3.85, -Math.PI / 2);
+    }
     // Other islands' tracks (the active island's tracks are the line's own).
     if (k !== slot) for (const sd of [-1, 1]) {
       const tz = z + sd * 6.5;
@@ -157,11 +165,17 @@ export function buildGrandeGare(parent, opts) {
     // Furniture: benches, lamp standards, signs, departure displays.
     for (let x = -110; x <= 110; x += 22) {
       if (Math.abs(x + 20) < 14) continue;
-      box('ext', M.wood, 3.2, 0.12, 0.6, x, PLAT_Y - 0.45 + 0.48, z); box('ext', M.steel, 3.2, 0.5, 0.08, x, PLAT_Y - 0.45 + 0.75, z + 0.32);
+      box('ext', M.wood, 3.2, 0.12, 0.6, x, PLAT_Y - 0.45 + 0.48, z); box('ext', M.wood, 3.2, 0.5, 0.08, x, PLAT_Y - 0.45 + 0.8, z + 0.28);
+      for (const lx of [-1.4, 1.4]) { box('ext', M.steel, 0.08, 0.42, 0.5, x + lx, PLAT_Y - 0.45 + 0.21, z); box('ext', M.steel, 0.08, 0.62, 0.06, x + lx, PLAT_Y - 0.45 + 0.75, z + 0.3); }
       cyl('ext', M.steel, 0.07, 0.1, 4.2, x + 11, PLAT_Y - 0.45 + 2.1, z, 8); box('ext', M.bulb, 0.9, 0.18, 0.4, x + 11, PLAT_Y - 0.45 + 4.1, z);
     }
     const sign = new THREE.MeshBasicMaterial({ map: signTexture([`Voies ${voieLabel(k)}`], { w: 1024, h: 200, bg: '#1b2a4a', fg: '#ffffff', font: 'bold 120px Arial' }), side: THREE.DoubleSide });
-    for (const x of [-90, 40, 110]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(5, 1), sign); m.position.set(x, 6.2, z); m.rotation.y = Math.PI / 2; root.add(m); box('ext', M.steel, 0.06, 2.4, 0.06, x, 7.6, z); }
+    for (const x of [-90, 40, 110]) {
+      const top = PLAT_Y - 0.45, h = 3.6;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(5, 1), sign); m.position.set(x, top + h + 0.5, z); m.rotation.y = Math.PI / 2; root.add(m);
+      box('ext', M.dark, 0.12, 1.1, 5.2, x, top + h + 0.5, z);
+      for (const dz of [-2.3, 2.3]) { box('ext', M.steel, 0.12, h, 0.12, x, top + h / 2, z + dz); box('ext', M.steel, 0.4, 0.06, 0.4, x, top + 0.03, z + dz); }
+    }
     // Platform departure display (two-sided) at the stair foot.
     const c = document.createElement('canvas'); c.width = 1024; c.height = 384;
     const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace;
@@ -171,13 +185,26 @@ export function buildGrandeGare(parent, opts) {
   }
 
   {
-    const n = sleeperZ.length * 700, sl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 0.16, 2.6), M.ballast.clone(), n);
+    const n = sleeperZ.length * 705, sl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 0.16, 2.6), M.ballast.clone(), n);
     sl.material.color.setHex(0x8a8580); const m4 = new THREE.Matrix4(); let i = 0;
-    for (const z of sleeperZ) for (let x = -190; x < 230; x += 0.6) sl.setMatrixAt(i++, m4.makeTranslation(x, -0.4, z));
+    for (const z of sleeperZ) for (let j = 0; j < 700; j++) sl.setMatrixAt(i++, m4.makeTranslation(-190 + j * 0.6, -0.4, z));
     sl.count = i; root.add(sl);
   }
+  // Stopping markers for the line's own trains (where the cab must stop), on the platform edge, facing the driver.
+  {
+    const mk = new THREE.MeshBasicMaterial({ map: signTexture('STOP', { w: 256, h: 256, bg: '#ffffff', fg: '#c8102e', font: 'bold 90px Arial', border: '#c8102e' }) });
+    for (const route of Object.values(opts.routes || {})) {
+      const k = route.stops.findIndex((st) => st.station.index === index); if (k < 0) continue;
+      const st = route.stops[k], side = st.doorSide === 'right' ? 1 : -1;
+      const a = route.point(st.stopR + 1.5, side * 1.95, 0, {}), b = route.point(st.stopR + 10, side * 1.95, 0, {});
+      const g = new THREE.Group(); g.position.set(a.x - GC.x, PLAT_Y - 0.45, a.z - GC.z); g.lookAt(b.x - GC.x, PLAT_Y - 0.45, b.z - GC.z); g.rotateY(Math.PI);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8), M.steel); post.position.y = 0.8; g.add(post);
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), mk); board.position.set(0, 1.8, 0.03); g.add(board);
+      root.add(g);
+    }
+  }
   // =============== FOOTBRIDGE & ESCALATORS ===============
-  const BR = { x: -20, y: 9.2, w: 9 };
+  const BR = { x: -20, y: PLAT_Y - 0.45 + 8.9, w: 9 };   // deck level = top of the hall's grand stair
   box('ext', M.steelLight, BR.w + 1, 0.6, SHED.hw * 2 + 10, BR.x, BR.y - 0.3, 6);
   for (const sd of [-1, 1]) { box('ext', M.glass, 0.06, 2.6, SHED.hw * 2 + 10, BR.x + sd * (BR.w / 2), BR.y + 1.3, 6); box('ext', M.gold, 0.12, 0.1, SHED.hw * 2 + 10, BR.x + sd * (BR.w / 2), BR.y + 1.15, 6); }
   box('ext', M.steelLight, BR.w + 1, 0.3, SHED.hw * 2 + 10, BR.x, BR.y + 3.8, 6);
@@ -186,7 +213,7 @@ export function buildGrandeGare(parent, opts) {
     // Escalator + stair down to the island (along the platform, under the bridge).
     const len = 16, rise = BR.y - PLAT_Y;
     for (const [dx, mat] of [[-1.3, M.steelLight], [1.3, M.steel]]) {
-      const g = new THREE.BoxGeometry(1.6, 0.4, Math.hypot(len, rise)); g.rotateX(Math.atan2(rise, len)); g.rotateY(Math.PI / 2); g.translate(BR.x - BR.w / 2 - len / 2 - 0.5, PLAT_Y - 0.45 + rise / 2, z + dx); put('ext', mat, g);
+      const g = new THREE.BoxGeometry(1.6, 0.4, Math.hypot(len, rise)); g.rotateX(-Math.atan2(rise, len)); g.rotateY(Math.PI / 2);   // +x end (bridge) high g.translate(BR.x - BR.w / 2 - len / 2 - 0.5, PLAT_Y - 0.45 + rise / 2 - 0.2, z + dx); put('ext', mat, g);
     }
     for (let x = 0; x < 3; x++) cyl('ext', M.steel, 0.18, 0.18, BR.y, BR.x + (x - 1) * 3.5, BR.y / 2 - 0.45, z, 8);
   }
@@ -197,7 +224,15 @@ export function buildGrandeGare(parent, opts) {
   plane('int', M.rose, 20, 20, 0, FL + 0.02, hcz, -Math.PI / 2);
   // Long walls (stone) with the colonnades, end walls.
   for (const [z, inner] of [[H.z0, 1], [H.z1, -1]]) {
-    box('ext', M.stone, hx + 4, H.h + 2, 2, 0, FL + (H.h + 2) / 2, z - inner);
+    if (inner > 0) {
+      // North wall towards the train shed: real openings (12 × 12 m arches) — glazed, except the central one where
+      // the grand stair climbs to the footbridge.
+      const OP = [-60, -20, 20, 60], W2 = 6, Hop = 12;
+      let x0 = H.x0 - 2;
+      for (const ox of OP) { box('ext', M.stone, ox - W2 - x0, H.h + 2, 2, (x0 + ox - W2) / 2, FL + (H.h + 2) / 2, z - inner); x0 = ox + W2; }
+      box('ext', M.stone, H.x1 + 2 - x0, H.h + 2, 2, (x0 + H.x1 + 2) / 2, FL + (H.h + 2) / 2, z - inner);
+      for (const ox of OP) box('ext', M.stone, 2 * W2, H.h + 2 - Hop, 2, ox, FL + Hop + (H.h + 2 - Hop) / 2, z - inner);
+    } else box('ext', M.stone, hx + 4, H.h + 2, 2, 0, FL + (H.h + 2) / 2, z - inner);
     for (let x = H.x0 + 8; x <= H.x1 - 8; x += 12) {
       const cz = z + inner * 5;
       cyl('int', M.stone, 0.95, 1.05, H.h - 3, x, FL + 1.2 + (H.h - 3) / 2, cz, 20);
@@ -209,7 +244,7 @@ export function buildGrandeGare(parent, opts) {
   }
   for (const x of [H.x0, H.x1]) box('ext', M.stone, 2, H.h + 2, hz, x, FL + (H.h + 2) / 2, hcz);
   // Arches from the hall to the shed (north wall) — openings.
-  for (const x of [-60, -20, 20, 60]) { box('int', M.gold, 12.4, 0.5, 2.4, x, FL + 12.2, H.z0); plane('int', M.glass, 12, 12, x, FL + 6, H.z0 - 0.5); }
+  for (const x of [-60, -20, 20, 60]) { box('int', M.gold, 12.4, 0.5, 2.4, x, FL + 12.2, H.z0); if (x !== -20) plane('int', M.glass, 12, 12, x, FL + 6, H.z0 - 1); }
   // Coffered barrel vault with a glazed skylight along its crown.
   {
     const R = hz / 2 + 2, base = FL + H.h + 2;
@@ -269,7 +304,7 @@ export function buildGrandeGare(parent, opts) {
   plane('int', M.velvet, 18, 22, -86, FL + 0.03, 118, -Math.PI / 2);
   for (let i = 0; i < 8; i++) { const x = -92 + (i % 2) * 9, z = 108 + Math.floor(i / 2) * 6; box('int', M.leather, 3, 0.6, 1.1, x, FL + 0.3, z); box('int', M.leather, 3, 0.8, 0.3, x, FL + 0.8, z + 0.5); }
   const benches = [];
-  for (let i = 0; i < 12; i++) { const x = -52 + (i % 6) * 13 + (i % 6 >= 3 ? 26 : 0), z = i < 6 ? 106 : 132; if (Math.abs(x) < 14) continue; box('int', M.wood, 5, 0.12, 0.7, x, FL + 0.48, z); box('int', M.wood, 5, 0.7, 0.1, x, FL + 0.9, z + 0.35); benches.push({ x, z }); }
+  for (let i = 0; i < 12; i++) { const x = -52 + (i % 6) * 13 + (i % 6 >= 3 ? 26 : 0), z = i < 6 ? 106 : 132; if (Math.abs(x) < 14) continue; box('int', M.wood, 5, 0.12, 0.7, x, FL + 0.48, z); box('int', M.wood, 5, 0.7, 0.1, x, FL + 0.9, z + 0.35); for (const lx of [-2.2, 0, 2.2]) box('int', M.bronze, 0.1, 0.42, 0.6, x + lx, FL + 0.21, z); benches.push({ x, z }); }
   // Indoor trees in planters, flowers, the fountain and the suspended sculpture.
   for (const [x, z] of [[-30, 104], [30, 104], [-30, 132], [30, 132], [-62, 118], [62, 118]]) {
     cyl('int', M.stone, 2.2, 2.4, 1.0, x, FL + 0.5, z, 20); cyl('int', M.trunk, 0.25, 0.35, 7, x, FL + 4.5, z, 8);
@@ -283,13 +318,14 @@ export function buildGrandeGare(parent, opts) {
   const sculpture = new THREE.Group(); sculpture.position.set(0, FL + 28, hcz); interior.add(sculpture);
   for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2, p = new THREE.Mesh(new THREE.BoxGeometry(0.15, 3.6, 1.6), M.gold); p.position.set(Math.cos(a) * 7, Math.sin(a * 3) * 0.8, Math.sin(a) * 7); p.rotation.set(0.5, -a, 0.3); sculpture.add(p); }
   // Metro entrance: escalator well with colour-coded signage.
-  box('int', M.stoneDark, 14, 1.1, 0.4, 80, FL + 0.55, 120); box('int', M.stoneDark, 14, 1.1, 0.4, 80, FL + 0.55, 130); box('int', M.dark, 14, 0.05, 10, 80, FL - 0.2, 125);
+  box('int', M.stoneDark, 14, 1.1, 0.4, 80, FL + 0.55, 120); box('int', M.stoneDark, 14, 1.1, 0.4, 80, FL + 0.55, 130); box('int', M.dark, 14, 0.05, 10, 80, FL - 6, 125);   // floor of the well (the opening itself stays open)
   for (const dz of [-2.2, 2.2]) { const g = new THREE.BoxGeometry(12, 0.3, 1.6); g.rotateZ(-0.52); g.translate(81, FL - 2.6, 125 + dz); put('int', M.steelLight, g); }
   { const s = new THREE.Mesh(new THREE.PlaneGeometry(9, 2), new THREE.MeshBasicMaterial({ map: metroSign(), transparent: true })); s.position.set(80, FL + 5.5, 119.6); s.rotation.y = Math.PI; interior.add(s); const s2 = s.clone(); s2.position.z = 130.4; s2.rotation.y = 0; interior.add(s2); }
   // Directional signage (colour coded).
   for (const [txt, x, z, ry, bg] of [['⬆ Grandes Lignes · Voies 1–12', -20, 100, 0, '#1b2a4a'], ['Ⓜ Métro A · B · C ➜', 50, 112, 0, '#8B1E8F'], ['⬅ Salon Grand Voyageur · Brasserie', -40, 136, Math.PI, '#2f4a3f'], ['Sortie · Exit · Taxis · Bus ⬇', 0, 145, Math.PI, '#0f6b3a']]) {
     const s = new THREE.Mesh(new THREE.PlaneGeometry(12, 1.2), new THREE.MeshBasicMaterial({ map: signTexture(txt, { w: 1536, h: 150, bg, fg: '#ffffff', font: 'bold 84px Arial' }), side: THREE.DoubleSide }));
     s.position.set(x, FL + 7, z); s.rotation.y = ry; interior.add(s);
+    for (const d of [-5.5, 5.5]) { const rx = x + Math.cos(ry) * d, rz = z - Math.sin(ry) * d; box('int', M.dark, 0.04, H.h - 7.6, 0.04, rx, FL + 7.6 + (H.h - 7.6) / 2, rz); }
   }
   // Grand stair from the hall up to the footbridge.
   for (let i = 0; i < 24; i++) box('int', M.marble, 12, 0.37 * (i + 1), 0.6, BR.x, FL + 0.185 * (i + 1), H.z0 + 14 - i * 0.6);
@@ -370,11 +406,20 @@ export function buildGrandeGare(parent, opts) {
   // Drop-off lane, taxi rank and bus bays.
   plane('ext', new THREE.MeshLambertMaterial({ color: 0x3d3f43 }), 360, 14, 0, FY + 0.02, FZ + 22, -Math.PI / 2);
   const carMats = [0xf0f0f0, 0x222222, 0x1f4fa0, 0xc8352a, 0x9aa1a8].map((c) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.5, roughness: 0.35 }));
-  for (let i = 0; i < 10; i++) { const x = 60 + i * 5.6; box('ext', carMats[i % 5], 4.5, 1.3, 1.85, x, FY + 0.75, FZ + 19); box('ext', M.dark, 2.6, 0.7, 1.75, x, FY + 1.7, FZ + 19); box('ext', new THREE.MeshBasicMaterial({ color: 0xfff2a0 }), 0.6, 0.18, 0.25, x, FY + 2.15, FZ + 19); }
+  for (let i = 0; i < 10; i++) {
+    const x = 60 + i * 5.6;
+    box('ext', carMats[i % 5], 4.5, 1.0, 1.85, x, FY + 0.33 + 0.5, FZ + 19); box('ext', M.dark, 2.6, 0.62, 1.7, x, FY + 1.33 + 0.31, FZ + 19);
+    box('ext', new THREE.MeshBasicMaterial({ color: 0xfff2a0 }), 0.6, 0.18, 0.25, x, FY + 2.04, FZ + 19);
+    for (const wx of [-1.45, 1.45]) for (const wz of [-0.85, 0.85]) { const w = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 14); w.rotateX(Math.PI / 2); w.translate(x + wx, FY + 0.33, FZ + 19 + wz); put('ext', M.rubber, w); }
+  }
   { const s = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.2), new THREE.MeshBasicMaterial({ map: signTexture('TAXIS', { w: 512, h: 100, bg: '#1b2a4a', fg: '#f2c200', font: 'bold 80px Arial' }), side: THREE.DoubleSide })); s.position.set(84, FY + 4, FZ + 15); root.add(s); }
-  for (let i = 0; i < 3; i++) { const x = -70 - i * 16; box('ext', new THREE.MeshStandardMaterial({ color: 0x1f4fa0, metalness: 0.3, roughness: 0.4 }), 12, 3, 2.55, x, FY + 1.7, FZ + 19); box('ext', M.glassTint, 11, 1.2, 2.6, x, FY + 2.4, FZ + 19); }
+  for (let i = 0; i < 3; i++) {
+    const x = -70 - i * 16;
+    box('ext', new THREE.MeshStandardMaterial({ color: 0x1f4fa0, metalness: 0.3, roughness: 0.4 }), 12, 2.75, 2.55, x, FY + 0.45 + 1.375, FZ + 19); box('ext', M.glassTint, 11, 1.1, 2.6, x, FY + 2.35, FZ + 19);
+    for (const wx of [-3.9, 3.4]) for (const wz of [-1.1, 1.1]) { const w = new THREE.CylinderGeometry(0.5, 0.5, 0.3, 16); w.rotateX(Math.PI / 2); w.translate(x + wx, FY + 0.5, FZ + 19 + wz); put('ext', M.rubber, w); }
+  }
   // Metro entrance kiosk on the forecourt.
-  box('ext', M.steel, 6, 0.3, 4, 150, FY + 3.2, FZ + 40); { const s = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), new THREE.MeshBasicMaterial({ map: signTexture('M', { w: 256, h: 256, bg: '#ffffff', fg: '#1f3c88', font: 'bold 200px Arial', border: '#1f3c88' }), side: THREE.DoubleSide })); s.position.set(150, FY + 6, FZ + 40); root.add(s); cyl('ext', M.steel, 0.1, 0.1, 5, 150, FY + 2.5, FZ + 42, 6); }
+  box('ext', M.steel, 6, 0.3, 4, 150, FY + 3.2, FZ + 40); { const s = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), new THREE.MeshBasicMaterial({ map: signTexture('M', { w: 256, h: 256, bg: '#ffffff', fg: '#1f3c88', font: 'bold 200px Arial', border: '#1f3c88' }), side: THREE.DoubleSide })); s.position.set(150, FY + 7.3, FZ + 42.5); root.add(s); for (const [dx, dz] of [[-2.8, -1.8], [2.8, -1.8], [-2.8, 1.8], [2.8, 1.8]]) cyl('ext', M.steel, 0.08, 0.08, 3.2, 150 + dx, FY + 1.6, FZ + 40 + dz, 6); cyl('ext', M.steel, 0.1, 0.1, 6, 150, FY + 3, FZ + 42.5, 6); }
 
   // Two-sided signs read correctly from both sides (a double-sided plane would show mirrored text from behind).
   for (const parent of [root, interior]) for (const m of [...parent.children]) {
@@ -609,18 +654,20 @@ class Crowd {
   spawn(i, initial) {
     const L = this.L, r = () => Math.random();
     const hall = (x, z) => ({ x, y: L.FL, z });
-    const door = { x: (r() - 0.5) * 24, y: L.FL, z: L.FZ + 3 };
-    const metro = { x: 80 + (r() - 0.5) * 8, y: L.FL - 3, z: 125 };
-    const metroTop = { x: 72, y: L.FL, z: 125 };
+    const door = { x: (r() - 0.5) * 24, y: L.FL, z: L.H.z1 - 1.5 };   // just inside the entrance doors (people step through the doorway)
+    const viaMetro = r() < 0.3;
+    const lane = r() < 0.5 ? -2.2 : 2.2;                                      // down / up escalator of the metro well
+    const metro = { x: 85, y: L.FL - 5.3, z: 125 + lane };
+    const metroTop = { x: 75.4, y: L.FL + 0.2, z: 125 + lane };
     const arriving = r() < 0.4;
     const k = this.pickIsland ? this.pickIsland(arriving) : Math.floor(r() * 6), pz = L.slotZ(k);
-    const stairTop = { x: L.BR.x, y: L.FL + 8.9, z: L.H.z0 - 2 }, stairBot = { x: L.BR.x, y: L.FL, z: L.H.z0 + 15 };
+    const stairTop = { x: L.BR.x, y: L.FL + 8.9, z: L.H.z0 - 0.1 }, stairBot = { x: L.BR.x, y: L.FL, z: L.H.z0 + 14.6 };   // along the step nosings
     const bridge = { x: L.BR.x, y: L.BR.y, z: pz }, platform = { x: L.BR.x - 30 - r() * 70, y: L.PLAT_Y - 0.45, z: pz + (r() - 0.5) * 6 };
     const escTop = { x: L.BR.x - 5, y: L.BR.y, z: pz + 1.3 }, escBot = { x: L.BR.x - 22, y: L.PLAT_Y - 0.45, z: pz + 1.3 };
     const boardSpot = hall((r() - 0.5) * 30, L.H.z0 + 10 + r() * 6);
     const plan = [];
     if (!arriving) {
-      plan.push(r() < 0.3 ? { ...metro, pose: 'hide' } : { ...door, pose: 'stand' }, r() < 0.3 ? metroTop : { ...door, z: door.z - 4 });
+      plan.push(viaMetro ? { ...metro, pose: 'hide' } : { ...door, pose: 'stand' }, viaMetro ? metroTop : { ...door, z: door.z - 4 });
       plan.push({ ...boardSpot, wait: 4 + r() * 10, look: true });
       const v = r();
       if (v < 0.3) { const d = L.doors[Math.floor(r() * L.doors.length)]; plan.push(hall(d.x, d.z), { ...hall(d.x + Math.sign(d.x) * 3, d.z), wait: 10 + r() * 30, pose: 'hide' }, hall(d.x, d.z)); }
@@ -628,7 +675,7 @@ class Crowd {
       else if (v < 0.7) { const m = hall((r() - 0.5) * 10, 118 + (r() - 0.5) * 30); plan.push({ ...m, wait: 15 + r() * 25 }); }
       plan.push(stairBot, stairTop, bridge, escTop, escBot, { ...platform, wait: 40 + r() * 140, platform: k }, { ...platform, pose: 'hide', board: k });
     } else {
-      plan.push({ ...platform, pose: 'stand' }, escBot, escTop, bridge, stairTop, stairBot, { ...boardSpot, wait: r() * 4 }, r() < 0.35 ? metroTop : { ...door, z: door.z - 2 }, r() < 0.35 ? { ...metro, pose: 'hide' } : { ...door, z: door.z + 8, pose: 'hide' });
+      plan.push({ ...platform, pose: 'stand' }, escBot, escTop, bridge, stairTop, stairBot, { ...boardSpot, wait: r() * 4 }, viaMetro ? metroTop : { ...door, z: door.z - 3 }, viaMetro ? { ...metro, pose: 'hide' } : { ...door, pose: 'hide' });
     }
     // Start somewhere along the plan when the station first fills.
     const start = initial ? Math.floor(r() * (plan.length - 1)) : 0;

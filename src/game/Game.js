@@ -13,12 +13,17 @@ import { HighSpeedWorld } from '../rail/HighSpeedWorld.js';
 import { SignalView } from '../world/SignalView.js';
 import { TrainModel, TRAIN_FLOOR } from '../world/TrainModel.js';
 import { NetworkModel, drawNetwork } from '../ui/NetworkScreen.js';
+import { RailMapModel, drawRailMap, ROUTE_COLORS } from '../ui/RailMap.js';
 import { PSD } from '../world/PlatformDoors.js';
 import { deriveTrainSpecs } from '../physics/TrainPhysics.js';
 import { PassengerSystem } from '../world/Passengers.js';
 import { Cabin, CabInteraction } from '../cabin/Cabin.js';
+import { TgvCab } from '../cabin/TgvCab.js';
+import { Wipers } from '../cabin/Wipers.js';
+import { Weather } from '../rail/Weather.js';
 import { CameraSystem } from '../camera/CameraSystem.js';
 import { Announcer } from '../audio/Announcer.js';
+import { profileFor } from '../audio/Voices.js';
 import { Scoring } from './Scoring.js';
 import { CrashCinematic } from './CrashCinematic.js';
 import { setMaxAnisotropy } from '../world/Textures.js';
@@ -40,9 +45,12 @@ export class Game {
   }
 
   /** Builds the whole session. */
-  start({ line, train, direction, services, network, vehicleUid, tgv }) {
-    this.tgvRun = tgv || null;
+  start({ line, train, direction, services, network, vehicleUid, tgv, resume }) {
     this.dispose();
+    this.audio.beginSession();
+    this.network = network || [line];
+    this.remoteSvc = new Map();
+    this.tgvRun = tgv || null;
     const bus = this.bus;
     // The player's own train: a worn vehicle (condition < 60 %) develops less tractive effort.
     this.vehicleUid = vehicleUid || null;
@@ -77,6 +85,9 @@ export class Game {
     this.timetable = new Timetable(route, train, line.startTime);
     this.clock = this.timetable.start - 50;
     this.time = 0;
+    // Resuming from a station checkpoint: back at that platform, at the saved time.
+    this.resume = resume && resume.lineId === line.id && resume.stopIndex > 0 && resume.stopIndex < route.stops.length - 1 ? resume : null;
+    if (this.resume) this.clock = resume.clock;
 
     this.player = new PlayerTrain(train, route, bus, this.settings);
     this.player.physics.s = route.stops[0].stopR;
@@ -113,7 +124,10 @@ export class Game {
     scene.add(this.playerModel.group);
     this.aiModels = new Map();
 
-    this.cabin = new Cabin(train, this.actions(), bus);
+    this.cabin = this.hst ? new TgvCab(train, this.actions(), bus) : new Cabin(train, this.actions(), bus);
+    // Main lines: windscreen wipers with rain on the glass, and the weather.
+    this.wipers = this.hst && this.playerModel.noseFront ? new Wipers(this.playerModel) : null;
+    this.weather = this.hst ? new Weather(scene, { mode: this.settings.get('gameplay.tgvWeather') || 'auto', seed: (tgv?.service || 7) + Math.floor(Date.now() / 86400000) }) : null;
     this.playerModel.cars[0].add(this.cabin.group);
     this.interaction.setTargets(this.cabin.interactive);
     this.headlight = new THREE.SpotLight(0xfff4dc, 60, 140, 0.42, 0.55, 1.2);
@@ -129,6 +143,9 @@ export class Game {
     this.player.doors.obstructionCheck = () => this.passengers.isObstructing();
 
     this.announcer = new Announcer(this.audio, this.settings, line);
+    // Voice: chosen in Settings, or one per service / destination ('auto'); the station staff use another voice.
+    this.announcer.voice = profileFor(this.settings.get('audio.voice'), this.hst ? line.id : line.sourceId || line.id);
+    this.stationVoice = this.announcer.voice === 'formal' ? 'calm' : 'formal';
     this.scoring = new Scoring(bus, this.settings);
     this.cameraSys.setMode('cab');
     this.cameraSys.resetView();
@@ -142,20 +159,33 @@ export class Game {
     this.applyGraphics();
     bus.emit('game:started', { line, train, direction });
     if (J && direction === 'A') this.buildRouteIndicator();
-    this.netModel = new NetworkModel((network || [line]).filter((l) => l.network === line.network));
+    this.netModel = this.hst ? new RailMapModel((network || [line]).filter((l) => l.category === 'hst')) : new NetworkModel((network || [line]).filter((l) => l.network === line.network));
     this.netView = null;
     this.mapModel = buildLineMapModel(line, [...this.svc.values()].map((d) => d.line), network || [], direction);
     // Online: tell the session what we drive (the server keeps trains on the same track apart).
     this.remoteModels = new Map();
     // Another player's train already at the first platform of this track: start in the approach behind it and
     // drive in once it has left (the server's authority holds us back until then).
-    const busy = this.remoteTrainsOn(route).filter((o) => o.rear < route.stops[0].stopR + 30);
+    if (this.resume) {
+      const k = this.resume.stopIndex;
+      this.player.physics.s = route.stops[k].stopR;
+      this.player.physics.odometer = (this.resume.odometerKm || 0) * 1000;
+      Object.assign(this.stations, { atStop: k, nextStop: k + 1, lastDelay: this.resume.delay || 0 });
+      this.passengers.onboard = Math.min(train.capacity, this.resume.onboard || 0);
+      this.passengers.boardedTotal = this.resume.carried || 0;
+      this.toast(`💾 Resumed at ${route.stops[k].name} (${this.resume.tgv ? `TGV ${this.resume.tgv.service} → ${this.resume.tgv.destination}` : route.directionName}). Open the doors to continue.`, 'ok', 7);
+    }
+    const busy = this.resume ? [] : this.remoteTrainsOn(route).filter((o) => o.rear < route.stops[0].stopR + 30);
     if (busy.length) {
       const rear = Math.min(...busy.map((o) => o.rear));
       this.player.physics.s = Math.max(train.length + 5, Math.min(route.stops[0].stopR, rear - 50));
       if (this.player.physics.s < route.stops[0].stopR - 1) { this.stations.atStop = null; this.stations.nextStop = 0; this.toast(`🌐 The first platform is occupied by ${busy[0].remote}'s train — wait in the approach, then drive in.`, 'warn', 7); }
     }
-    this.mp?.startDriving({ kind: 'train', lineId: line.id, sourceId: line.sourceId, number: line.number, color: line.color, dir: direction, branch: line.branchId || '', trunkEnd: this.junction ? this.junction.divergeS : 1e6, length: train.length, maxSpeed: train.maxSpeed, model: train.id, uid: vehicleUid || '', cars: train.cars });
+    // Main lines: the services of one corridor share the track up to their first destination (the server keeps
+    // trains on shared track apart, branch-aware), so they are announced as one track with per-service branches.
+    this.mpTrack = this.hst ? { sourceId: `hst:${line.rail?.corridor || line.id}`, branch: line.id, trunkEnd: route.stops[1].stopR + 300 }
+      : { sourceId: line.sourceId, branch: line.branchId || '', trunkEnd: this.junction ? this.junction.divergeS : 1e6 };
+    this.mp?.startDriving({ kind: 'train', lineId: line.id, ...this.mpTrack, number: line.number, color: line.color, dir: direction, length: train.length, maxSpeed: train.maxSpeed, model: train.id, uid: vehicleUid || '', cars: train.cars });
     this.mapAcc = 1;
     this.toast(`${line.fullName} · ${route.directionName}. Open the doors (${this.input.labelFor('doorsOpen')}) to board passengers.`, 'info', 7);
   }
@@ -223,13 +253,14 @@ export class Game {
     const day = Math.max(0, Math.min(1, (el + 0.08) / 0.35)), low = Math.max(0, 1 - Math.abs(el - 0.12) / 0.22) * (el > -0.1 ? 1 : 0);
     const C = (r, g, b) => new THREE.Color(r, g, b);
     const night = C(0.03, 0.045, 0.09), noon = C(0.68, 0.8, 0.94), gold = C(0.96, 0.62, 0.36);
-    const sky = night.clone().lerp(noon, day).lerp(gold, low * 0.65);
+    const wet = this.weather ? Math.max(this.weather.cloud * 0.55, this.weather.rain) : 0;
+    const sky = night.clone().lerp(noon, day).lerp(gold, low * 0.65 * (1 - wet)).lerp(C(0.42, 0.45, 0.5).multiplyScalar(0.3 + 0.7 * day), wet * 0.75);
     const fog = sky.clone().multiplyScalar(o).add(C(0.02, 0.024, 0.03).multiplyScalar(1 - o));
     this.scene.fog.color.copy(fog); this.scene.background.copy(fog);
-    this.scene.fog.near = 60 + o * 900; this.scene.fog.far = (this.settings.get('graphics.drawDistance')) * (1 - o) + o * 11000;
+    this.scene.fog.near = 60 + o * 900 * (1 - wet * 0.7); this.scene.fog.far = (this.settings.get('graphics.drawDistance')) * (1 - o) + o * 11000 * (1 - wet * 0.72);
     d.sky.material.color.copy(sky.clone().multiplyScalar(1 / Math.max(0.35, noon.r)).lerp(C(1, 1, 1), 0.2 * day));
     d.sun.color.copy(C(1, 0.95, 0.86).lerp(C(1, 0.62, 0.32), low));
-    d.sun.intensity = 2.3 * o * day;
+    d.sun.intensity = 2.3 * o * day * (1 - wet * 0.8);
     this.hemi.intensity = (0.25 + 0.85 * day) * (0.55 + 0.45 * o);
     this.hemi.color.copy(C(0.45, 0.5, 0.65).lerp(C(0.85, 0.88, 0.95), day).lerp(gold, low * 0.3));
     this.ambient.intensity = 0.18 + 0.22 * day;
@@ -390,7 +421,7 @@ export class Game {
       neutral: () => { if (!p().controller.isEB) p().controller.neutral(); },
       emergency: () => this.driverEmergency(),
       doorsOpen: (side) => this.openDoors(side),
-      doorsClose: () => { if (p().doors.close()) this.toast('Doors closing — stand clear', 'info', 2); },
+      doorsClose: () => { if (p().doors.close()) { this.toast('Doors closing — stand clear', 'info', 2); if (this.hst && this.stations.atStop != null) this.tgvAnnounce('doors', this.route.stops[this.stations.atStop]); } },
       horn: (on) => { p().horn = on; this.audio.horn(on); },
       announce: () => this.announceNext(true),
       vigilance: () => p().safety.acknowledgeVigilance(),
@@ -399,6 +430,13 @@ export class Game {
       routeSelect: () => this.selectRoute(),
       lineMap: () => this.bus.emit('ui:lineMap'),
       networkMap: () => this.bus.emit('ui:networkMap'),
+      wipers: (dir = 1) => {
+        if (!this.wipers) { this.toast('No windscreen wipers on this train.', 'info', 2); return; }
+        const M = ['off', 'int', 'low', 'high'], i = M.indexOf(this.wipers.mode);
+        this.wipers.setMode(M[Math.max(0, Math.min(M.length - 1, dir > 0 ? (i + 1) % M.length : i - 1))]);
+        this.audio.click(); this.toast(`Wipers: ${this.wipers.label}`, 'info', 1.5);
+      },
+      wipeOnce: () => { if (this.wipers) { this.wipers.wipeOnce(); this.audio.click(); } },
     };
   }
 
@@ -433,10 +471,11 @@ export class Game {
     if (!stp) return;
     if (manual && this.stations.atStop != null && !stp.isTerminus) {
       const nxt = this.route.stops[k + 1];
-      this.announcer.announce(nxt, 'next');
+      if (this.hst) this.tgvAnnounce('next', nxt, { force: manual }); else this.announcer.announce(nxt, 'next', manual);
       return;
     }
-    this.announcer.announce(stp, stp.isTerminus && this.stations.atStop === k ? 'terminus' : 'next');
+    if (this.hst) this.tgvAnnounce(stp.isTerminus && this.stations.atStop === k ? 'final' : 'next', stp, { force: manual });
+    else this.announcer.announce(stp, stp.isTerminus && this.stations.atStop === k ? 'terminus' : 'next', manual);
   }
 
   wireEvents() {
@@ -469,15 +508,18 @@ export class Game {
       if (stop.k === 0) return;
       const acc = Math.abs(error) <= tolerance ? 'Precise stop' : 'Stop';
       this.toast(`${stop.name} — ${acc} ${error >= 0 ? '+' : ''}${error.toFixed(2)} m · ${delay >= 0 ? '+' : ''}${Math.round(delay)} s`, Math.abs(error) <= tolerance ? 'ok' : 'info', 4);
-      this.announcer.announce(stop, stop.isTerminus ? 'terminus' : 'arrival');
+      if (this.hst) this.tgvAnnounce(stop.isTerminus ? 'final' : 'arrival', stop, { delay });
+      else this.announcer.announce(stop, stop.isTerminus ? 'terminus' : 'arrival');
       if (stop.isTerminus) {
         // Terminating: the destination display tells people on the platform not to board.
         this.playerModel.setDestination(this.line, this.line.language.startsWith('fr') ? 'Terminus · Ne pas monter' : 'Terminating · Do not board');
         this.toast(`${stop.name}: terminus — all passengers alight, boarding disabled`, 'info', 5);
       }
     });
+    // Automatic checkpoint at every station reached (its own save slot).
+    on('station:arrived', ({ stop, error }) => { if (stop.k > 0) this.audio.later(() => this.running && this.saveCheckpoint({ auto: true, stopError: error }), 1500); });
     on('station:missed', ({ stop }) => this.toast(`Missed stop: ${stop.name}`, 'alarm', 4));
-    on('station:departureAuthorized', () => { a.ding(); this.toast('Departure authorised — close the doors', 'ok', 3); });
+    on('station:departureAuthorized', ({ stop }) => { a.ding(); this.toast('Departure authorised — close the doors', 'ok', 3); if (this.hst) this.tgvAnnounce('platform', stop); });
     // Online: share service events; server corrections and collisions.
     on('station:arrived', ({ stop, delay }) => this.mp?.event({ e: stop.isTerminus ? 'terminus' : 'arrived', where: stop.name, delay }));
     on('station:departed', ({ stop }) => { this.mp?.event({ e: 'departed', where: stop.name }); const n = this.passengers.boardedTotal - (this.mpBoarded || 0); this.mpBoarded = this.passengers.boardedTotal; if (n > 0) this.mp?.event({ e: 'passengers', n }); });
@@ -486,7 +528,12 @@ export class Game {
     on('mp:collision', (m) => { if (m.kind === 'train' && !this.player.controller.isEB) { this.player.emergency(`Collision with ${m.with}'s train`); this.toast(`🌐 Collision with ${m.with}'s train`, 'alarm', 5); } });
     on('station:departed', ({ stop }) => {
       clearTimeout(this.annTimer);
-      this.annTimer = setTimeout(() => { if (this.running) this.announcer.announce(this.route.stops[stop.k + 1], 'next'); }, 7000);
+      if (this.hst) {
+        const late = Math.round((this.stations.lastDelay || 0) / 60);
+        if (stop.k === 0) { this.tgvAnnounce('welcome', stop); this.audio.later(() => this.running && this.tgvAnnounce('safety', stop), 75000); }
+        else this.annTimer = this.audio.later(() => { if (this.running) this.tgvAnnounce('next', this.route.stops[stop.k + 1]); }, 9000);
+        if (late >= 5) this.audio.later(() => this.running && this.tgvAnnounce('delay', stop, { minutes: late }), 30000);
+      } else this.annTimer = this.audio.later(() => { if (this.running) this.announcer.announce(this.route.stops[stop.k + 1], 'next'); }, 7000);
     });
     on('run:complete', () => {
       // Evacuation complete: the train changes ends for its return journey — new destination and announcement.
@@ -494,12 +541,12 @@ export class Game {
       this.playerModel.setDestination(this.line, ret.terminus);
       this.passengers.terminating = false;
       const fr = this.line.language.startsWith('fr');
-      this.audio.started && 'speechSynthesis' in window && this.settings.get('audio.voiceFallback') && setTimeout(() => {
+      this.audio.started && 'speechSynthesis' in window && this.settings.get('audio.voiceFallback') && this.audio.later(() => {
         const u = new SpeechSynthesisUtterance(fr ? `Ce train est à destination de ${ret.terminus}.` : `This train is for ${ret.terminus}.`);
         u.lang = this.line.language; speechSynthesis.speak(u);
       }, 600);
       this.toast(`Train empty — now ${ret.name}. Boarding resumes on the return journey.`, 'ok', 4);
-      setTimeout(() => this.finish(true), 2500);
+      this.audio.later(() => this.running && this.finish(true), 2500);
     });
   }
 
@@ -525,6 +572,62 @@ export class Game {
       tgv: this.tgvRun,
     };
     this.bus.emit('game:finished', this.result);
+  }
+
+  /**
+   * Main-line (TGV) announcements in French, each played once when its moment comes: platform departure call at
+   * Gare Centrale (station voice), welcome on board with the calling points and arrival time, safety information,
+   * next stop, slowing down for the next station, delay information, door closing, arrival at an intermediate
+   * station and the final destination. An imported MP3 named after the event (depart, doors, safety, delay,
+   * slowdown, final) replaces the synthesised message.
+   */
+  tgvAnnounce(kind, stop, { delay = 0, minutes = 0, force = false } = {}) {
+    if (!stop) return;
+    const R = this.route, tt = this.timetable, no = this.tgvRun?.service || '', term = R.terminus;
+    const hm = (t) => { if (t == null) return ''; const h = Math.floor(t / 3600) % 24, m = Math.floor(t / 60) % 60; return `${h} heures ${m ? String(m).padStart(2, '0') : ''}`.trim(); };
+    const next = R.stops.slice(stop.k + 1).map((s) => s.name);
+    const list = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} et ${a.at(-1)}`);
+    const arrT = tt.entry(R.stops.length - 1).arr;
+    const train = no ? `TGV numéro ${String(no).split('').join(' ')}` : 'TGV';
+    const T = {
+      platform: [`Le ${train}, à destination de ${term}, va partir. Voie ${this.line.rail?.voie ?? ''}. Attention à la fermeture des portes.`, 'depart', this.stationVoice],
+      welcome: [`Mesdames et messieurs, bienvenue à bord du ${train} à destination de ${term}. ${next.length > 1 ? `Ce train desservira ${list(next)}.` : 'Ce train est sans arrêt jusqu\'à ' + term + '.'} Arrivée à ${term} prévue à ${hm(arrT)}. Nous vous souhaitons un agréable voyage.`, 'welcome'],
+      safety: ['Pour votre sécurité, veillez à ne pas laisser vos bagages sans surveillance. En cas de besoin, des signaux d\'alarme sont situés aux extrémités de chaque voiture. Merci de votre attention.', 'safety'],
+      next: [`Prochain arrêt : ${stop.name}. Arrivée prévue à ${hm(tt.entry(stop.k).arr)}.${stop.isTerminus ? ` ${stop.name} est le terminus de ce train.` : ''}`, `next-${stop.station.id}`],
+      slowdown: [`Mesdames et messieurs, nous approchons de ${stop.name}. Le train va ralentir. Pensez à rassembler vos affaires.`, 'slowdown'],
+      delay: [`Nous vous informons que ce train circule avec un retard d'environ ${minutes} minutes. Nous vous prions de nous excuser pour la gêne occasionnée.`, 'delay'],
+      doors: ['Attention à la fermeture des portes. Prenez garde à l\'intervalle entre le quai et le train.', 'doors', this.stationVoice],
+      arrival: [`${stop.name}. ${stop.name}. Ce train continue vers ${term}. Veuillez vérifier que vous n'avez rien oublié à bord.${delay > 300 ? ` Nous vous prions d'excuser notre retard de ${Math.round(delay / 60)} minutes.` : ''}`, `arr-${stop.station.id}`],
+      final: [`${stop.name}, terminus de ce train. Tout le monde descend. Assurez-vous de n'avoir rien oublié à bord. ${delay > 300 ? `Nous vous prions d'excuser notre retard de ${Math.round(delay / 60)} minutes. ` : ''}Merci d'avoir voyagé avec nous.`, 'final'],
+    }[kind];
+    if (!T) return;
+    this.announcer.say(`${kind}:${stop.k}`, T[0], { mp3: `_${T[1]}`, voice: T[2] || null, force });
+  }
+
+  /**
+   * Station checkpoint: the train standing at a platform, its service, position, time, passengers and vehicle
+   * state, saved in that station's own slot. auto = on arrival; otherwise a manual save from the pause menu / key.
+   * Returns { ok, error?, name }.
+   */
+  saveCheckpoint({ auto = false, stopError = null } = {}) {
+    const sm = this.stations, k = sm.atStop;
+    if (!this.saves) return { ok: false, error: 'Saving is not available.' };
+    if (k == null || this.crash || this.result) { const r = { ok: false, error: 'Stop at a platform to save (checkpoints are taken at stations).' }; if (!auto) this.toast(`💾 ${r.error}`, 'warn', 4); return r; }
+    const stp = this.route.stops[k], v = this.economy?.vehicle(this.vehicleUid);
+    const cp = {
+      network: this.line.network, stationName: stp.name, stopIndex: k, final: !!stp.isTerminus,
+      lineId: this.line.id, sourceId: this.line.sourceId, lineName: this.line.fullName, color: this.line.color, number: this.line.number,
+      direction: this.direction, startTime: this.line.startTime, clock: this.clock, delay: sm.lastDelay,
+      trainModel: this.specs.id, trainName: this.specs.name, trainUid: this.vehicleUid, condition: v ? v.condition : null,
+      tgv: this.tgvRun, hst: !!this.hst, destination: this.route.terminus,
+      onboard: this.passengers.onboard, carried: this.passengers.boardedTotal, odometerKm: this.player.physics.odometer / 1000,
+      balance: this.economy?.balance ?? null, arrival: auto, stopError,
+    };
+    const res = this.saves.saveStation(cp);
+    if (res.ok) this.toast(`💾 ${auto ? 'Auto-saved' : 'Saved'} at ${stp.name}`, 'ok', 2.5);
+    else this.toast(`💾 Save failed: ${res.error}`, 'alarm', 6);
+    this.bus.emit('save:station', { ...res, name: stp.name });
+    return { ...res, name: stp.name };
   }
 
   /** Shows/hides surface sites built above underground stations (e.g. the airport). */
@@ -599,6 +702,7 @@ export class Game {
       case 'networkMap': A.networkMap(); break;
       case 'timeWarp': {
         if (!this.hst) { this.toast('Time acceleration is available on main lines (TGV).', 'info', 2); break; }
+        if (this.mp?.inSession) { this.warp = 1; this.toast('Time acceleration is off in online sessions (shared real time).', 'info', 2.5); break; }
         const W = [1, 2, 5, 10]; this.warp = W[(W.indexOf(this.warp) + 1) % W.length];
         this.toast(this.warp > 1 ? `⏩ Time ×${this.warp}` : '▶ Real time', 'info', 1.5); break;
       }
@@ -610,6 +714,10 @@ export class Game {
         this.cameraSys.setTour(views[this.tourIndex]);
         this.toast(`🎥 ${views[this.tourIndex].name} (${this.tourIndex + 1}/${views.length}) — ${this.input.labelFor('stationTour')}: next view`, 'info', 3); break;
       }
+      case 'quickSave': this.saveCheckpoint(); break;
+      case 'wipers': this.actions().wipers(1); break;
+      case 'wipeOnce': this.actions().wipeOnce(); break;
+      case 'weather': if (this.weather) { const m = this.weather.cycle(); this.settings.set('gameplay.tgvWeather', m); this.toast(`Weather: ${m}`, 'info', 2); } else this.toast('Weather is simulated on main lines.', 'info', 2); break;
       case 'ato':
         if (this.line.automation !== 'ato') { this.toast('This line has no automatic train operation.', 'info', 2); break; }
         this.ato = !this.ato;
@@ -690,7 +798,7 @@ export class Game {
     // AI train models.
     const seen = new Set();
     const camPos = this.camera.getWorldPosition(new THREE.Vector3());
-    const draw = this.settings.get('graphics.drawDistance') + 100;
+    const draw = this.hst ? Math.max(this.camera.far, 3000) : this.settings.get('graphics.drawDistance') + 100;
     for (const t of this.traffic.trains) {
       const active = t.mode !== 'done' && (t.mode !== 'waiting' || t.tt.start - this.clock < 90);
       if (!active) continue;
@@ -707,6 +815,18 @@ export class Game {
 
     this.guard('signals', () => this.signalView.update(this.time));
     this.guard('daylight', () => this.updateDaylight(dt, camPos));
+    if (this.hst && this.stations.atStop == null) {
+      const k = this.stations.nextStop, stp = route.stops[k];
+      if (stp && stp.stopR - p.front < 7000 && stp.stopR - p.front > 1000 && p.speed > 40) this.tgvAnnounce('slowdown', stp);
+    }
+    if (this.weather) this.guard('weather', () => {
+      const tr = route.toTrack(p.front), h = this.geom.heading(tr) + (route.sign < 0 ? Math.PI : 0);
+      const out = this.daylight?.o ?? 1;
+      this.weather.update(dt, tr, camPos, Math.abs(p.speed), { x: Math.sin(h), z: -Math.cos(h) }, out);
+      // Rain reaches the windscreen only in the open (not in tunnels or under the station roof).
+      const covered = !this.geom.outdoorAt(tr) || (this.geom.stationZoneAt(tr)?.index === 0);
+      this.wipers?.update(dt, covered ? 0 : this.weather.rain, Math.abs(p.speed));
+    });
     this.guard('city', () => { for (const w of this.worlds.values()) w.outdoor?.update(dt, this.time, this.clock, camPos); });
     const trackS = route.toTrack(p.front - this.specs.length / 2);
     this.guard('stations', () => {
@@ -761,8 +881,8 @@ export class Game {
     const out = [];
     for (const r of this.mp.remotes('train')) {
       const d = r.drive;
-      if (d.dir !== route.dir || d.sourceId !== this.line.sourceId) continue;
-      const same = d.lineId === route.line.id || r.state.s < (this.junction?.divergeS ?? Infinity);
+      if (d.dir !== route.dir || d.sourceId !== (this.mpTrack?.sourceId ?? this.line.sourceId)) continue;
+      const same = d.lineId === route.line.id || r.state.s < (this.hst ? this.mpTrack.trunkEnd : this.junction?.divergeS ?? Infinity);
       if (same) out.push({ front: r.state.s, rear: r.state.s - d.length, remote: r.name });
     }
     return out;
@@ -776,7 +896,7 @@ export class Game {
     mp.sendState({ s: p.front, v: p.speed, doors: p.doors.status, atStop: sm.atStop, next: route.stops[sm.atStop ?? sm.nextStop]?.name || '', load: Math.round((this.passengers.onboard / this.specs.capacity) * 100), x: q.x, z: q.z, h });
     const seen = new Set();
     for (const r of mp.remotes('train')) {
-      const d = r.drive, svc = this.svc.get(d.lineId) || (d.sourceId === this.line.sourceId ? this.svc.get(this.line.id) : null);
+      const d = r.drive, svc = this.svc.get(d.lineId) || (d.sourceId === this.line.sourceId ? this.svc.get(this.line.id) : null) || this.remoteService(d.lineId);
       const rt = svc?.routes[d.dir];
       if (!rt) continue;
       seen.add(r.id);
@@ -793,6 +913,18 @@ export class Game {
       e.model.setDoors(side, r.state.doors === 'locked' ? 0 : r.state.doors === 'closing' ? 0.4 : 1);
     }
     for (const [id, e] of this.remoteModels) if (!seen.has(id)) { e.model.dispose(this.scene); this.remoteModels.delete(id); }
+  }
+  /**
+   * Track and routes of another line of the network (a remote player driving another service): built once, so the
+   * remote train exists in 3D at the very position its map marker shows (both come from the same chainage).
+   */
+  remoteService(lineId) {
+    if (this.remoteSvc.has(lineId)) return this.remoteSvc.get(lineId);
+    const l = this.network.find((x) => x.id === lineId);
+    let svc = null;
+    if (l) { const g = new TrackGeometry(l); svc = { line: l, geom: g, routes: l.loop ? { A: new Route(l, g, 'A') } : { A: new Route(l, g, 'A'), B: new Route(l, g, 'B') } }; }
+    this.remoteSvc.set(lineId, svc);
+    return svc;
   }
   /** Other players' trains on the network map (any line). */
   remoteMapMarkers() {
@@ -819,7 +951,7 @@ export class Game {
       if (side === mine) {
         const ev = side.update(dt, { obstructed: () => this.passengers.isObstructing(), trainAmount: p.doors.sides[this.route.stops[this.stations.atStop].doorSide].amount, warnSound: () => this.psdBeep() });
         if (ev === 'obstructed') { this.toast('Platform doors: obstruction detected — reopening', 'warn', 3); this.audio.tone(880, 0.4, { gain: 0.06, type: 'square' }); }
-        if (ev === 'fault') { this.toast('PLATFORM DOOR FAULT — doors not locked, departure blocked. Reopen and close the doors.', 'alarm', 6); this.scoring.penalty(20, 'Platform door fault (forced closing)'); if (this.ato) setTimeout(() => this.running && this.openDoors(), 3000); }
+        if (ev === 'fault') { this.toast('PLATFORM DOOR FAULT — doors not locked, departure blocked. Reopen and close the doors.', 'alarm', 6); this.scoring.penalty(20, 'Platform door fault (forced closing)'); if (this.ato) this.audio.later(() => this.running && this.openDoors(), 3000); }
         if (ev === 'locked') this.bus.emit('psd:locked');
         continue;
       }
@@ -841,12 +973,27 @@ export class Game {
     const k = sm.atStop ?? sm.nextStop;
     const next = route.stops[sm.atStop != null ? Math.min(route.stops.length - 1, sm.atStop + 1) : k]?.name;
     const prev = sm.atStop != null ? route.stops[sm.atStop - 1]?.name : route.stops[k - 1]?.name;
-    return { number: this.line.number, train: { x: q.x, z: q.z, heading }, next, prev, direction: route.directionName, others: this.remoteMapMarkers?.() || [], compact };
+    const base = { number: this.line.number, train: { x: q.x, z: q.z, heading }, next, prev, direction: route.directionName, others: this.remoteMapMarkers?.() || [], compact };
+    if (!this.hst) return base;
+    // Main-line map: progress, next stop, ETA; AI services on the line from the traffic simulation (same data as 3D).
+    const nk = sm.atStop != null ? Math.min(route.stops.length - 1, sm.atStop + 1) : sm.nextStop, ns = route.stops[nk];
+    const dist = ns ? ns.stopR - p.front : null, first = route.stops[0].stopR, last = route.stops.at(-1).stopR;
+    const ai = this.traffic.trains.filter((t) => t.mode !== 'done' && t.mode !== 'waiting').map((t) => { const a = t.route.point(t.front, 0, 0, {}); const hh = this.geom.heading(t.route.toTrack(t.front)) + (t.route.sign < 0 ? Math.PI : 0); return { x: a.x, z: a.z, heading: hh, color: '#9fb3d6', label: `TGV → ${t.route.terminus}` }; });
+    return { ...base, next: ns?.name, lineId: this.line.id, progressS: t, progress: (p.front - first) / Math.max(1, last - first),
+      nextDistance: dist, eta: dist != null ? this.clock + (sm.atStop != null ? Math.max(0, (this.timetable.entry(nk).arr ?? this.clock) - this.clock) : dist / Math.max(15, Math.abs(p.speed))) : null,
+      destination: route.terminus, direction: 'Avant', service: this.tgvRun ? `TGV ${this.tgvRun.service}` : 'TGV', speed: Math.abs(p.speed) * 3.6, others: [...base.others, ...ai] };
   }
   drawNetworkScreens() {
     const ns = this.cabin.netScreen; if (!ns || !this.netModel) return;
     const g = ns.c.getContext('2d'); if (!g) return;
     const st = this.networkState(true);
+    if (this.hst) {
+      // Cab screen: the main-line map around the train (about 150 km across).
+      const view = { cx: st.train.x, cz: st.train.z, scale: ns.c.width / 150000 };
+      drawRailMap(g, ns.c.width, ns.c.height, this.netModel, view, st);
+      ns.tex.needsUpdate = true;
+      return;
+    }
     // Cab screen: the whole network, slightly zoomed towards the train.
     const v = this.netModel.fit(ns.c.width, ns.c.height, 26);
     const view = { cx: v.cx * 0.6 + st.train.x * 0.4, cz: v.cz * 0.6 + st.train.z * 0.4, scale: v.scale * 1.25 };
@@ -881,7 +1028,7 @@ export class Game {
     const p = this.player, s = p.safety, sm = this.stations, info = sm.info(this.clock);
     const ns = this.signals.nextSignal(p.front);
     const vk = Math.abs(p.speed) * 3.6;
-    const nextLimit = this.route.nextLimitChange(p.front, s.staticLimit);
+    const nextLimit = this.route.nextLimitChange(p.front, s.staticLimit, this.hst ? 8000 : 900);
     let alarm = null;
     const J = this.junction;
     if (s.latched) alarm = { text: `EMERGENCY BRAKE · ${s.latchReason}`, color: '#ff4030' };
@@ -919,6 +1066,11 @@ export class Game {
       score: this.scoring.result(true).score,
       junction: J && !J.passed ? { distance: J.divergeS - p.front, set: jo ? jo.name : null, side: jo?.side, ok: J.set === this.planned.id, destination: this.planned.service } : null,
       destination: this.route.terminus,
+      maxSpeed: this.specs.maxSpeed,
+      serviceLabel: this.tgvRun ? `TGV ${this.tgvRun.service}` : this.line.number,
+      wipers: this.wipers?.label, wiperMode: this.wipers?.mode, wiperSingle: !!this.wipers?.single, windscreenWet: this.wipers?.coverage ?? 0,
+      weather: this.weather?.label, weatherRain: this.weather?.rain ?? 0,
+      condition: this.economy?.vehicle(this.vehicleUid)?.condition ?? null,
     };
   }
 
@@ -929,7 +1081,9 @@ export class Game {
   setPaused(p) { this.paused = p; if (p) this.audio.suspend(); else this.audio.resume(); this.input.enabled = !p; }
 
   dispose() {
+    this.audio?.endSession();            // nothing of this run may keep playing (loops, announcements, timers)
     if (!this.scene) return;
+    this.weather?.dispose(); this.weather = null; this.wipers?.dispose(); this.wipers = null;
     this.mp?.stopDriving();
     clearTimeout(this.annTimer);
     this.running = false;

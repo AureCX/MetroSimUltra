@@ -226,3 +226,10 @@ div.train-card { cursor: default; text-align: left; }
 .tgv-board tr.departed td, .tgv-board tr.cancelled td { opacity: 0.55; }
 .tgv-board select { max-width: 160px; }
 .tgv-status { font-weight: bold; font-size: 0.86em; }
+.net-info { position: absolute; left: 12px; top: 12px; width: min(360px, 40vw); max-height: 60%; overflow: auto; background: rgba(14,22,38,0.95); color: #e8eef4; border: 1px solid #2a3a58; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+.net-info h3 { margin: 2px 0 4px; color: #f2c200; }
+.net-info .sub { color: #9fb3d6; }
+.net-info .mp-feed li { color: #e8eef4; }
+.net-overlay.rail { background: #0b1424; border-color: #b48a3c; }
+.net-overlay.rail .net-hint { left: auto; right: 12px; bottom: 56px; background: rgba(14,22,38,0.85); color: #9fb3d6; }
+.route-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }

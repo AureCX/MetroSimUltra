@@ -22,15 +22,68 @@ export class AudioSystem {
     this.master = ctx.createGain();
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
     this.master.connect(comp).connect(ctx.destination);
-    this.fx = ctx.createGain(); this.fx.connect(this.master);
-    this.amb = ctx.createGain(); this.amb.connect(this.master);
-    this.voice = ctx.createGain(); this.voice.connect(this.master);
+    // Every gameplay sound goes through the session bus (muted between sessions); menu sounds use the UI bus.
+    this.sessionBus = ctx.createGain(); this.sessionBus.gain.value = 0; this.sessionBus.connect(this.master);
+    this.ui = ctx.createGain(); this.ui.connect(this.master);
+    this.fx = ctx.createGain(); this.fx.connect(this.sessionBus);
+    this.amb = ctx.createGain(); this.amb.connect(this.sessionBus);
+    this.voice = ctx.createGain(); this.voice.connect(this.sessionBus);
     this.applyVolumes();
     this.noise = this.makeNoise(3);
     this.brown = this.makeNoise(3, true);
     this.buildContinuous();
+    // From here on, every source created belongs to the current session and is stopped when it ends.
+    this.live = new Set();
+    for (const fn of ['createOscillator', 'createBufferSource']) {
+      const orig = ctx[fn].bind(ctx);
+      ctx[fn] = () => { const n = orig(); this.live.add(n); n.addEventListener('ended', () => this.live.delete(n)); return n; };
+    }
     this.started = true;
+    if (this.inSession) this.sessionBus.gain.value = 1;
   }
+
+  // ---- gameplay audio sessions ----
+  /**
+   * Starts a gameplay session (metro, TGV or bus run): resets the per-run state and opens the session bus.
+   * Only the session that is current may play: timers created with later() die with their session.
+   */
+  beginSession() {
+    this.endSession();
+    this.sessionId = (this.sessionId || 0) + 1;
+    this.inSession = true;
+    this.jointAcc = 0; this.compTimer = 30; this.exterior = false;
+    if (this.ctx) { const t = this.ctx.currentTime; this.sessionBus.gain.cancelScheduledValues(t); this.sessionBus.gain.setValueAtTime(1, t); }
+    return this.sessionId;
+  }
+  /**
+   * Ends the gameplay session: silences every loop (engine, rolling, wind, ambience, horn, compressor…), stops
+   * every source started during the session (announcements, chimes, bus engine…), clears the alarm and pending
+   * timers, cancels speech, and mutes the session bus. Safe to call several times.
+   */
+  endSession() {
+    this.sessionId = (this.sessionId || 0) + 1;     // invalidates later() callbacks and in-flight announcements
+    this.inSession = false;
+    clearInterval(this.alarmTimer); this.alarm = null;
+    for (const id of this.timers || []) clearTimeout(id);
+    this.timers = new Set();
+    if ('speechSynthesis' in globalThis) { try { speechSynthesis.cancel(); } catch { /* */ } }
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.sessionBus.gain.cancelScheduledValues(t); this.sessionBus.gain.setValueAtTime(0, t);
+    for (const [k, n] of Object.entries(this.c || {})) if (k.endsWith('Gain')) { n.gain.cancelScheduledValues(t); n.gain.setValueAtTime(k === 'fanGain' ? 0.018 : 0, t); }
+    for (const n of this.live || []) { try { n.stop(); } catch { /* not started / already stopped */ } }
+    this.live?.clear();
+  }
+  /** setTimeout bound to the current session (never fires after the player left it). */
+  later(fn, ms) {
+    const sid = this.sessionId;
+    this.timers ??= new Set();
+    const id = setTimeout(() => { this.timers.delete(id); if (sid === this.sessionId && this.inSession) fn(); }, ms);
+    this.timers.add(id);
+    return id;
+  }
+  /** True while `sid` is still the current session. */
+  alive(sid) { return this.inSession && sid === this.sessionId; }
 
   applyVolumes() {
     if (!this.ctx) return;
@@ -111,7 +164,7 @@ export class AudioSystem {
 
   /** st: { v (m/s), traction, brake, eb, radius, inStation, exterior, compressor, length, carLength } */
   update(dt, st) {
-    if (!this.started) return;
+    if (!this.started || !this.inSession) return;
     const c = this.c, v = Math.abs(st.v), vk = v * 3.6;
     const ext = st.exterior ? 1.5 : 1;
     const pitch = st.motorPitch || 1;
@@ -170,8 +223,8 @@ export class AudioSystem {
     o.connect(og).connect(this.fx); o.start(t); o.stop(t + 0.12);
   }
 
-  tone(freq, dur, { type = 'sine', gain = 0.1, at = 0, dest = this.fx, attack = 0.01 } = {}) {
-    if (!this.started) return;
+  tone(freq, dur, { type = 'sine', gain = 0.1, at = 0, dest = this.fx, attack = 0.01, ui = false } = {}) {
+    if (!this.started || (!ui && !this.inSession)) return;
     const t = this.ctx.currentTime + at;
     const o = this.ctx.createOscillator(); o.type = type; o.frequency.value = freq;
     const g = this.ctx.createGain();
@@ -179,7 +232,7 @@ export class AudioSystem {
     o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.02);
   }
   hiss(dur, { gain = 0.12, freq = 2500, at = 0, type = 'highpass' } = {}) {
-    if (!this.started) return;
+    if (!this.started || !this.inSession) return;
     const t = this.ctx.currentTime + at;
     const s = this.ctx.createBufferSource(); s.buffer = this.noise;
     const f = this.filter(type, freq, 0.7);
@@ -195,7 +248,7 @@ export class AudioSystem {
   }
 
   // ---- event sounds ----
-  click() { this.tone(2400, 0.02, { type: 'square', gain: 0.05 }); }
+  click() { this.tone(2400, 0.02, { type: 'square', gain: 0.05, dest: this.ui, ui: true }); }
   notch(braking) { this.tone(braking ? 900 : 1300, 0.025, { type: 'square', gain: 0.04 }); this.thunk(0, 0.06); }
   brakeRelease() { this.hiss(1.1, { gain: 0.06, freq: 1800 }); }
   doorChime() { for (let i = 0; i < 3; i++) { this.tone(1046, 0.16, { at: i * 0.6, gain: 0.08, type: 'triangle' }); this.tone(784, 0.2, { at: i * 0.6 + 0.2, gain: 0.08, type: 'triangle' }); } }
@@ -234,7 +287,7 @@ export class AudioSystem {
 
   /** Repeating alarm: 'atp' | 'vigilance' | null */
   setAlarm(kind) {
-    if (!this.started || this.alarm === kind) return;
+    if (!this.started || this.alarm === kind || (kind && !this.inSession)) return;
     this.alarm = kind;
     clearInterval(this.alarmTimer);
     if (!kind) return;
@@ -242,10 +295,11 @@ export class AudioSystem {
     beep();
     this.alarmTimer = setInterval(beep, kind === 'atp' ? 420 : 900);
   }
-  horn(on) { if (this.started) this.set(this.c.hornGain.gain, on ? 0.09 : 0, 0.03); }
+  horn(on) { if (this.started && (this.inSession || !on)) this.set(this.c.hornGain.gain, on ? 0.09 : 0, 0.03); }
 
   /** Plays a decoded AudioBuffer on the announcement bus. */
   playBuffer(buf, delay = 0) {
+    if (!this.inSession) return null;
     const s = this.ctx.createBufferSource(); s.buffer = buf;
     s.connect(this.voice); s.start(this.ctx.currentTime + delay);
     return s;

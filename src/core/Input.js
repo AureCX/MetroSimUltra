@@ -21,6 +21,10 @@ export const ACTIONS = {
   ato:            { label: 'Automatic operation (ATO) on / off', keys: ['KeyT'], pad: [] },
   timeWarp:       { label: 'Time acceleration ×1 / ×2 / ×5 / ×10 (main lines)', keys: ['KeyU'], pad: [] },
   stationTour:    { label: 'Station tour camera (Gare Centrale)', keys: ['KeyO'], pad: [] },
+  quickSave:      { label: 'Save at this station (checkpoint)', keys: ['KeyP'], pad: [] },
+  wipers:         { label: 'Windscreen wipers: OFF / INT / LOW / HIGH (TGV)', keys: ['KeyI'], pad: [] },
+  wipeOnce:       { label: 'Single wipe (TGV)', keys: ['KeyB'], pad: [] },
+  weather:        { label: 'Weather: auto / clear / cloudy / rain / storm (main lines)', keys: ['KeyY'], pad: [] },
   toggleHud:      { label: 'Show / hide HUD',                   keys: ['KeyH'], pad: [] },
   lookBack:       { label: 'Reset view',                        keys: ['KeyX'], pad: [10] },
 };

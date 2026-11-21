@@ -2,8 +2,11 @@
 const DB = 'metrosim-assets';
 const VERSION = 1;
 
+let dbPromise = null;
+/** One shared connection (re-opened if it fails or is closed by the browser). */
 function open() {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'));
     const req = indexedDB.open(DB, VERSION);
     req.onupgradeneeded = () => {
@@ -11,9 +14,10 @@ function open() {
       if (!db.objectStoreNames.contains('lines')) db.createObjectStore('lines');
       if (!db.objectStoreNames.contains('audio')) db.createObjectStore('audio');
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { const db = req.result; db.onclose = () => { dbPromise = null; }; db.onversionchange = () => { db.close(); dbPromise = null; }; resolve(db); };
+    req.onerror = () => { dbPromise = null; reject(req.error); };
   });
+  return dbPromise;
 }
 
 async function tx(store, mode, fn) {

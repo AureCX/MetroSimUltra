@@ -511,7 +511,7 @@ export function buildGrandeGare(parent, opts) {
       // Other trains of the timetable at their platforms.
       if (clockS != null && trainFactory && d < 2500) updateGhosts(clockS);
     },
-    dispose() { crowd.dispose(); for (const g of ghostTrains.values()) g.model.dispose?.(dyn); },
+    dispose() { crowd.dispose(); for (const g of ghostTrains.values()) g.model.dispose?.(parent); },
   };
 
   function updateGhosts(clock) {
@@ -528,18 +528,20 @@ export function buildGrandeGare(parent, opts) {
         else if (clock >= tt0 && clock < tt0 + 150) { const tt2 = clock - tt0; x = HALF_P - 10 + 0.5 * 0.45 * tt2 * tt2; }
         if (x != null) want.set(`d${sv.no}`, { x: east ? x : -x, zTrack, dirSign: east ? 1 : -1, standing: clock < tt0 });
       } else {
-        if (clock > tt0 - 150 && clock < tt0) { const tt2 = tt0 - clock; x = HALF_P - 10 + 0.5 * 0.45 * tt2 * tt2; }
+        // Arriving: comes in nose first and brakes to its stop at the far end of the platform.
+        if (clock > tt0 - 150 && clock < tt0) { const tt2 = tt0 - clock; x = HALF_P - 10 - 0.5 * 0.45 * tt2 * tt2; }
         else if (clock >= tt0 && clock < tt0 + 15 * 60) x = HALF_P - 10;
         if (x != null) want.set(`a${sv.no}`, { x: east ? -x : x, zTrack, dirSign: east ? -1 : 1, standing: clock >= tt0 });
       }
     }
-    for (const [key, g] of ghostTrains) if (!want.has(key)) { g.model.dispose(dyn); ghostTrains.delete(key); }
+    for (const [key, g] of ghostTrains) if (!want.has(key)) { g.model.dispose(parent); ghostTrains.delete(key); }
     let n = 0;
     for (const [key, w] of want) {
       if (n++ > 5) break;
       let g = ghostTrains.get(key);
-      if (!g) { const model = trainFactory(); dyn.add(model.group); g = { model }; ghostTrains.set(key, g); }
-      const route = { point: (r, lat, h, out = {}) => { out.x = w.dirSign * r; out.y = 0; out.z = w.zTrack; return out; } };
+      // Models live in world space (TrainModel orients its cars with world-space lookAt).
+      if (!g) { const model = trainFactory(); parent.add(model.group); g = { model }; ghostTrains.set(key, g); }
+      const route = { point: (r, lat, h, out = {}) => { out.x = GC.x + w.dirSign * r; out.y = y0; out.z = GC.z + w.zTrack; return out; } };
       g.model.setPose(route, w.dirSign * w.x);
       g.standing = w.standing; g.zTrack = w.zTrack;
     }

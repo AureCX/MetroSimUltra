@@ -32,7 +32,7 @@ test('platform door openings line up with every train door of each formation', (
   for (const f of fs.readdirSync(new URL('../src/data/trains/', import.meta.url))) {
     const sp = deriveTrainSpecs(JSON.parse(fs.readFileSync(new URL(`../src/data/trains/${f}`, import.meta.url))));
     const offs = trainDoorOffsets(sp);
-    assert.equal(offs.length, sp.cars * sp.doorsPerSide, f);
+    assert.equal(offs.length, sp.doorList ? sp.doorList.length : sp.cars * sp.doorsPerSide, f);   // power cars have no passenger doors
     for (let i = 1; i < offs.length; i++) assert.ok(offs[i] - offs[i - 1] > sp.doorWidth, `${f}: doors do not overlap`);
   }
 });

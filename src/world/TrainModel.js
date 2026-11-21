@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Textures, shade } from './Textures.js';
 import { glowTexture } from './SignalView.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { tgvModel } from './TgvModel.js';
 
 const FLOOR = 1.0;
 const geoCache = new Map();
@@ -463,9 +464,38 @@ export class TrainModel {
       this.group.add(car);
       this.cars.push(car);
     }
-    if (specs.style === 'hst') this.buildHst(livery, glow, destMat);
+    if (specs.model3d === 'tgv-duplex') this.buildFromModel(glow);
+    else if (specs.style === 'hst') this.buildHst(livery, glow, destMat);
     this.setLights('forward');
     this.buildInterior(line, player);
+  }
+
+  /**
+   * Trainset from the imported 3D model (TGV Duplex): each car gets the model's car of its type (power car, end
+   * trailer, middle trailer); the second half of the train uses the same cars turned round, as on the real train.
+   * Head / tail lamp glows are placed on the model's lamp positions; the leading power car is the cab.
+   */
+  buildFromModel(glow) {
+    const sp = this.specs, n = sp.cars, M = tgvModel();
+    this.cabGlass = [];
+    for (let c = 0; c < n; c++) {
+      const car = this.cars[c];
+      for (const ch of car.children) ch.visible = false;                       // generic shell / ends / interior
+      const type = c === 0 || c === n - 1 ? 'power' : c === 1 || c === n - 2 ? 'end' : 'middle';
+      const grp = M.instance(type);
+      if (c >= n / 2) grp.rotation.y = Math.PI;
+      car.add(grp);
+      if (c === 0) { this.noseFront = grp; this.modelCab = true; this.cabGlass = grp.userData.glass; this.windscreenSurface = M.windscreen; }
+      if (type === 'power') {
+        const end = c === 0 ? 1 : -1;
+        for (const sd of [-1, 1]) {
+          const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff4d0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+          gl.scale.set(1.3, 1.3, 1); gl.position.set(sd * M.lamps.x, M.lamps.y, M.lamps.z + 0.25); gl.userData.end = end; grp.add(gl); this.glows.push(gl);
+          const tg = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xff1a00, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+          tg.scale.set(0.6, 0.6, 1); tg.position.set(sd * (M.lamps.x - 0.25), M.lamps.y, M.lamps.z + 0.2); tg.userData.end = end; tg.userData.tail = true; grp.add(tg); this.glows.push(tg);
+        }
+      }
+    }
   }
 
   /**
@@ -689,9 +719,11 @@ export class TrainModel {
     const sp = this.specs, L = sp.carLength;
     const a = this._a || (this._a = {}), b = this._b || (this._b = {});
     for (let c = 0; c < sp.cars; c++) {
-      const cf = front - c * (L + sp.carGap);
-      route.point(cf - 2.4, 0, 0, a);
-      route.point(cf - L + 2.4, 0, 0, b);
+      const Lc = sp.carLengths ? sp.carLengths[c] : L;
+      const cf = front - (sp.carStart ? sp.carStart[c] : c * (L + sp.carGap));
+      const k = Math.min(2.4, Lc * 0.2);
+      route.point(cf - k, 0, 0, a);
+      route.point(cf - Lc + k, 0, 0, b);
       const car = this.cars[c];
       car.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
       car.lookAt(a.x, (a.y + b.y) / 2 + (a.y - b.y) / 2, a.z);
@@ -715,6 +747,7 @@ export class TrainModel {
   /** Hide the leading cab exterior when the camera is inside it. */
   setCabExteriorVisible(v) {
     // TGV: the driver sits inside the nose — the body stays (it frames the view), the glass turns clear.
+    if (this.modelCab) { for (const ch of this.noseFront.children) if (ch.isSprite) ch.visible = v; for (const m of this.cabGlass || []) m.material.opacity = v ? m.userData.opacity : 0.08; return; }
     if (this.noseFront) { for (const ch of this.noseFront.children) if (ch.isSprite) ch.visible = v; if (this.wsMat) { this.wsMat.opacity = v ? 0.88 : 0.06; this.wsMat.metalness = v ? 0.85 : 0; } for (const m of this.cabGlass || []) if (m !== this.windscreen) m.material.opacity = v ? 0.85 : 0.15; return; }
     if (this.cabFront) this.cabFront.visible = v; this.cars[0].userData.shell.children[0].visible = v; this.cars[0].userData.shell.children[1].visible = v; }
 

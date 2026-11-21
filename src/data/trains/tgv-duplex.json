@@ -7,7 +7,7 @@
  "serviceIntervalKm": 4000,
  "description": "Double-deck high-speed trainset: 2 power cars and 8 bi-level trailers, 512 seats in first and second class, 320 km/h.",
  "style": "hst", "decks": 2,
- "cars": 10, "carLength": 20.0, "carGap": 0.4, "width": 2.9, "height": 4.3,
+ "cars": 10, "carLengths": [22.03, 22.03, 18.46, 18.46, 18.46, 18.46, 18.46, 18.46, 22.03, 22.03], "carGap": 0.0, "model3d": "tgv-duplex", "passengerCars": [1, 8], "doorFromFront": 2.2, "width": 2.9, "height": 4.3,
  "doorsPerSide": 1, "doorWidth": 1.1,
  "massEmpty": 380, "capacity": 512,
  "maxPower": 9300, "maxTractiveForce": 220, "maxSpeed": 320,

@@ -15,14 +15,21 @@ export function doorCentres(L, dps, dw) {
 }
 
 export function deriveTrainSpecs(t) {
-  const cars = t.cars ?? 5;
-  const carLength = t.carLength ?? 15;
+  const cars = t.carLengths?.length ?? t.cars ?? 5;
   const gap = t.carGap ?? 0.9;
-  const length = cars * carLength + (cars - 1) * gap;
+  // Cars of different lengths (articulated trainsets: power cars longer than trailers) or all the same.
+  const carLengths = t.carLengths ? [...t.carLengths] : Array(cars).fill(t.carLength ?? 15);
+  const carLength = carLengths.reduce((a, b) => a + b, 0) / cars;
+  const carStart = []; { let s = 0; for (const L of carLengths) { carStart.push(s); s += L + gap; } }   // from the front
+  const length = carLengths.reduce((a, b) => a + b, 0) + (cars - 1) * gap;
+  // Doors measured from the train's front: explicit (passenger cars only) or evenly spread on every car.
+  const doorList = t.doorFromFront != null
+    ? carStart.flatMap((s0, c) => (c >= (t.passengerCars?.[0] ?? 0) && c <= (t.passengerCars?.[1] ?? cars - 1) ? [s0 + t.doorFromFront] : []))
+    : null;
   const massEmpty = t.massEmpty ?? cars * 27;
   return {
     ...t,
-    cars, carLength, carGap: gap, length, massEmpty,
+    cars, carLength, carLengths, carStart, doorList, carGap: gap, length, massEmpty,
     width: t.width ?? 2.6,
     height: t.height ?? 3.5,
     doorsPerSide: t.doorsPerSide ?? 3,

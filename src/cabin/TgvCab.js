@@ -36,14 +36,15 @@ class Gauge {
 export class TgvCab extends Cabin {
   constructor(specs, actions, bus) {
     super(specs, actions, bus);
-    const zN = specs.carLength / 2 - NOSE;
+    const zN = this.zN;
     this.eye.set(0, 3.02, zN + 2.0);   // seated eye height: over the desk, through the lower windscreen
     this.light.position.set(0, 3.45, zN + 1.6);
     this.instrumentLight.position.set(0, 2.6, zN + 2.7);
     this.instrumentLight.distance = 2.6; this.instrumentLight.intensity = 0.9;
   }
 
-  get zN() { return this.specs.carLength / 2 - NOSE; }
+  // The imported model's cab sits further forward (desk just behind its windscreen).
+  get zN() { return (this.specs.carLengths ? this.specs.carLengths[0] : this.specs.carLength) / 2 - NOSE + (this.specs.model3d ? 1.0 : 0); }
 
   mats() {
     if (this.mm) return this.mm;

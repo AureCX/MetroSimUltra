@@ -67,6 +67,13 @@ island of an upcoming departure and board only a train standing there; crowds fo
   platforms, aerial). Lighting follows the clock: morning, day, golden hour, evening, night floodlighting.
 - Regenerate the lines with `node tools/build-tgv.mjs` (alignment, terrain-fitted profile, tunnels, timing).
 
+### TGV Duplex 3D model
+
+The Duplex uses the 3D model “tgv inoui” by yuimpou (https://sketchfab.com/3d-models/tgv-inoui-69e3e860593f4907a00b63801e3a5c83),
+licensed CC BY 4.0. `node tools/import-tgv-model.mjs` cuts the source (`assets/models/tgv-inoui.glb`) into its real cars at
+the articulations, converts it to the game's frame and keeps the three distinct cars (power car, end trailer, middle trailer)
+in `src/data/models/tgv-duplex-model.js`; each car follows the track on its own. The Classique keeps the procedural model.
+
 ### Saves, cab, weather, voices (daily update)
 
 - **Station saves**: every station you stop at gets its own checkpoint (train, service, position, time, passengers,

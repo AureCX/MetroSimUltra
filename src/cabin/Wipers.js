@@ -28,7 +28,10 @@ export class Wipers {
     this.canvas = c; this.ctx = c.getContext('2d');
     this.tex = new THREE.CanvasTexture(c); this.tex.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
-    this.rainMesh = new THREE.Mesh(windscreenGeometry(this.W, this.L, this.H).glass, mat);
+    // Glass surface: the imported model's windscreen when there is one, else the procedural nose's.
+    this.ws = model.windscreenSurface || null;
+    if (this.ws) { this.Wm = 2.04; this.Hm = 0.9; this.arms = [{ pu: 0.27, len: 0.82 }, { pu: 0.73, len: 0.82 }]; }
+    this.rainMesh = new THREE.Mesh(this.ws ? this.gridGeometry() : windscreenGeometry(this.W, this.L, this.H).glass, mat);
     this.rainMesh.renderOrder = 5;
     this.rainMesh.scale.setScalar(1.0);
     const host = model.noseFront;
@@ -58,7 +61,15 @@ export class Wipers {
   }
 
   /** Point on the glass for (u across 0..1, v up 0..1), pushed slightly outwards by `out`. */
+  gridGeometry() {
+    const N = 16, pos = [], uv = [], idx = [];
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) { const P = this.ws.point(i / N * 2 - 1, j / N, 0.012); pos.push(P.x, P.y, P.z); uv.push(i / N, j / N); }
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const a = j * (N + 1) + i, b = a + N + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
   surface(u, v, out = 1.012) {
+    if (this.ws) return this.ws.point(Math.max(-1.05, Math.min(1.05, u * 2 - 1)), Math.max(0, Math.min(1, v)), (out - 1) * 2.2);
     return wsPoint(this.W, this.L, this.H, Math.max(-1.05, Math.min(1.05, u * 2 - 1)), Math.max(0, Math.min(1, v)), {}, out);
   }
 

@@ -17,6 +17,7 @@ import { BusHUD } from './ui/BusHUD.js';
 import { BusMenu } from './ui/BusMenu.js';
 import { Economy } from './economy/Economy.js';
 import { NetworkOverlay } from './ui/NetworkOverlay.js';
+import { drawRailMap, railStationInfo } from './ui/RailMap.js';
 import { Multiplayer, defaultServerUrl } from './net/Multiplayer.js';
 
 const bus = new EventBus();
@@ -52,9 +53,13 @@ bus.on('mp:status', (st) => {
 });
 bus.on('mp:feed', (m) => { if (state === 'playing' && m.from !== mp.me?.id) active.toast?.(`🌐 ${m.text}`, 'info', 3.5); });
 bus.on('mp:error', (m) => { if (state === 'playing') active.toast?.(`🌐 ${m.message}`, 'warn', 4); });
-bus.on('ui:networkMap', () => { if (game.netModel && state === 'playing') netOverlay.toggle(game.netModel, () => game.networkState(false)); });
+bus.on('ui:networkMap', () => {
+  if (!game.netModel || state !== 'playing') return;
+  const rail = game.netModel.kind === 'rail' ? { draw: drawRailMap, pick: (...a) => game.netModel.pick(...a), info: (st) => railStationInfo(game.netModel, st, { tt: game.world.gare?.timetable, clock: game.clock }) } : undefined;
+  netOverlay.toggle(game.netModel, () => game.networkState(false), rail);
+});
 let active = game; // the session currently running (metro or bus)
-window.__metro = { game, busGame, bus, settings, mp }; // debugging handle
+window.__metro = { game, busGame, bus, settings, mp }; window.__THREE = THREE; // debugging handles
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -76,14 +81,17 @@ async function boot() {
   await repo.load();
   await busRepo.load();
   economy = new Economy(save, { train: repo.trains, bus: busRepo.vehicles });
-  game.economy = economy; busGame.economy = economy;
+  game.economy = economy; busGame.economy = economy; game.saves = save;
   window.__metro.economy = economy;
   menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp });
+  menu.netOverlay = netOverlay;
   mp.trainSpecs = (id) => repo.train(id); mp.busSpecs = (id) => busRepo.vehicle(id);
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
   menu.on('restart', () => lastSession && startSession(lastSession));
   menu.on('quit', quitToMenu);
+  menu.on('saveStation', () => { const r = active === game && state !== 'menu' ? game.saveCheckpoint() : { ok: false, error: 'Station saves are for train services.' }; menu.notice(r.ok ? `💾 Saved at ${r.name}.` : `💾 ${r.error}`); });
+  if (save.warning) menu.notice(`⚠ ${save.warning}`);
   busMenu = new BusMenu(menu, busRepo, save, busInput, settings);
   menu.on('bus', () => busMenu.show());
   menu.on('busPlay', startBus);
@@ -151,6 +159,7 @@ function setPaused(p) {
 
 function quitToMenu() {
   hud.setMapOpen(false); game.mapTarget = null; netOverlay.close();
+  audio.endSession();                    // before resuming the (paused) audio context: no leftover loop is heard
   active.setPaused(false);
   active.dispose();
   hud.show(false); busHud.show(false); busInput.enabled = false; active = game;
@@ -174,6 +183,7 @@ bus.on('game:pauseToggle', () => {
   }
 });
 bus.on('game:finished', (r) => {
+  if (r.completed) save.addJourney({ lineId: r.line.id, line: r.line.fullName, hst: r.line.category === 'hst', from: r.line.stations[0].name, to: r.line.stations.at(-1).name, km: +r.distanceKm.toFixed(1), score: r.score, delay: r.finalDelay, train: r.train.name, uid: r.vehicleUid, service: r.tgv?.service || null });
   const newBest = save.submitRun({ lineId: r.line.id, direction: r.direction, score: r.score, grade: r.grade, distanceKm: r.distanceKm, stations: r.stationsServed, seconds: r.seconds, finalDelay: r.finalDelay });
   // Money & vehicle wear.
   if (r.line.category === 'hst') {

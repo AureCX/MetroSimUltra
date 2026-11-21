@@ -3,10 +3,11 @@ import { deepMerge, deepClone } from './util.js';
 const KEY = 'metrosim.settings.v1';
 
 export const DEFAULT_SETTINGS = {
-  audio: { master: 0.8, effects: 0.85, ambient: 0.7, announcements: 1.0, voiceFallback: true },
+  audio: { master: 0.8, effects: 0.85, ambient: 0.7, announcements: 1.0, voiceFallback: true, voice: 'auto' },
   graphics: { quality: 'high', fov: 72, drawDistance: 450, cameraShake: 1.0 },
   gameplay: {
     atp: true,              // automatic train protection (overspeed / end-of-authority supervision)
+    tgvWeather: 'auto',     // main-line weather: auto | clear | cloudy | rain | storm
     vigilance: false,       // dead-man vigilance device
     stopTolerance: 1.5,     // metres either side of the stop marker counted as a precise stop
     showHud: true,

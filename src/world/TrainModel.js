@@ -124,8 +124,8 @@ function interiorGeometry(sp, cabFront, cabBack, seating = null) {
  * Power car body: the car cross-section lofted along the car; over the front `NL` metres it narrows and drops
  * into a long rounded nose. Vertex colours paint the livery (body colour, darker nose cap, accent line).
  */
-const NOSE = 8.0;
-function loftPoint(W, L, H, t, u, out) {
+export const NOSE = 8.0;
+export function loftPoint(W, L, H, t, u, out) {
   // u in [0, 1] around the section (0 = bottom left, 0.5 = roof centre, 1 = bottom right); t in [0, 1] along the nose.
   const h = W / 2, a = u * Math.PI;                         // half-ellipse section above a flat skirt
   let x = -Math.cos(a) * h, y = 0.9 + Math.sin(a) * (H - 0.9);
@@ -134,43 +134,75 @@ function loftPoint(W, L, H, t, u, out) {
   out.x = x * wf; out.y = 0.82 + (y - 0.82) * hf - 0.25 * t * t; out.z = L / 2 - NOSE + t * (NOSE + 0.9);
   return out;
 }
+/** Windscreen and cab side-window openings, in loft parameters (t along the nose, u around the section). */
+export const WS = { t0: 9 / 22, t1: 16 / 22, u0: 5 / 28, u1: 23 / 28 };   // large wrap-around windscreen
+const SIDE_WIN = { t0: 5 / 22, t1: 8 / 22, ranges: [[2 / 28, 4 / 28], [24 / 28, 26 / 28]] };
+export function powerCarHeight(sp) { return sp.decks === 2 ? 4.2 : 4.05; }
 function powerCarGeometry(W, L, H, livery) {
-  const key = `pc|${W}|${L}|${H}|${livery.body}|${livery.front}`;
+  const key = `pc2|${W}|${L}|${H}|${livery.body}|${livery.front}|${livery.stripe}`;
   if (geoCache.has(key)) return geoCache.get(key);
   const U = 28, T = 22, pos = [], col = [], idx = [];
   const cb = new THREE.Color(livery.body || '#f4f5f7'), cf = new THREE.Color(livery.front || '#1b2a4a'), ca = new THREE.Color(livery.stripe || '#b48a3c');
   const P = {};
-  const ring = (z0, t) => { for (let i = 0; i <= U; i++) { loftPoint(W, L, H, t, i / U, P); pos.push(P.x, P.y, t > 0 ? P.z : z0); const lowNose = t > 0.35 && P.y < 1.0 + 1.6 * (1 - t); const c = t > 0.72 || lowNose ? cf : t > 0.66 && t < 0.72 ? ca : cb; col.push(c.r, c.g, c.b); } };
+  // Livery: body colour, a dark nose cap sweeping back under the windscreen, and an accent line along it.
+  const paint = (t, u, y) => {
+    const low = y < 1.05 + 1.55 * Math.max(0, 1 - t * 1.25);
+    if (t > 0.78 || (t > 0.3 && low)) return cf;
+    if ((t > 0.74 && t <= 0.78) || (t > 0.25 && Math.abs(y - (1.12 + 1.55 * Math.max(0, 1 - t * 1.25))) < 0.09)) return ca;
+    return cb;
+  };
+  const ring = (z0, t) => { for (let i = 0; i <= U; i++) { loftPoint(W, L, H, t, i / U, P); pos.push(P.x, P.y, t > 0 ? P.z : z0); const c = paint(t, i / U, P.y); col.push(c.r, c.g, c.b); } };
   ring(-L / 2, 0);
   for (let j = 0; j <= T; j++) ring(0, j / T);
   const rows = T + 2;
-  for (let r = 0; r < rows - 1; r++) for (let i = 0; i < U; i++) { const a = r * (U + 1) + i, b = a + U + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  const opening = (r, i) => {
+    if (r < 1) return false;
+    const t0 = (r - 1) / T, t1 = r / T, u0 = i / U, u1 = (i + 1) / U, e = 1e-6;
+    if (t0 >= WS.t0 - e && t1 <= WS.t1 + e && u0 >= WS.u0 - e && u1 <= WS.u1 + e) return true;
+    return t0 >= SIDE_WIN.t0 - e && t1 <= SIDE_WIN.t1 + e && SIDE_WIN.ranges.some(([a, b]) => u0 >= a - e && u1 <= b + e);
+  };
+  for (let r = 0; r < rows - 1; r++) for (let i = 0; i < U; i++) { if (opening(r, i)) continue; const a = r * (U + 1) + i, b = a + U + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
   // Underside (flat floor between the skirts) and the closed nose tip.
   for (let r = 0; r < rows - 1; r++) { const a = r * (U + 1), b = a + U, a2 = a + U + 1, b2 = a2 + U; idx.push(a, b, a2, b, b2, a2); }
   { const last = (rows - 1) * (U + 1); let cx = 0, cy = 0, cz = 0; for (let i = 0; i <= U; i++) { cx += pos[(last + i) * 3]; cy += pos[(last + i) * 3 + 1]; cz += pos[(last + i) * 3 + 2]; }
     const tip = pos.length / 3; pos.push(cx / (U + 1), cy / (U + 1), cz / (U + 1) + 0.05); col.push(cf.r, cf.g, cf.b);
     for (let i = 0; i < U; i++) idx.push(last + i, last + i + 1, tip); idx.push(last + U, last, tip); }
   // Rear cap.
-  const c0 = pos.length / 3; loftPoint(W, L, H, 0, 0.5, P); pos.push(0, 0.82 + (H - 0.82) * 0.5, -L / 2); col.push(cb.r, cb.g, cb.b);
+  const c0 = pos.length / 3; pos.push(0, 0.82 + (H - 0.82) * 0.5, -L / 2); col.push(cb.r, cb.g, cb.b);
   for (let i = 0; i < U; i++) idx.push(c0, i + 1, i);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx); g.computeVertexNormals();
-  // Make sure the normals point outwards (winding independent).
   const nrm = g.attributes.normal; if (nrm.getY(Math.floor(U / 2) + (U + 1) * 3) < 0) { const ix = g.index.array; for (let k = 0; k < ix.length; k += 3) { const t2 = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t2; } g.computeVertexNormals(); }
   geoCache.set(key, g);
   return g;
 }
-function windscreenGeometry(W, L, H) {
-  const key = `ws|${W}|${L}|${H}`;
+/** Glass filling a loft opening (slightly proud of the body), with UVs u → across, v → up the glass. */
+function loftPanel(W, L, H, t0, t1, u0, u1, key, out = 1.004) {
   if (geoCache.has(key)) return geoCache.get(key);
-  const U = 12, T = 8, pos = [], idx = [], P = {};
-  for (let j = 0; j <= T; j++) { const t = 0.4 + (0.26 * j) / T; for (let i = 0; i <= U; i++) { const u = 0.2 + (0.6 * i) / U; loftPoint(W, L, H, t, u, P); const sc = 1.004; pos.push(P.x * sc, 0.82 + (P.y - 0.82) * sc + 0.01, P.z); } }
+  const U = 16, T = 10, pos = [], uv = [], idx = [], P = {};
+  for (let j = 0; j <= T; j++) {
+    const t = t0 + ((t1 - t0) * j) / T;
+    for (let i = 0; i <= U; i++) { const u = u0 + ((u1 - u0) * i) / U; loftPoint(W, L, H, t, u, P); pos.push(P.x * out, 0.82 + (P.y - 0.82) * out + 0.004, P.z); uv.push(i / U, 1 - j / T); }
+  }
   for (let j = 0; j < T; j++) for (let i = 0; i < U; i++) { const a = j * (U + 1) + i, b = a + U + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g); void m;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
   geoCache.set(key, g);
   return g;
+}
+export function windscreenGeometry(W, L, H) { return loftPanel(W, L, H, WS.t0, WS.t1, WS.u0, WS.u1, `ws2|${W}|${L}|${H}`); }
+function sideWindowGeometries(W, L, H) { return SIDE_WIN.ranges.map(([a, b], k) => loftPanel(W, L, H, SIDE_WIN.t0, SIDE_WIN.t1, a, b, `sw|${W}|${L}|${H}|${k}`)); }
+/** Car-side lettering (operator name, train number) and the first-class marker. */
+function liveryTexture(text, sub, fg = '#1b2a4a', accent = '#b48a3c') {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 160;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 1024, 160);
+  g.fillStyle = fg; g.font = 'italic bold 92px Arial'; g.textBaseline = 'middle'; g.fillText(text, 10, 70);
+  const w = g.measureText(text).width;
+  g.fillStyle = accent; g.fillRect(10, 128, w, 8);
+  if (sub) { g.fillStyle = fg; g.font = 'bold 40px Arial'; g.fillText(sub, w + 40, 82); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
 }
 
 function destinationTexture(line, terminus) {
@@ -293,60 +325,105 @@ export class TrainModel {
   }
 
   /**
-   * High-speed trainset: aerodynamic power cars (lofted nose, wrap-around windscreen, light clusters, pantograph,
-   * livery band) at both ends, bi-level trailers for the Duplex (taller body, two window bands), side destination
-   * displays. The articulated trailers keep the generic shell (doors, glazing, saloon).
+   * High-speed trainset: two aerodynamic power cars (lofted body with a long nose, wrap-around windscreen and cab
+   * side windows as real openings, light clusters, roof equipment, pantograph, bogies, livery and lettering) and
+   * articulated trailers (bi-level for the Duplex: taller body, two window bands) joined by rubber gangway bellows
+   * over shared bogies. Proportions follow the real vehicles: power car 4.05–4.2 m high, 2.9 m wide.
    */
   buildHst(livery, glow, destMat) {
     const sp = this.specs, W = sp.width, L = sp.carLength, n = sp.cars;
     const deck = sp.decks === 2 ? sp.height / 3.58 : 1.0;
-    const body = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.35, roughness: 0.32, side: THREE.DoubleSide });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x0b1118, metalness: 0.9, roughness: 0.08, side: THREE.DoubleSide });
-    const band = new THREE.MeshStandardMaterial({ color: livery.stripe || '#b48a3c', metalness: 0.6, roughness: 0.3 });
+    const H = powerCarHeight(sp);
+    const std = (o) => new THREE.MeshStandardMaterial(o);
+    const body = std({ vertexColors: true, metalness: 0.3, roughness: 0.3 });
+    const lining = std({ color: 0x8a9098, roughness: 0.85, side: THREE.BackSide });   // inside of the nose = cab lining
+    // Windscreen: dark and reflective from outside; nearly clear from the cab (setCabExteriorVisible switches it).
+    this.wsMat = std({ color: 0x14202a, metalness: 0.85, roughness: 0.06, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
+    const sideGlass = std({ color: 0x0f171e, metalness: 0.8, roughness: 0.1, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    const band = std({ color: livery.stripe || '#b48a3c', metalness: 0.6, roughness: 0.3 });
     const dark = new THREE.MeshLambertMaterial({ color: 0x1d2024 });
-    const nose = powerCarGeometry(W, L, sp.height * (sp.decks === 2 ? 0.98 : 1.04), livery);
-    const shield = windscreenGeometry(W, L, sp.height * (sp.decks === 2 ? 0.98 : 1.04));
+    const steel = std({ color: 0x8a9096, metalness: 0.8, roughness: 0.35 });
+    const ceramic = std({ color: 0x9a6a42, roughness: 0.4 });
+    const rubber = new THREE.MeshLambertMaterial({ color: 0x2a2c2f });
+    const wheelMat = std({ color: 0x3a3c40, metalness: 0.7, roughness: 0.45 });
+    const nose = powerCarGeometry(W, L, H, livery);
+    const shield = windscreenGeometry(W, L, H);
+    const sideWins = sideWindowGeometries(W, L, H);
+    const letters = new THREE.MeshBasicMaterial({ map: liveryTexture('Grande Vitesse', sp.decks === 2 ? 'DUPLEX' : '', livery.front || '#1b2a4a', livery.stripe || '#b48a3c'), transparent: true, depthWrite: false });
+    const wheelGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.13, 20); wheelGeo.rotateZ(Math.PI / 2);
+    const bogie = (z, motor) => {
+      const g = new THREE.Group(); g.position.set(0, 0, z);
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.32, 3.0), dark); fr.position.y = 0.62; g.add(fr);
+      for (const wz of [-1.5, 1.5]) for (const wx of [-0.7175, 0.7175]) { const w = new THREE.Mesh(wheelGeo, wheelMat); w.position.set(wx, 0.46, wz); g.add(w); }
+      for (const wx of [-1.08, 1.08]) { const axleBox = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, 3.4), dark); axleBox.position.set(wx, 0.5, 0); g.add(axleBox); }
+      if (motor) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 1.2), dark); m.position.y = 0.55; g.add(m); }
+      return g;
+    };
+    this.cabGlass = [];
     for (let c = 0; c < n; c++) {
       const car = this.cars[c], shell = car.userData.shell;
       if (c === 0 || c === n - 1) {
         shell.visible = false;
         for (const ch of car.children) if (ch !== shell) ch.visible = false;   // generic cab / gangway ends
-        const pc = new THREE.Group(); if (c === n - 1) pc.rotation.y = Math.PI;
-        pc.add(new THREE.Mesh(nose, body), new THREE.Mesh(shield, glass));
-        // Livery band, grilles, pantograph, under-frame and bogies.
+        const pc = new THREE.Group(); pc.name = 'power-car'; if (c === n - 1) pc.rotation.y = Math.PI;
+        const bodyMesh = new THREE.Mesh(nose, body), ws = new THREE.Mesh(shield, this.wsMat); ws.renderOrder = 3;
+        pc.add(bodyMesh, ws, new THREE.Mesh(nose, lining));
+        const sides = sideWins.map((g) => { const m = new THREE.Mesh(g, sideGlass); m.renderOrder = 3; pc.add(m); return m; });
+        if (c === 0) { this.windscreen = ws; this.cabGlass.push(ws, ...sides); }
+        // Livery band and lettering, ventilation grilles, roof equipment.
         for (const sd of [-1, 1]) {
-          const b = new THREE.Mesh(new THREE.PlaneGeometry(L - 8.5, 0.22), band); b.position.set(sd * (W / 2 + 0.01), 1.55, -4.25); b.rotation.y = sd * Math.PI / 2; pc.add(b);
-          for (let k = 0; k < 4; k++) { const gr = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9), dark); gr.position.set(sd * (W / 2 + 0.012), 2.6, -L / 2 + 2 + k * 2.1); gr.rotation.y = sd * Math.PI / 2; pc.add(gr); }
-          const side = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.7), glass); side.position.set(sd * (W / 2 - 0.05), 2.7, L / 2 - 7.2); side.rotation.y = sd * Math.PI / 2; pc.add(side);
+          const b = new THREE.Mesh(new THREE.PlaneGeometry(L - 9, 0.2), band); b.position.set(sd * (W / 2 + 0.012), 1.42, -4.4); b.rotation.y = sd * Math.PI / 2; pc.add(b);
+          const lt = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.72), letters); lt.position.set(sd * (W / 2 + 0.014), 2.35, -3.2); lt.rotation.y = sd * Math.PI / 2; if (sd < 0) lt.scale.x = 1; pc.add(lt);
+          for (let k = 0; k < 4; k++) { const gr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), dark); gr.position.set(sd * (W / 2 + 0.012), 2.85, -L / 2 + 1.8 + k * 1.9); gr.rotation.y = sd * Math.PI / 2; pc.add(gr); }
+          const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, L - 3), dark); skirt.position.set(sd * (W / 2 - 0.05), 0.82, -1.0); pc.add(skirt);
         }
-        const uf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.45, L - 2), dark); uf.position.y = 0.6; pc.add(uf);
-        for (const bz of [L / 2 - 4.5, -L / 2 + 3]) { const bg = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.5, 3.0), dark); bg.position.set(0, 0.5, bz); pc.add(bg); }
-        // Pantograph (raised on the rear power car, lowered on the leading one).
-        const pant = new THREE.Group(); pant.position.set(0, sp.height * 0.98 + 0.05, -L / 2 + 5);
-        const base = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.18, 1.8), dark); pant.add(base);
-        const raised = c === n - 1, arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 1.8), dark), arm2 = arm1.clone();
-        arm1.position.set(0, raised ? 0.55 : 0.15, 0.6); arm1.rotation.x = raised ? 0.65 : 0.1; arm2.position.set(0, raised ? 1.25 : 0.25, 0); arm2.rotation.x = raised ? -0.6 : -0.08;
-        const head = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.06, 0.25), dark); head.position.set(0, raised ? 1.85 : 0.35, -0.3);
-        pant.add(arm1, arm2, head); pc.add(pant);
-        // Light clusters: white head lights / red tail lights, with glows.
+        const roofBox = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, 6.5), dark); roofBox.position.set(0, H - 0.02, -L / 2 + 4.6); pc.add(roofBox);
+        for (const iz of [-1.2, 1.2]) { const ins = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.38, 10), ceramic); ins.position.set(0, H + 0.3, -L / 2 + 5 + iz); pc.add(ins); }
+        // Pantograph: base frame on insulators, lower arm, upper arm, collector head (raised on the trailing power car).
+        const raised = c === n - 1;
+        const pant = new THREE.Group(); pant.position.set(0, H + 0.48, -L / 2 + 5);
+        for (const sx of [-0.55, 0.55]) for (const sz of [-0.8, 0.8]) { const ins = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.3, 8), ceramic); ins.position.set(sx, -0.12, sz); pant.add(ins); }
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 1.9), steel); pant.add(frame);
+        const lower = new THREE.Group(); lower.position.set(0, 0.05, 0.8); pant.add(lower);
+        const la = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 1.9), steel); la.position.z = -0.95; lower.add(la);
+        lower.rotation.x = raised ? -0.62 : -0.06;
+        const upper = new THREE.Group(); upper.position.set(0, 0, -1.9); lower.add(upper);
+        const ua = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 1.8), steel); ua.position.z = 0.9; upper.add(ua);
+        upper.rotation.x = raised ? 1.3 : 0.12;
+        const head = new THREE.Group(); head.position.z = 1.8; upper.add(head);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.18), steel); head.add(bar);
+        for (const hx of [-1.0, 1.0]) { const horn = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.04, 0.12), steel); horn.position.set(hx, -0.05, 0); horn.rotation.z = hx * 0.5; head.add(horn); }
+        head.rotation.x = -(lower.rotation.x + upper.rotation.x);
+        pc.add(pant);
+        // Under-frame, bogies (motor bogies), coupler cover.
+        const uf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.6, 0.4, L - 4), dark); uf.position.set(0, 0.68, -1.5); pc.add(uf);
+        pc.add(bogie(L / 2 - 6.4, true), bogie(-L / 2 + 3.2, true));
+        // Light clusters: two white head lamps and red tail lamps set in the nose cap, with glows.
         const end = c === 0 ? 1 : -1;
-        for (const hx of [-0.62, 0.62]) {
-          const hl = new THREE.Mesh(new THREE.CircleGeometry(0.11, 14), this.headMat); hl.position.set(hx, 1.25, L / 2 + 0.55); hl.rotation.x = -0.35; pc.add(hl);
-          const tl = new THREE.Mesh(new THREE.CircleGeometry(0.07, 12), this.tailMat); tl.position.set(hx * 1.25, 1.22, L / 2 + 0.4); tl.rotation.x = -0.35; pc.add(tl);
+        const P = {};
+        for (const sd of [-1, 1]) {
+          loftPoint(W, L, H, 0.86, sd < 0 ? 0.22 : 0.78, P);
+          const hl = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), this.headMat); hl.position.set(P.x * 1.01, P.y, P.z + 0.02); hl.lookAt(P.x * 3, P.y, P.z + 4); pc.add(hl);
+          const tl = new THREE.Mesh(new THREE.CircleGeometry(0.065, 12), this.tailMat); tl.position.set(P.x * 1.01 * 0.8, P.y + 0.18, P.z); tl.lookAt(P.x * 3, P.y + 0.2, P.z + 4); pc.add(tl);
           const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff4d0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-          gl.scale.set(1.3, 1.3, 1); gl.position.set(hx, 1.25, L / 2 + 0.75); gl.userData.end = end; pc.add(gl); this.glows.push(gl);
+          gl.scale.set(1.3, 1.3, 1); gl.position.set(P.x, P.y, P.z + 0.2); gl.userData.end = end; pc.add(gl); this.glows.push(gl);
           const tg = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xff1a00, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
-          tg.scale.set(0.6, 0.6, 1); tg.position.set(hx * 1.25, 1.22, L / 2 + 0.6); tg.userData.end = end; tg.userData.tail = true; pc.add(tg); this.glows.push(tg);
+          tg.scale.set(0.6, 0.6, 1); tg.position.set(P.x * 0.8, P.y + 0.18, P.z + 0.15); tg.userData.end = end; tg.userData.tail = true; pc.add(tg); this.glows.push(tg);
         }
+        // Rear gangway bellows towards the first trailer.
+        const bel = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.6, sp.carGap + 0.3), rubber); bel.position.set(0, 2.1, -L / 2 - sp.carGap / 2); pc.add(bel);
         car.add(pc);
         if (c === 0) this.noseFront = pc;
         continue;
       }
-      // Trailers: bi-level body, upper window band, side destination display.
+      // Trailers: bi-level body, upper window band, bellows, lettering, first-class marker, side destination displays.
       shell.scale.y = deck;
+      for (const ch of car.children) if (ch !== shell && !ch.userData?.keep) ch.visible = false;  // replace the metro gangway blocks
+      const bel = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.6 * deck, sp.carGap + 0.3), rubber); bel.position.set(0, 2.1 * deck, L / 2 + sp.carGap / 2); car.add(bel);
       for (const sd of [-1, 1]) {
-        if (sp.decks === 2) { const up = new THREE.Mesh(new THREE.PlaneGeometry(L - 1.6, 0.34), glass); up.position.set(sd * (W / 2 + 0.02), 3.13, 0); up.rotation.y = sd * Math.PI / 2; shell.add(up); }
+        if (sp.decks === 2) { const up = new THREE.Mesh(new THREE.PlaneGeometry(L - 1.6, 0.34), sideGlass); up.position.set(sd * (W / 2 + 0.02), 3.13, 0); up.rotation.y = sd * Math.PI / 2; shell.add(up); }
         const d = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.24), destMat); d.position.set(sd * (W / 2 + 0.03), (sp.decks === 2 ? 3.6 : 2.85), sp.doorZ[0] + (sd > 0 ? 1.2 : -1.2)); d.rotation.y = sd * Math.PI / 2; car.add(d);
+        if (c <= (sp.classes?.first ?? 2)) { const fc = new THREE.Mesh(new THREE.PlaneGeometry(L - 3, 0.12), band); fc.position.set(sd * (W / 2 + 0.025), (sp.decks === 2 ? 4.12 : 3.0), 0); fc.rotation.y = sd * Math.PI / 2; car.add(fc); }
       }
     }
   }
@@ -440,7 +517,10 @@ export class TrainModel {
   }
 
   /** Hide the leading cab exterior when the camera is inside it. */
-  setCabExteriorVisible(v) { if (this.noseFront) { this.noseFront.children[0].visible = v; this.noseFront.children[1].visible = v; return; } if (this.cabFront) this.cabFront.visible = v; this.cars[0].userData.shell.children[0].visible = v; this.cars[0].userData.shell.children[1].visible = v; }
+  setCabExteriorVisible(v) {
+    // TGV: the driver sits inside the nose — the body stays (it frames the view), the glass turns clear.
+    if (this.noseFront) { for (const ch of this.noseFront.children) if (ch.isSprite) ch.visible = v; if (this.wsMat) { this.wsMat.opacity = v ? 0.88 : 0.06; this.wsMat.metalness = v ? 0.85 : 0; } for (const m of this.cabGlass || []) if (m !== this.windscreen) m.material.opacity = v ? 0.85 : 0.15; return; }
+    if (this.cabFront) this.cabFront.visible = v; this.cars[0].userData.shell.children[0].visible = v; this.cars[0].userData.shell.children[1].visible = v; }
 
   dispose(scene) { scene.remove(this.group); }
 }

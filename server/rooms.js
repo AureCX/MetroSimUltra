@@ -84,7 +84,7 @@ export class Hub {
     if (!d) { p.drive = null; p.state = null; this.sendPlayers(this.sessions.get(p.session)); return; }
     const kind = d.kind === 'bus' ? 'bus' : 'train';
     p.drive = kind === 'train'
-      ? { kind, lineId: clean(d.lineId, 64), sourceId: clean(d.sourceId, 64), number: clean(d.number, 4), color: clean(d.color, 12), dir: d.dir === 'B' ? 'B' : 'A', branch: clean(d.branch, 64), trunkEnd: num(d.trunkEnd, 0, 1e6, 1e6), length: num(d.length, 10, 400, 80), maxSpeed: num(d.maxSpeed, 10, 160, 80), model: clean(d.model, 32), uid: clean(d.uid, 32), cars: num(d.cars, 1, 12, 5) }
+      ? { kind, lineId: clean(d.lineId, 64), sourceId: clean(d.sourceId, 64), number: clean(d.number, 4), color: clean(d.color, 12), dir: d.dir === 'B' ? 'B' : 'A', branch: clean(d.branch, 64), trunkEnd: num(d.trunkEnd, 0, 1e6, 1e6), length: num(d.length, 10, 400, 80), maxSpeed: num(d.maxSpeed, 10, 360, 80), model: clean(d.model, 32), uid: clean(d.uid, 32), cars: num(d.cars, 1, 20, 5) }
       : { kind, model: clean(d.model, 32), uid: clean(d.uid, 32), route: clean(d.route, 16), length: num(d.length, 5, 30, 12), width: num(d.width, 2, 3, 2.55), maxSpeed: num(d.maxSpeed, 20, 120, 90) };
     p.state = null;
     this.sendPlayers(this.sessions.get(p.session));
@@ -120,7 +120,7 @@ export class Hub {
     else if (kind === 'passengers') { p.stats.passengers += num(e.n, 0, 2000); }
     else if (kind === 'terminus') this.feed(s, `${p.name} reached the terminus ${where}`, p.id);
     else if (kind === 'collision') this.feed(s, `${p.name}: collision (${clean(e.what, 40)})`, p.id);
-    else if (kind === 'finished') { p.stats.km += num(e.km, 0, 500); this.feed(s, `${p.name} finished the service${e.grade ? ` — grade ${clean(e.grade, 2)}` : ''}`, p.id); }
+    else if (kind === 'finished') { p.stats.km += num(e.km, 0, 1000); this.feed(s, `${p.name} finished the service${e.grade ? ` — grade ${clean(e.grade, 2)}` : ''}`, p.id); }
   }
 
   /**

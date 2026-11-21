@@ -62,6 +62,7 @@ export class BusGame {
 
   start(cfg) {
     this.dispose();
+    this.audio.beginSession();
     const { netData, route, dir, spec, mode, hour, day, weather, dynamicWeather } = cfg;
     this.cfg = cfg; this.mode = mode; this.spec = spec; this.route = route; this.day = day;
     const scene = this.scene = new THREE.Scene();
@@ -153,7 +154,7 @@ export class BusGame {
     const A = this.busAudio;
     on('bus:crank', (e) => A.crank(e)); on('bus:engine', (e) => this.toast(e ? 'Engine running' : 'Engine stopped', 'info', 2));
     on('bus:refused', (r) => { this.audio.refuse(); this.toast(r, 'warn', 3); });
-    on('bus:doorOpen', () => A.door(true)); on('bus:doorClose', () => { A.doorWarning(); setTimeout(() => A.door(false), 600); });
+    on('bus:doorOpen', () => A.door(true)); on('bus:doorClose', () => { A.doorWarning(); this.audio.later(() => A.door(false), 600); });
     on('bus:cashLeftBehind', () => this.scoring.add(30, 'Closed the doors on a passenger buying a ticket'));
     on('bus:cashFare', () => this.toast(`A passenger wants to buy a ticket — press ${this.input.labelFor('ticket')} or the TICKET machine`, 'warn', 5));
     on('bus:ramp', (d) => this.toast(d ? 'Ramp deployed — the bus is immobilised' : 'Ramp stowed', 'info', 2.5));
@@ -168,7 +169,7 @@ export class BusGame {
       if (served && this.time - this.lastInd.left > 6 && this.v.indicator !== 'left') this.scoring.add(25, 'No indicator when leaving the stop');
       this.v.stopRequest = false;
       const nxt = this.runner.stops[k + 1];
-      if (nxt) setTimeout(() => this.running && this.announce(nxt, 'next'), 2500);
+      if (nxt) this.audio.later(() => this.running && this.announce(nxt, 'next'), 2500);
     });
     on('bus:doorOpened', (i) => { if (i === 0 && this.runner.atStopIdx != null) { this.v.stopRequest = false; this.announce(this.runner.stops[this.runner.atStopIdx], 'outside'); } });
     on('bus:missedStop', ({ stop }) => this.toast(`Missed stop: ${stop.stop.name}`, 'alarm', 4));
@@ -621,6 +622,7 @@ export class BusGame {
   }
 
   dispose() {
+    this.audio?.endSession();
     if (!this.scene) return;
     this.mp?.stopDriving();
     this.saveFleet?.();

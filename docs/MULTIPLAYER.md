@@ -51,3 +51,11 @@ Client → server: `hello {name, token}`, `list`, `create {name, public, max}`, 
 `drive {kind: 'train'|'bus', …}`, `state {s, v, doors, …}` / `{x, z, yaw, v, doors, …}`, `event {e, …}`, `ping`.
 Server → client: `welcome`, `sessions`, `joined`, `players`, `states` (10 Hz), `auth {s}`, `correction`,
 `collision`, `feed`, `error`, `pong`. See `server/rooms.js`.
+
+
+## Main lines (TGV)
+
+TGV services of one corridor share the track up to their first destination: the server keeps those trains apart like
+branches of a metro line. Trains on other services are shown in 3D on their own track. The server accepts train speeds
+up to 360 km/h — **redeploy the server** (Render: push to the branch / *Manual Deploy*) after updating. Time acceleration is
+disabled in online sessions.

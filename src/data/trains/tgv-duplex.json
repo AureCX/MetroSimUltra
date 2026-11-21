@@ -15,7 +15,7 @@
  "tractionNotches": 8, "brakeNotches": 8,
  "tractionResponse": 1.6, "brakeResponse": 1.4, "tractionDeadTime": 0.4, "brakeDeadTime": 0.5,
  "davis": { "a": 1.6, "b": 0.02, "c": 0.3 },
- "livery": {"body": "#b9bec5", "front": "#2346a0", "lower": "#2346a0", "stripe": "#f4f5f7", "doors": "#aeb4bb", "roof": "#9aa0a8", "accent": "#2346a0"},
+ "livery": {"body": "#b9bec5", "front": "#2f5bc8", "lower": "#2f5bc8", "stripe": "#f4f5f7", "doors": "#aeb4bb", "roof": "#9aa0a8", "accent": "#2346a0"},
  "classes": { "first": 2, "second": 6 },
  "sound": { "inverter": "igbt", "motorPitch": 0.7 }
 }

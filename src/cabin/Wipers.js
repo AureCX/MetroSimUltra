@@ -5,7 +5,7 @@
 // sweep removes the droplets inside the swept sector. Modes: OFF, INT (one sweep every few seconds), LOW, HIGH,
 // and a single-wipe command; arms always finish their sweep and park.
 import * as THREE from 'three';
-import { loftPoint, WS, windscreenGeometry, powerCarHeight } from '../world/TrainModel.js';
+import { wsPoint, windscreenGeometry, powerCarHeight } from '../world/TrainModel.js';
 
 export const WIPER_MODES = ['off', 'int', 'low', 'high'];
 export const WIPER_LABEL = { off: 'OFF', int: 'INT', low: 'LOW', high: 'HIGH' };
@@ -19,8 +19,8 @@ export class Wipers {
     const sp = model.specs;
     this.W = sp.width; this.L = sp.carLength; this.H = powerCarHeight(sp);
     this.mode = 'off'; this.single = false; this.phase = 0; this.wait = 0; this.angle = 0; this.prevAngle = 0;
-    this.Wm = 2.5; this.Hm = 3.0;                          // metric size of the glass (u across, v up)
-    this.arms = [{ pu: 0.24, len: 2.05 }, { pu: 0.66, len: 2.05 }];
+    this.Wm = 2.4; this.Hm = 3.4;                          // metric size of the glass (u across, v up)
+    this.arms = [{ pu: 0.2, len: 1.9 }, { pu: 0.62, len: 1.9 }];
     this.drops = [];
     this.wetness = 0;
     // Rain layer on the glass (inside the windscreen opening, just in front of the glass).
@@ -28,7 +28,7 @@ export class Wipers {
     this.canvas = c; this.ctx = c.getContext('2d');
     this.tex = new THREE.CanvasTexture(c); this.tex.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
-    this.rainMesh = new THREE.Mesh(windscreenGeometry(this.W, this.L, this.H), mat);
+    this.rainMesh = new THREE.Mesh(windscreenGeometry(this.W, this.L, this.H).glass, mat);
     this.rainMesh.renderOrder = 5;
     this.rainMesh.scale.setScalar(1.0);
     const host = model.noseFront;
@@ -59,10 +59,7 @@ export class Wipers {
 
   /** Point on the glass for (u across 0..1, v up 0..1), pushed slightly outwards by `out`. */
   surface(u, v, out = 1.012) {
-    const P = {};
-    loftPoint(this.W, this.L, this.H, WS.t1 - v * (WS.t1 - WS.t0), WS.u0 + u * (WS.u1 - WS.u0), P);
-    P.x *= out; P.y = 0.82 + (P.y - 0.82) * out;
-    return P;
+    return wsPoint(this.W, this.L, this.H, Math.max(-1.05, Math.min(1.05, u * 2 - 1)), Math.max(0, Math.min(1, v)), {}, out);
   }
 
   setMode(m) { if (WIPER_MODES.includes(m)) { this.mode = m; if (m !== 'off' && this.phase === 0 && this.wait <= 0) this.wait = 0; } }

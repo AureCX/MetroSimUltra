@@ -520,7 +520,8 @@ export class Menu {
   screen_credits() {
     this.frame('Credits', `<div class="credits">
       <p><b>Metro Driver</b> — an underground railway driving simulator.</p>
-      <p>Design & code: built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and the Web Audio API. All textures, sounds and models are generated procedurally at runtime.</p>
+      <p>Design & code: built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and the Web Audio API. All textures and sounds, and every model except the TGV Duplex below, are generated procedurally at runtime.</p>
+      <p>TGV Duplex 3D model: <a href="https://sketchfab.com/3d-models/tgv-inoui-69e3e860593f4907a00b63801e3a5c83" target="_blank" rel="noopener">“tgv inoui”</a> by <a href="https://sketchfab.com/yuimpou" target="_blank" rel="noopener">yuimpou</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> (cut into cars, rescaled and recoloured for the game).</p>
       <p>Stations, adverts and brands shown in built-in lines are fictional or used purely as geographic references; built-in line data is illustrative and not an official operator timetable.</p>
       <p>Add your own networks with JSON line files — see <code>docs/LINE_FORMAT.md</code>.</p></div>`);
   }

@@ -36,14 +36,15 @@ class Gauge {
 export class TgvCab extends Cabin {
   constructor(specs, actions, bus) {
     super(specs, actions, bus);
-    const zN = specs.carLength / 2 - NOSE;
+    const zN = this.zN;
     this.eye.set(0, 3.02, zN + 2.0);   // seated eye height: over the desk, through the lower windscreen
     this.light.position.set(0, 3.45, zN + 1.6);
     this.instrumentLight.position.set(0, 2.6, zN + 2.7);
     this.instrumentLight.distance = 2.6; this.instrumentLight.intensity = 0.9;
   }
 
-  get zN() { return this.specs.carLength / 2 - NOSE; }
+  // The imported model's cab sits further forward (desk just behind its windscreen).
+  get zN() { return (this.specs.carLengths ? this.specs.carLengths[0] : this.specs.carLength) / 2 - NOSE + (this.specs.model3d ? 1.0 : 0); }
 
   mats() {
     if (this.mm) return this.mm;
@@ -98,8 +99,8 @@ export class TgvCab extends Cabin {
     addBox(g, M.desk, 1.3, 0.06, 0.95, 0, H, z0 + 2.95);
     addBox(g, M.deskEdge, 2.5, 0.05, 0.05, 0, H + 0.02, z0 + 2.46);
     for (const sx of [-1, 1]) {
-      const wing = addBox(g, M.desk, 0.75, 0.06, 0.95, sx * 0.98, H + 0.06, z0 + 2.8, 0, -sx * 0.45, sx * -0.12); void wing;
-      addBox(g, M.desk, 0.7, 0.75, 0.06, sx * 0.95, FL + 0.38, z0 + 2.45, 0, -sx * 0.45);          // lower side panels
+      const wing = addBox(g, M.desk, 0.75, 0.06, 0.95, sx * 0.98, H + 0.06, z0 + 2.8, 0, sx * 0.45, sx * 0.12); void wing;
+      addBox(g, M.desk, 0.7, 0.75, 0.06, sx * 0.95, FL + 0.38, z0 + 2.45, 0, sx * 0.45);          // lower side panels
     }
     addBox(g, M.desk, 1.3, 0.75, 0.06, 0, FL + 0.38, z0 + 2.48);
     // Raised instrument panel behind the box (under the windscreen) — the two screens sit in it.
@@ -151,7 +152,7 @@ export class TgvCab extends Cabin {
     });
 
     // ---- Left wing (car +x): LED readout, gauges, horn joystick, emergency mushroom. ----
-    const left = new THREE.Group(); left.position.set(0.98, H + 0.13, z0 + 2.95); left.rotation.set(-(Math.PI / 2 - 0.55), Math.PI - 0.45, 0, 'YXZ'); g.add(left);   // sloped desk wing
+    const left = new THREE.Group(); left.position.set(0.98, H + 0.13, z0 + 2.95); left.rotation.set(-(Math.PI / 2 - 0.55), Math.PI + 0.45, 0, 'YXZ'); g.add(left);   // sloped desk wing
     addBox(left, M.desk, 0.7, 0.5, 0.03, 0, 0.12, -0.02);
     this.led = canvasTex(256, 96);
     const led = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.06), new THREE.MeshBasicMaterial({ map: this.led.t })); led.position.set(-0.24, 0.31, 0.0); left.add(led);
@@ -179,7 +180,7 @@ export class TgvCab extends Cabin {
     this.register(hk, 'Horn (hold)', { down: () => A.horn(true), up: () => A.horn(false), highlight: hk });
 
     // ---- Right wing (car −x): radio screen with keypad, buttons, rotaries, single-wipe joystick. ----
-    const right = new THREE.Group(); right.position.set(-0.98, H + 0.13, z0 + 2.95); right.rotation.set(-(Math.PI / 2 - 0.55), Math.PI + 0.45, 0, 'YXZ'); g.add(right);
+    const right = new THREE.Group(); right.position.set(-0.98, H + 0.13, z0 + 2.95); right.rotation.set(-(Math.PI / 2 - 0.55), Math.PI - 0.45, 0, 'YXZ'); g.add(right);
     addBox(right, M.desk, 0.7, 0.5, 0.03, 0, 0.12, -0.02);
     const lm = canvasTex(2048, 400);
     this.lineMap = { c: lm.c, tex: lm.t };
@@ -203,7 +204,7 @@ export class TgvCab extends Cabin {
     const bGeo = new THREE.CylinderGeometry(0.022, 0.024, 0.02, 18), ringGeo = new THREE.CylinderGeometry(0.031, 0.031, 0.008, 18);
     for (const [label, parent, x, y, z, color, act, lit] of buttons) {
       const side = y < H - 0.1;                                   // on a vertical lower panel
-      const holder = new THREE.Group(); holder.position.set(x, y, z); if (side) holder.rotation.set(-Math.PI / 2, x > 0 ? -0.45 : 0.45, 0, 'YXZ'); parent.add(holder);
+      const holder = new THREE.Group(); holder.position.set(x, y, z); if (side) holder.rotation.set(-Math.PI / 2, x > 0 ? 0.45 : -0.45, 0, 'YXZ'); parent.add(holder);
       const mat = new THREE.MeshStandardMaterial({ color, emissive: 0x000000, roughness: 0.4 });
       const b = new THREE.Mesh(bGeo, mat); b.position.y = 0.01; holder.add(b);
       const ring = new THREE.Mesh(ringGeo, M.metal); holder.add(ring);

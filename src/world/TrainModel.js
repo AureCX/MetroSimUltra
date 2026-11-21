@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Textures, shade } from './Textures.js';
 import { glowTexture } from './SignalView.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { tgvModel } from './TgvModel.js';
 
 const FLOOR = 1.0;
 const geoCache = new Map();
@@ -125,61 +126,86 @@ function interiorGeometry(sp, cabFront, cabBack, seating = null) {
  * into a long rounded nose. Vertex colours paint the livery (body colour, darker nose cap, accent line).
  */
 export const NOSE = 8.0;
+// ---- TGV Duplex power car body ----------------------------------------------------------------------------
+// Cross-sections are rounded rectangles (vertical sides, rounded roof corners, short inward skirt); their size along
+// the nose follows key profiles taken from photographs of the real power car: the roof runs almost flat over the
+// cab, drops along the steep windscreen to the front face, which slopes on down to the rounded bumper bulb.
+const keyed = (keys, t) => {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) { const [t0, v0] = keys[i - 1], [t1, v1] = keys[i]; const k = (t - t0) / (t1 - t0), sm = k * k * (3 - 2 * k); return v0 + (v1 - v0) * sm; }
+  return keys.at(-1)[1];
+};
+export function noseProfile(H, t) {
+  const top = keyed([[0, H], [0.2, H - 0.06], [0.3, H - 0.32], [0.48, 3.25], [0.68, 2.42], [0.8, 2.1], [0.9, 1.86], [0.96, 1.62], [1, 1.28]], t);
+  const hw = keyed([[0, 1.45], [0.55, 1.43], [0.76, 1.37], [0.88, 1.24], [0.95, 1.0], [0.985, 0.62], [1, 0.22]], t);
+  const bot = keyed([[0, 0.78], [0.86, 0.78], [0.95, 0.86], [1, 1.02]], t);
+  const rTop = Math.min(keyed([[0, 0.7], [0.3, 0.85], [0.68, 1.05], [0.9, 0.95], [1, 0.25]], t), hw * 0.95, (top - bot) * 0.6);
+  return { top, hw, bot, rTop };
+}
 export function loftPoint(W, L, H, t, u, out) {
   // u in [0, 1] around the section (0 = bottom left, 0.5 = roof centre, 1 = bottom right); t in [0, 1] along the nose.
-  // Section: a rounded box (near-vertical sides, curved roof) above a short inward skirt — the TGV power-car body.
-  const h = W / 2, a = u * Math.PI, c = Math.cos(a), s = Math.sin(a);
-  let x = -Math.sign(c) * Math.pow(Math.abs(c), 0.42) * h, y = 0.95 + Math.pow(s, 0.62) * (H - 0.95);
-  if (u < 0.06 || u > 0.94) { const k = u < 0.5 ? u / 0.06 : (1 - u) / 0.06, a6 = 0.06 * Math.PI; x = (u < 0.5 ? -1 : 1) * (h - 0.06 * (1 - k)); y = 0.82 + k * (0.95 + Math.pow(Math.sin(a6), 0.62) * (H - 0.95) - 0.82); }
-  // Nose: keeps nearly its full width, then rounds off at the tip; the roof line slopes down to a blunt nose
-  // whose top is about 2.2 m above the rail.
-  const tip = t > 0.72 ? (t - 0.72) / 0.28 : 0;
-  const wf = (1 - 0.14 * t * t) * Math.sqrt(Math.max(0.12, 1 - 0.88 * tip * tip));
-  const hf = 1 - 0.6 * Math.pow(t, 1.2);
-  out.x = x * wf; out.y = 0.82 + (y - 0.82) * hf - 0.1 * t * t; out.z = L / 2 - NOSE + t * (NOSE + 0.9);
+  const P = noseProfile(H, t), s = (W / 2) / 1.45, hw = P.hw * s, r = P.rTop * s, sk = 0.1;
+  // Perimeter (left half, mirrored): skirt, vertical side, roof corner arc, half roof.
+  const side = Math.max(0.01, P.top - r - (P.bot + sk)), arc = (Math.PI / 2) * r, roof = Math.max(0.001, hw - r), skirtLen = Math.hypot(0.06, sk);
+  const half = skirtLen + side + arc + roof;
+  const f = (u <= 0.5 ? u : 1 - u) * 2 * half, sx = u <= 0.5 ? -1 : 1;
+  let x, y;
+  if (f < skirtLen) { const k = f / skirtLen; x = hw - 0.06 * (1 - k); y = P.bot + sk * k; }
+  else if (f < skirtLen + side) { x = hw; y = P.bot + sk + (f - skirtLen); }
+  else if (f < skirtLen + side + arc) { const a = (f - skirtLen - side) / r; x = hw - r + Math.cos(a) * r; y = P.top - r + Math.sin(a) * r; }
+  else { x = hw - r - (f - skirtLen - side - arc); y = P.top; }
+  out.x = sx * x; out.y = y; out.z = L / 2 - NOSE + t * (NOSE + 0.9);
   return out;
 }
-/** Windscreen and cab side-window openings, in loft parameters (t along the nose, u around the section). */
-export const WS = { t0: 9 / 22, t1: 16 / 22, u0: 0.2, u1: 0.8 };      // u0..u1: UV span of the glass (rain, wipers)
-const LU = 28, LT = 22;
-// Trapezoid windscreen (narrower at the top, like the real nose): u range per loft row.
-const wsRange = (t) => { const k = (t - WS.t0) / (WS.t1 - WS.t0); return [0.33 - 0.13 * k, 0.67 + 0.13 * k]; };
-const SIDE_WIN = { t0: 5 / 22, t1: 8 / 22, ranges: [[2 / 28, 4 / 28], [24 / 28, 26 / 28]] };
-/** Is loft quad (row r between rings r and r+1, column i) part of the windscreen opening? */
-function wsQuad(r, i) {
-  if (r < 1) return false;
-  const t0 = (r - 1) / LT, t1 = r / LT, u0 = i / LU, u1 = (i + 1) / LU, e = 1e-6;
-  if (t0 < WS.t0 - e || t1 > WS.t1 + e) return false;
-  const [a0, b0] = wsRange(t0), [a1, b1] = wsRange(t1);
-  return u0 >= Math.max(a0, a1) - 0.02 && u1 <= Math.min(b0, b1) + 0.02;
+/** Windscreen and cab side-window openings, decided on the real surface position. */
+export const WS = { t0: 0.31, t1: 0.67, u0: 0.3, u1: 0.7 };      // u0..u1: UV span of the glass (rain, wipers)
+const LU = 44, LT = 40;
+const _q = {};
+/** Half-width of the trapezoid windscreen at nose position t (narrower at the top). */
+const wsHalf = (t) => 0.86 + ((t - WS.t0) / (WS.t1 - WS.t0)) * 0.26;   // wide, wider at the bottom
+function quadCorners(r, i, W, L, H) {
+  const out = [];
+  for (const [t, u] of [[(r - 1) / LT, i / LU], [(r - 1) / LT, (i + 1) / LU], [r / LT, i / LU], [r / LT, (i + 1) / LU]]) { loftPoint(W, L, H, t, u, _q); out.push({ t, u, x: _q.x, y: _q.y }); }
+  return out;
 }
-function sideQuad(r, i) {
+function wsQuad(r, i, W = 2.9, L = 20, H = 4.2) {
   if (r < 1) return false;
-  const t0 = (r - 1) / LT, t1 = r / LT, u0 = i / LU, u1 = (i + 1) / LU, e = 1e-6;
-  return t0 >= SIDE_WIN.t0 - e && t1 <= SIDE_WIN.t1 + e && SIDE_WIN.ranges.some(([a, b]) => u0 >= a - e && u1 <= b + e);
+  const t0 = (r - 1) / LT, t1 = r / LT;
+  if (t0 < WS.t0 - 1e-6 || t1 > WS.t1 + 1e-6) return false;
+  return quadCorners(r, i, W, L, H).every((c) => c.u > 0.14 && c.u < 0.86 && Math.abs(c.x) <= wsHalf(c.t) * (W / 2.9));
+}
+function sideQuad(r, i, W = 2.9, L = 20, H = 4.2) {
+  if (r < 1) return false;
+  const t0 = (r - 1) / LT, t1 = r / LT;
+  if (t0 < 0.13 - 1e-6 || t1 > 0.25 + 1e-6) return false;
+  return quadCorners(r, i, W, L, H).every((c) => c.y > 2.55 && c.y < 3.3 && Math.abs(c.x) > (W / 2) * 0.93);
 }
 export function powerCarHeight(sp) { return sp.decks === 2 ? 4.2 : 4.05; }
 function powerCarGeometry(W, L, H, livery) {
-  const key = `pc3|${W}|${L}|${H}|${livery.body}|${livery.front}|${livery.stripe}`;
+  const key = `pc7|${W}|${L}|${H}|${livery.body}|${livery.front}|${livery.stripe}`;
   if (geoCache.has(key)) return geoCache.get(key);
-  const U = LU, T = LT, pos = [], col = [], idx = [];
+  const U = LU, T = LT, pos = [], idx = [];
   const cb = new THREE.Color(livery.body || '#b9bec5'), cf = new THREE.Color(livery.lower || livery.front || '#2346a0'), cs = new THREE.Color(livery.stripe || '#f4f5f7'), cd = new THREE.Color(0x24272c);
   const P = {};
   // Livery after the real trainsets: silver upper body, blue lower band topped by a white stripe that sweeps down
   // the nose to its tip, dark skirt, dark ventilation grille under the windscreen and between the headlights.
-  const paint = (t, u, y) => {
-    if (y < 0.98) return cd;
-    if (t > 0.745 && t < 0.785 && u > 0.24 && u < 0.76) return cd;                      // grille under the windscreen
-    const yb = t < 0.2 ? 2.0 : 2.0 - ((t - 0.2) / 0.8) * 0.95;
+  // Livery after the real trainsets: silver upper body, blue lower band with a white stripe on top which runs along
+  // the side, then sweeps down the nose to cross the front of the bumper bulb; dark skirt; black louvres under the
+  // windscreen.
+  const paint = (t, u, y, x = 0) => {
+    if (y < 0.93) return cd;
+    if (t > 0.675 && t < 0.725 && Math.abs(x) < 0.82 && u > 0.2 && u < 0.8) return cd;
+    const yb = t < 0.5 ? 2.0 : keyed([[0.5, 2.0], [0.78, 1.72], [0.9, 1.42], [1, 1.28]], t);
     if (y < yb) return cf;
-    if (y < yb + 0.14) return cs;
+    if (y < yb + 0.13) return cs;
     return cb;
   };
-  const ring = (z0, t) => { for (let i = 0; i <= U; i++) { loftPoint(W, L, H, t, i / U, P); pos.push(P.x, P.y, t > 0 ? P.z : z0); const c = paint(t, i / U, P.y); col.push(c.r, c.g, c.b); } };
+  const uvs = [];
+  const ring = (z0, t) => { for (let i = 0; i <= U; i++) { loftPoint(W, L, H, t, i / U, P); pos.push(P.x, P.y, t > 0 ? P.z : z0); uvs.push(i / U, t * 0.9); } };
   ring(-L / 2, 0);
   for (let j = 0; j <= T; j++) ring(0, j / T);
   const rows = T + 2;
-  for (let r = 0; r < rows - 1; r++) for (let i = 0; i < U; i++) { if (wsQuad(r, i) || sideQuad(r, i)) continue; const a = r * (U + 1) + i, b = a + U + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  for (let r = 0; r < rows - 1; r++) for (let i = 0; i < U; i++) { if (wsQuad(r, i, W, L, H)) continue; const a = r * (U + 1) + i, b = a + U + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
   // Underside (flat floor between the skirts) and the closed nose tip.
   for (let r = 0; r < rows - 1; r++) { const a = r * (U + 1), b = a + U, a2 = a + U + 1, b2 = a2 + U; idx.push(a, b, a2, b, b2, a2); }
   {
@@ -188,42 +214,88 @@ function powerCarGeometry(W, L, H, livery) {
     for (let i = 0; i <= U; i++) { cx += pos[(last + i) * 3]; cy += pos[(last + i) * 3 + 1]; cz += pos[(last + i) * 3 + 2]; }
     cx /= U + 1; cy /= U + 1; cz /= U + 1;
     let prev = last;
-    for (const k of [0.78, 0.55, 0.32, 0.12]) {
+    CAP_K.slice(1, -1).forEach((k, lv) => {
       const start = pos.length / 3;
       for (let i = 0; i <= U; i++) {
         const x = cx + (pos[(last + i) * 3] - cx) * k, y = cy + (pos[(last + i) * 3 + 1] - cy) * k, z = cz + (pos[(last + i) * 3 + 2] - cz) * k + 0.06 * (1 - k * k);
-        pos.push(x, y, z); const c = paint(1, i / U, Math.max(y, 1.0)); col.push(c.r, c.g, c.b);
+        pos.push(x, y, z); uvs.push(i / U, 0.9 + 0.02 * (lv + 1));
       }
       for (let i = 0; i < U; i++) { const a = prev + i, b = start + i; idx.push(a, a + 1, b, b, a + 1, b + 1); }
       prev = start;
-    }
-    const tip = pos.length / 3; pos.push(cx, cy, cz + 0.07); { const c = paint(1, 0.5, cy); col.push(c.r, c.g, c.b); }
+    });
+    const tip = pos.length / 3; pos.push(cx, cy, cz + 0.07); uvs.push(0.5, 0.999);
     for (let i = 0; i < U; i++) idx.push(prev + i, prev + i + 1, tip);
   }
   // Rear cap.
-  const c0 = pos.length / 3; pos.push(0, 0.82 + (H - 0.82) * 0.5, -L / 2); col.push(cb.r, cb.g, cb.b);
+  const c0 = pos.length / 3; pos.push(0, 0.82 + (H - 0.82) * 0.5, -L / 2); uvs.push(0.5, 0.001);
   for (let i = 0; i < U; i++) idx.push(c0, i + 1, i);
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(idx); g.computeVertexNormals();
+  g.userData.livery = bodyLiveryTexture(W, L, H, paint);
   const nrm = g.attributes.normal; if (nrm.getY(Math.floor(U / 2) + (U + 1) * 3) < 0) { const ix = g.index.array; for (let k = 0; k < ix.length; k += 3) { const t2 = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t2; } g.computeVertexNormals(); }
   geoCache.set(key, g);
   return g;
 }
-/** Glass exactly filling the windscreen opening (same loft quads), UV u across 0.2..0.8, v up the glass. */
-export function windscreenGeometry(W, L, H) {
-  const key = `ws3|${W}|${L}|${H}`;
-  if (geoCache.has(key)) return geoCache.get(key);
-  const pos = [], uv = [], P = {}, out = 1.004;
-  const vert = (t, u) => { loftPoint(W, L, H, t, u, P); pos.push(P.x * out, 0.82 + (P.y - 0.82) * out + 0.004, P.z); uv.push((u - WS.u0) / (WS.u1 - WS.u0), (WS.t1 - t) / (WS.t1 - WS.t0)); };
-  for (let r = 1; r <= LT; r++) for (let i = 0; i < LU; i++) {
-    if (!wsQuad(r, i)) continue;
-    const t0 = (r - 1) / LT, t1 = r / LT, u0 = i / LU, u1 = (i + 1) / LU;
-    vert(t0, u0); vert(t0, u1); vert(t1, u0); vert(t1, u0); vert(t0, u1); vert(t1, u1);
+const CAP_K = [1, 0.78, 0.55, 0.32, 0.12, 0];
+/**
+ * Livery texture of the power car, sampled from the real surface (u around the section, v along the nose; the top
+ * strip is the nose cap): crisp stripe edges whatever the mesh resolution.
+ */
+function bodyLiveryTexture(W, L, H, paint) {
+  const NU = 1024, NV = 512, c = document.createElement('canvas'); c.width = NU; c.height = NV;
+  const g = c.getContext('2d'), img = g.createImageData(NU, NV), P = {};
+  // Nose-tip ring (t = 1) and its centre, for the cap.
+  const ring = [], cen = { x: 0, y: 0 };
+  for (let i = 0; i <= NU; i++) { loftPoint(W, L, H, 1, i / NU, P); ring.push([P.x, P.y]); cen.x += P.x; cen.y += P.y; }
+  cen.x /= NU + 1; cen.y /= NU + 1;
+  for (let j = 0; j < NV; j++) {
+    const v = 1 - (j + 0.5) / NV;                         // canvas row 0 = top = v 1
+    for (let i = 0; i < NU; i++) {
+      const u = (i + 0.5) / NU; let col;
+      if (v <= 0.9) { const t = v / 0.9; loftPoint(W, L, H, t, u, P); col = paint(t, u, P.y, P.x); }
+      else {
+        const f = (v - 0.9) / 0.1 * (CAP_K.length - 1), a = Math.floor(f), k = CAP_K[Math.min(a, CAP_K.length - 1)] + (CAP_K[Math.min(a + 1, CAP_K.length - 1)] - CAP_K[Math.min(a, CAP_K.length - 1)]) * (f - a);
+        const [rx, ry] = ring[i]; col = paint(1, u, Math.max(1.0, cen.y + (ry - cen.y) * k), cen.x + (rx - cen.x) * k);
+      }
+      const o = (j * NU + i) * 4; img.data[o] = col.r * 255; img.data[o + 1] = col.g * 255; img.data[o + 2] = col.b * 255; img.data[o + 3] = 255;
+    }
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals();
-  geoCache.set(key, g);
-  return g;
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = THREE.ClampToEdgeWrapping;
+  return t;
+}
+/** Point on the windscreen trapezoid: s across (−1..1), v up the glass (0 = bottom/front .. 1 = top). */
+export function wsPoint(W, L, H, s, v, out = {}, push = 1.006) {
+  const t = WS.t1 - v * (WS.t1 - WS.t0), half = wsHalf(t) * (W / 2.9), target = s * half;
+  // u on the upper surface with loft x = target (x grows with u there).
+  let lo = 0.12, hi = 0.88;
+  for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; loftPoint(W, L, H, t, m, out); if (out.x < target) lo = m; else hi = m; }
+  loftPoint(W, L, H, t, (lo + hi) / 2, out);
+  out.x *= push; out.y = 0.82 + (out.y - 0.82) * push + 0.004;
+  return out;
+}
+/** Windscreen: a smooth trapezoid in a black rubber frame (covers the edge of the opening). [frame, glass]. */
+export function windscreenGeometry(W, L, H) {
+  const key = `ws6|${W}|${L}|${H}`;
+  if (geoCache.has(key)) return geoCache.get(key);
+  const NS = 22, NV = 18, P = {}, inS = 0.17, inV = 0.09;
+  const S = [-1, -1 + inS, ...Array.from({ length: NS - 1 }, (_, i) => -1 + inS + ((2 - 2 * inS) * (i + 1)) / NS), 1 - inS, 1];
+  const V = [0, inV, ...Array.from({ length: NV - 1 }, (_, i) => inV + ((1 - 2 * inV) * (i + 1)) / NV), 1 - inV, 1];
+  const build = (frame) => {
+    const pos = [], uv = [];
+    for (let j = 0; j < V.length - 1; j++) for (let i = 0; i < S.length - 1; i++) {
+      const edge = i === 0 || i === S.length - 2 || j === 0 || j === V.length - 2;
+      if (edge !== frame) continue;
+      const q = [[S[i], V[j]], [S[i + 1], V[j]], [S[i], V[j + 1]], [S[i], V[j + 1]], [S[i + 1], V[j]], [S[i + 1], V[j + 1]]];
+      for (const [ss, vv] of q) { wsPoint(W, L, H, ss, vv, P, frame ? 1.009 : 1.006); pos.push(P.x, P.y, P.z); uv.push((ss + 1) / 2, vv); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals();
+    return g;
+  };
+  const res = { glass: build(false), frame: build(true) };
+  geoCache.set(key, res);
+  return res;
 }
 /** Glass filling a loft opening (slightly proud of the body), with UVs u → across, v → up the glass. */
 function loftPanel(W, L, H, t0, t1, u0, u1, key, out = 1.004) {
@@ -238,7 +310,33 @@ function loftPanel(W, L, H, t0, t1, u0, u1, key, out = 1.004) {
   geoCache.set(key, g);
   return g;
 }
-function sideWindowGeometries(W, L, H) { return SIDE_WIN.ranges.map(([a, b], k) => loftPanel(W, L, H, SIDE_WIN.t0, SIDE_WIN.t1, a, b, `sw|${W}|${L}|${H}|${k}`)); }
+function sideWindowGeometries(W, L, H) {
+  // Glass filling the cab side-window openings (the same loft quads), one geometry per side.
+  const key = `sw4|${W}|${L}|${H}`;
+  if (geoCache.has(key)) return geoCache.get(key);
+  const sides = [[], []], P = {}, out = 1.003;
+  const v = (arr, t, u) => { loftPoint(W, L, H, t, u, P); arr.push(P.x * out, P.y, P.z); };
+  for (let r = 1; r <= LT; r++) for (let i = 0; i < LU; i++) {
+    if (!sideQuad(r, i, W, L, H)) continue;
+    const arr = sides[i < LU / 2 ? 0 : 1], t0 = (r - 1) / LT, t1 = r / LT, u0 = i / LU, u1 = (i + 1) / LU;
+    v(arr, t0, u0); v(arr, t0, u1); v(arr, t1, u0); v(arr, t1, u0); v(arr, t0, u1); v(arr, t1, u1);
+  }
+  const res = sides.map((p) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.computeVertexNormals(); return g; });
+  geoCache.set(key, res);
+  return res;
+}
+/** Louvred panel (ventilation grille): dark slats on a grey frame; front = horizontal slats. */
+let slatCache = {};
+function slatTexture(front) {
+  if (slatCache[front]) return slatCache[front];
+  const c = document.createElement('canvas'); c.width = 512; c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#8f959c'; g.fillRect(0, 0, 512, 64);
+  g.fillStyle = '#1b1d21';
+  if (front) for (let y = 6; y < 60; y += 9) g.fillRect(8, y, 496, 5);
+  else for (let x = 6; x < 506; x += 16) g.fillRect(x, 6, 10, 52);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return (slatCache[front] = t);
+}
 /** Car-side lettering (operator name, train number) and the first-class marker. */
 function liveryTexture(text, sub, fg = '#1b2a4a', accent = '#b48a3c') {
   const c = document.createElement('canvas'); c.width = 1024; c.height = 160;
@@ -366,9 +464,38 @@ export class TrainModel {
       this.group.add(car);
       this.cars.push(car);
     }
-    if (specs.style === 'hst') this.buildHst(livery, glow, destMat);
+    if (specs.model3d === 'tgv-duplex') this.buildFromModel(glow);
+    else if (specs.style === 'hst') this.buildHst(livery, glow, destMat);
     this.setLights('forward');
     this.buildInterior(line, player);
+  }
+
+  /**
+   * Trainset from the imported 3D model (TGV Duplex): each car gets the model's car of its type (power car, end
+   * trailer, middle trailer); the second half of the train uses the same cars turned round, as on the real train.
+   * Head / tail lamp glows are placed on the model's lamp positions; the leading power car is the cab.
+   */
+  buildFromModel(glow) {
+    const sp = this.specs, n = sp.cars, M = tgvModel();
+    this.cabGlass = [];
+    for (let c = 0; c < n; c++) {
+      const car = this.cars[c];
+      for (const ch of car.children) ch.visible = false;                       // generic shell / ends / interior
+      const type = c === 0 || c === n - 1 ? 'power' : c === 1 || c === n - 2 ? 'end' : 'middle';
+      const grp = M.instance(type);
+      if (c >= n / 2) grp.rotation.y = Math.PI;
+      car.add(grp);
+      if (c === 0) { this.noseFront = grp; this.modelCab = true; this.cabGlass = grp.userData.glass; this.windscreenSurface = M.windscreen; }
+      if (type === 'power') {
+        const end = c === 0 ? 1 : -1;
+        for (const sd of [-1, 1]) {
+          const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff4d0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+          gl.scale.set(1.3, 1.3, 1); gl.position.set(sd * M.lamps.x, M.lamps.y, M.lamps.z + 0.25); gl.userData.end = end; grp.add(gl); this.glows.push(gl);
+          const tg = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xff1a00, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+          tg.scale.set(0.6, 0.6, 1); tg.position.set(sd * (M.lamps.x - 0.25), M.lamps.y, M.lamps.z + 0.2); tg.userData.end = end; tg.userData.tail = true; grp.add(tg); this.glows.push(tg);
+        }
+      }
+    }
   }
 
   /**
@@ -382,7 +509,7 @@ export class TrainModel {
     const deck = sp.decks === 2 ? sp.height / 3.58 : 1.0;
     const H = powerCarHeight(sp);
     const std = (o) => new THREE.MeshStandardMaterial(o);
-    const body = std({ vertexColors: true, metalness: 0.3, roughness: 0.3 });
+    const body = std({ map: null, metalness: 0.12, roughness: 0.32 });   // painted metal: low metalness keeps the blue blue
     const lining = std({ color: 0x8a9098, roughness: 0.85, side: THREE.BackSide });   // inside of the nose = cab lining
     // Windscreen: dark and reflective from outside; nearly clear from the cab (setCabExteriorVisible switches it).
     this.wsMat = std({ color: 0x14202a, metalness: 0.85, roughness: 0.06, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
@@ -394,6 +521,8 @@ export class TrainModel {
     const rubber = new THREE.MeshLambertMaterial({ color: 0x2a2c2f });
     const wheelMat = std({ color: 0x3a3c40, metalness: 0.7, roughness: 0.45 });
     const nose = powerCarGeometry(W, L, H, livery);
+    body.map = nose.userData.livery;
+    const rubber0 = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.6, side: THREE.DoubleSide });
     const shield = windscreenGeometry(W, L, H);
     const sideWins = sideWindowGeometries(W, L, H);
     const letters = new THREE.MeshBasicMaterial({ map: liveryTexture('Grande Vitesse', sp.decks === 2 ? 'DUPLEX' : '', livery.front || '#1b2a4a', livery.stripe || '#b48a3c'), transparent: true, depthWrite: false });
@@ -413,9 +542,17 @@ export class TrainModel {
         shell.visible = false;
         for (const ch of car.children) if (ch !== shell) ch.visible = false;   // generic cab / gangway ends
         const pc = new THREE.Group(); pc.name = 'power-car'; if (c === n - 1) pc.rotation.y = Math.PI;
-        const bodyMesh = new THREE.Mesh(nose, body), ws = new THREE.Mesh(shield, this.wsMat); ws.renderOrder = 3;
-        pc.add(bodyMesh, ws, new THREE.Mesh(nose, lining));
-        const sides = sideWins.map((g) => { const m = new THREE.Mesh(g, sideGlass); m.renderOrder = 3; pc.add(m); return m; });
+        const bodyMesh = new THREE.Mesh(nose, body), ws = new THREE.Mesh(shield.glass, this.wsMat); ws.renderOrder = 3;
+        pc.add(bodyMesh, ws, new THREE.Mesh(nose, lining), new THREE.Mesh(shield.frame, rubber0));
+        // Cab side windows: rounded rectangles of tinted glass in a black frame (cover the opening's edge).
+        const zN0 = L / 2 - NOSE, z0w = zN0 + 0.95, z1w = zN0 + 1.6;   // small window above the crew door, behind the windscreen
+        const rr = (w, h, r) => { const sh = new THREE.Shape(); sh.moveTo(-w / 2 + r, -h / 2); sh.lineTo(w / 2 - r, -h / 2); sh.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r); sh.lineTo(w / 2, h / 2 - r); sh.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2); sh.lineTo(-w / 2 + r, h / 2); sh.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); sh.lineTo(-w / 2, -h / 2 + r); sh.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); return new THREE.ShapeGeometry(sh, 6); };
+        const sides = [-1, 1].map((sd) => {
+          const fr = new THREE.Mesh(rr(z1w - z0w + 0.1, 0.6, 0.14), rubber0); fr.position.set(sd * (W / 2 + 0.012), 3.08, (z0w + z1w) / 2); fr.rotation.y = sd * Math.PI / 2; pc.add(fr);
+          const m = new THREE.Mesh(rr(z1w - z0w - 0.02, 0.48, 0.1), sideGlass); m.position.set(sd * (W / 2 + 0.016), 3.08, (z0w + z1w) / 2); m.rotation.y = sd * Math.PI / 2; m.renderOrder = 3; pc.add(m);
+          return m;
+        });
+        void sideWins;
         if (c === 0) { this.windscreen = ws; this.cabGlass.push(ws, ...sides); }
         // Livery band and lettering, ventilation grilles, roof equipment.
         for (const sd of [-1, 1]) {
@@ -452,20 +589,38 @@ export class TrainModel {
         const findU = (t, y, right) => { let best = 0.1, bd = 9; for (let k = 0; k <= 50; k++) { const u = right ? 1 - k / 100 : k / 100; loftPoint(W, L, H, t, u, P); const d = Math.abs(P.y - y); if (d < bd) { bd = d; best = u; } } return best; };
         const housingMat = std({ color: 0x15171b, metalness: 0.5, roughness: 0.3 });
         {
-          const tg = 0.93; loftPoint(W, L, H, tg, 0.5, P);
-          const gu = findU(tg, 1.42, false); const Q = {}; loftPoint(W, L, H, tg, gu, Q);
-          const grille = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(Q.x) * 0.7, 0.16), housingMat); grille.position.set(0, 1.42, Q.z + 0.03); pc.add(grille);
+          // Grille between the clusters on the front face, louvred.
+          const tg = 0.85; loftPoint(W, L, H, tg, 0.5, P);
+          const grille = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.2), new THREE.MeshStandardMaterial({ map: slatTexture(true), metalness: 0.4, roughness: 0.5 }));
+          const gy = 1.98, gz = (() => { let best = P.z, bd = 9; for (let k = 0; k <= 40; k++) { const tt = 0.76 + k * 0.006; loftPoint(W, L, H, tt, 0.5, P); const d = Math.abs(P.y - gy); if (d < bd) { bd = d; best = P.z; } } return best; })();
+          grille.position.set(0, gy, gz + 0.02); grille.rotation.x = -0.55; pc.add(grille);
         }
         for (const sd of [-1, 1]) {
-          const uu = findU(0.9, 1.45, sd > 0); loftPoint(W, L, H, 0.9, uu, P);
-          const hous = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20).scale(1.7, 0.7, 1), housingMat); hous.position.set(P.x * 0.97, P.y, P.z + 0.01); hous.lookAt(P.x * 2.2, P.y, P.z + 4); pc.add(hous);
-          const hl = new THREE.Mesh(new THREE.CircleGeometry(0.1, 20).scale(1.8, 0.75, 1), this.headMat); hl.position.set(P.x * 1.01, P.y, P.z + 0.02); hl.lookAt(P.x * 3, P.y, P.z + 4); pc.add(hl);
-          const tl = new THREE.Mesh(new THREE.CircleGeometry(0.05, 12).scale(1.6, 0.8, 1), this.tailMat); tl.position.set(P.x * 1.01 * 0.8, P.y + 0.18, P.z); tl.lookAt(P.x * 3, P.y + 0.2, P.z + 4); pc.add(tl);
+          // Cluster: on the front face either side of the grille, just above the white stripe.
+          let tt = 0.84; for (let k = 0; k <= 40; k++) { const t2 = 0.76 + k * 0.006; loftPoint(W, L, H, t2, 0.5, P); if (P.y <= 1.98) { tt = t2; break; } }
+          const uu = (() => { let best = 0.4, bd = 9; for (let k = 0; k <= 100; k++) { const u = k / 100; loftPoint(W, L, H, tt, u, P); const d = Math.abs(P.x - sd * 0.62) + (P.y < 1.5 ? 5 : 0); if (d < bd) { bd = d; best = u; } } return best; })();
+          loftPoint(W, L, H, tt, uu, P);
+          const hous = new THREE.Mesh(new THREE.CircleGeometry(0.16, 24).scale(1.9, 0.62, 1), housingMat); hous.position.set(P.x, P.y, P.z + 0.03); hous.lookAt(P.x * 1.4, P.y + 1.5, P.z + 4); pc.add(hous);
+          const hl = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16).scale(1.5, 0.8, 1), this.headMat); hl.position.set(P.x + sd * 0.1, P.y, P.z + 0.05); hl.lookAt(P.x * 1.4, P.y + 1.5, P.z + 4); pc.add(hl);
+          const tl = new THREE.Mesh(new THREE.CircleGeometry(0.055, 14), this.tailMat); tl.position.set(P.x - sd * 0.13, P.y, P.z + 0.05); tl.lookAt(P.x * 1.4, P.y + 1.5, P.z + 4); pc.add(tl);
           const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff4d0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-          gl.scale.set(1.3, 1.3, 1); gl.position.set(P.x, P.y, P.z + 0.2); gl.userData.end = end; pc.add(gl); this.glows.push(gl);
+          gl.scale.set(1.3, 1.3, 1); gl.position.set(P.x + sd * 0.1, P.y, P.z + 0.25); gl.userData.end = end; pc.add(gl); this.glows.push(gl);
           const tg = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xff1a00, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
-          tg.scale.set(0.6, 0.6, 1); tg.position.set(P.x * 0.8, P.y + 0.18, P.z + 0.15); tg.userData.end = end; tg.userData.tail = true; pc.add(tg); this.glows.push(tg);
+          tg.scale.set(0.6, 0.6, 1); tg.position.set(P.x - sd * 0.13, P.y, P.z + 0.2); tg.userData.end = end; tg.userData.tail = true; pc.add(tg); this.glows.push(tg);
         }
+        // Side details: ventilation louvres along the upper body, the crew door behind the cab, roof headlight.
+        const louvMat = new THREE.MeshStandardMaterial({ map: slatTexture(false), metalness: 0.5, roughness: 0.45 });
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0x5a6068 });
+        const zN = L / 2 - NOSE;
+        for (const sd of [-1, 1]) {
+          const lv = new THREE.Mesh(new THREE.PlaneGeometry(6.2, 0.62), louvMat); lv.position.set(sd * (W / 2 + 0.012), H - 0.75, zN - 5.0); lv.rotation.y = sd * Math.PI / 2; pc.add(lv);
+          const dz0 = zN - 1.15, dz1 = zN + 0.05, dy0 = 1.05, dy1 = 3.3;
+          for (const [w, h, y, z] of [[0.03, dy1 - dy0, (dy0 + dy1) / 2, dz0], [0.03, dy1 - dy0, (dy0 + dy1) / 2, dz1], [dz1 - dz0, 0.03, dy1, (dz0 + dz1) / 2]]) {
+            const ln = new THREE.Mesh(new THREE.PlaneGeometry(w === 0.03 ? 0.03 : w, h), lineMat); ln.position.set(sd * (W / 2 + 0.014), y, z); ln.rotation.y = sd * Math.PI / 2; pc.add(ln);
+          }
+          const handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.18, 0.05), steel); handle.position.set(sd * (W / 2 + 0.02), 2.1, dz1 - 0.12); pc.add(handle);
+        }
+        { const P2 = {}; loftPoint(W, L, H, 0.27, 0.5, P2); const rl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.18), new THREE.MeshStandardMaterial({ color: 0x15171b, metalness: 0.4, roughness: 0.3 })); rl.position.set(0, P2.y + 0.02, P2.z); rl.rotation.x = -0.25; pc.add(rl); const lens = new THREE.Mesh(new THREE.CircleGeometry(0.05, 12), this.headMat); lens.position.set(0, P2.y + 0.04, P2.z + 0.1); lens.rotation.x = -0.4; pc.add(lens); }
         // Rear gangway bellows towards the first trailer.
         const bel = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.6, sp.carGap + 0.3), rubber); bel.position.set(0, 2.1, -L / 2 - sp.carGap / 2); pc.add(bel);
         car.add(pc);
@@ -476,7 +631,7 @@ export class TrainModel {
       shell.scale.y = deck;
       // Livery: blue lower band with a white stripe above it (silver upper body), as on the power cars.
       {
-        const lowerMat = std({ color: livery.lower || livery.front || '#2346a0', metalness: 0.3, roughness: 0.35 });
+        const lowerMat = std({ color: livery.lower || livery.front || '#2346a0', metalness: 0.12, roughness: 0.35 });
         const whiteMat = std({ color: livery.stripe || '#f4f5f7', metalness: 0.2, roughness: 0.4 });
         for (const sd of [-1, 1]) {
           const spans = []; let cur = -L / 2;
@@ -564,9 +719,11 @@ export class TrainModel {
     const sp = this.specs, L = sp.carLength;
     const a = this._a || (this._a = {}), b = this._b || (this._b = {});
     for (let c = 0; c < sp.cars; c++) {
-      const cf = front - c * (L + sp.carGap);
-      route.point(cf - 2.4, 0, 0, a);
-      route.point(cf - L + 2.4, 0, 0, b);
+      const Lc = sp.carLengths ? sp.carLengths[c] : L;
+      const cf = front - (sp.carStart ? sp.carStart[c] : c * (L + sp.carGap));
+      const k = Math.min(2.4, Lc * 0.2);
+      route.point(cf - k, 0, 0, a);
+      route.point(cf - Lc + k, 0, 0, b);
       const car = this.cars[c];
       car.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
       car.lookAt(a.x, (a.y + b.y) / 2 + (a.y - b.y) / 2, a.z);
@@ -590,6 +747,7 @@ export class TrainModel {
   /** Hide the leading cab exterior when the camera is inside it. */
   setCabExteriorVisible(v) {
     // TGV: the driver sits inside the nose — the body stays (it frames the view), the glass turns clear.
+    if (this.modelCab) { for (const ch of this.noseFront.children) if (ch.isSprite) ch.visible = v; for (const m of this.cabGlass || []) m.material.opacity = v ? m.userData.opacity : 0.08; return; }
     if (this.noseFront) { for (const ch of this.noseFront.children) if (ch.isSprite) ch.visible = v; if (this.wsMat) { this.wsMat.opacity = v ? 0.88 : 0.06; this.wsMat.metalness = v ? 0.85 : 0; } for (const m of this.cabGlass || []) if (m !== this.windscreen) m.material.opacity = v ? 0.85 : 0.15; return; }
     if (this.cabFront) this.cabFront.visible = v; this.cars[0].userData.shell.children[0].visible = v; this.cars[0].userData.shell.children[1].visible = v; }
 

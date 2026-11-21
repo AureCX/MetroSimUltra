@@ -28,9 +28,10 @@ export class PlayerTrain {
   /** Door centre positions measured backwards from the train front (m). */
   doorOffsets() {
     const sp = this.specs, out = [];
+    if (sp.doorList) return [sp.doorList].flat();
     for (let c = 0; c < sp.cars; c++) {
-      const start = c * (sp.carLength + sp.carGap);
-      for (const z of sp.doorZ) out.push(start + sp.carLength / 2 - z);
+      const start = sp.carStart ? sp.carStart[c] : c * (sp.carLength + sp.carGap); const Lc = sp.carLengths ? sp.carLengths[c] : sp.carLength;
+      for (const z of sp.doorZ) out.push(start + Lc / 2 - z);
     }
     return out;
   }

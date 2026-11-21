@@ -58,7 +58,9 @@ export function installTgvMenu(Menu) {
         <div class="train-grid">${this.tgvTrains().map((t) => { const price = E.priceOf('train', t.id), ok = price <= E.balance; return `
           <div class="train-card">${strip(t)}<h3>${esc(t.name)} <span class="price">${eur(price)}</span></h3><p class="sub">${esc(t.description || '')}</p>
           <p class="sub">${t.cars} cars · ${t.length.toFixed(0)} m · ${t.capacity} seats (${t.classes?.first ?? 2} first-class cars) · ${t.maxSpeed} km/h · ${t.maxPower} kW</p>
-          <div class="row-tools"><button class="btn small ${ok ? 'primary' : ''}" data-buytgv="${t.id}" ${ok ? '' : 'disabled'}>${ok ? 'Buy' : `Need ${eur(price - E.balance)} more`}</button></div></div>`; }).join('')}</div>`, { wide: true });
+          ${t.model3d ? '<p class="sub">3D model: “tgv inoui” by <a href="https://sketchfab.com/yuimpou" target="_blank" rel="noopener">yuimpou</a> (CC BY 4.0)</p>' : ''}
+          <div class="row-tools"><button class="btn small ${ok ? 'primary' : ''}" data-buytgv="${t.id}" ${ok ? '' : 'disabled'}>${ok ? 'Buy' : `Need ${eur(price - E.balance)} more`}</button></div></div>`; }).join('')}</div>
+        <p class="sub model-credit">TGV Duplex 3D model: <a href="https://sketchfab.com/3d-models/tgv-inoui-69e3e860593f4907a00b63801e3a5c83" target="_blank" rel="noopener">“tgv inoui”</a> by <a href="https://sketchfab.com/yuimpou" target="_blank" rel="noopener">yuimpou</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p>`, { wide: true });
       this.wireSaves(body, () => this.screen_tgv());
       body.querySelector('#tgv-map').onclick = () => {
         this.railModel ??= new RailMapModel(lines);

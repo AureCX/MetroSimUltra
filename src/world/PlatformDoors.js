@@ -11,9 +11,10 @@ export const PSD = { HEIGHT: 2.15, HEADER: 0.35, OPEN_TIME: 2.0, CLOSE_TIME: 2.4
 /** Door centres (m from the train front) of a formation. */
 export function trainDoorOffsets(specs) {
   const out = [];
+  if (specs.doorList) return [specs.doorList].flat();
   for (let c = 0; c < specs.cars; c++) {
-    const start = c * (specs.carLength + specs.carGap);
-    for (const z of specs.doorZ) out.push(start + specs.carLength / 2 - z);
+    const start = specs.carStart ? specs.carStart[c] : c * (specs.carLength + specs.carGap); const Lc = specs.carLengths ? specs.carLengths[c] : specs.carLength;
+    for (const z of specs.doorZ) out.push(start + Lc / 2 - z);
   }
   return out;
 }

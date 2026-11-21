@@ -7,7 +7,7 @@
  "serviceIntervalKm": 4000,
  "description": "Double-deck high-speed trainset: 2 power cars and 8 bi-level trailers, 512 seats in first and second class, 320 km/h.",
  "style": "hst", "decks": 2,
- "cars": 10, "carLength": 20.0, "carGap": 0.4, "width": 2.9, "height": 4.3,
+ "cars": 10, "carLengths": [22.03, 22.03, 18.46, 18.46, 18.46, 18.46, 18.46, 18.46, 22.03, 22.03], "carGap": 0.0, "model3d": "tgv-duplex", "passengerCars": [1, 8], "doorFromFront": 2.2, "width": 2.9, "height": 4.3,
  "doorsPerSide": 1, "doorWidth": 1.1,
  "massEmpty": 380, "capacity": 512,
  "maxPower": 9300, "maxTractiveForce": 220, "maxSpeed": 320,
@@ -15,7 +15,7 @@
  "tractionNotches": 8, "brakeNotches": 8,
  "tractionResponse": 1.6, "brakeResponse": 1.4, "tractionDeadTime": 0.4, "brakeDeadTime": 0.5,
  "davis": { "a": 1.6, "b": 0.02, "c": 0.3 },
- "livery": {"body": "#b9bec5", "front": "#2346a0", "lower": "#2346a0", "stripe": "#f4f5f7", "doors": "#aeb4bb", "roof": "#9aa0a8", "accent": "#2346a0"},
+ "livery": {"body": "#b9bec5", "front": "#2f5bc8", "lower": "#2f5bc8", "stripe": "#f4f5f7", "doors": "#aeb4bb", "roof": "#9aa0a8", "accent": "#2346a0"},
  "classes": { "first": 2, "second": 6 },
  "sound": { "inverter": "igbt", "motorPitch": 0.7 }
 }

@@ -20,6 +20,10 @@ import { NetworkOverlay } from './ui/NetworkOverlay.js';
 import { drawRailMap, railStationInfo } from './ui/RailMap.js';
 import { Multiplayer, defaultServerUrl } from './net/Multiplayer.js';
 
+// Any error while starting up is shown on screen instead of leaving a black page.
+const startupError = (e) => { const el = document.getElementById('menu'); if (el && !el.querySelector('nav')) el.innerHTML = `<div class="menu-loading"><p>Failed to start: ${String(e?.message || e)}</p><p class="sub">Try reloading the page; if it persists, please report this message.</p></div>`; };
+window.addEventListener('error', (ev) => startupError(ev.error || ev.message));
+window.addEventListener('unhandledrejection', (ev) => startupError(ev.reason));
 const bus = new EventBus();
 const settings = new Settings(bus);
 const save = new SaveSystem();

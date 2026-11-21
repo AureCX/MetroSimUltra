@@ -18,7 +18,7 @@ export class TgvTimetable {
         const delay = rnd(seed) < 0.13 ? Math.round(3 + rnd(seed + 1) * 22) * 60 : 0;
         const cancelled = rnd(seed + 2) < 0.025;
         const via = l.stations.slice(1, -1).map((s) => s.name);
-        this.services.push({ kind: 'dep', no, lineId: l.id, line: l, destination: r.destination, via, time: dep, duration: r.duration * 60, voie: r.voie, delay, cancelled, train: j % 2 ? 'Duplex' : 'Classique' });
+        this.services.push({ kind: 'dep', no, lineId: l.id, line: l, destination: r.destination, via, time: dep, duration: r.duration * 60, voie: r.voie, delay, cancelled, train: 'Duplex' });
         // The trainset arrives from the destination 50 minutes before it leaves again.
         const arrNo = no + 1, aSeed = arrNo * 31 + day * 977;
         this.services.push({ kind: 'arr', no: arrNo, lineId: l.id, line: l, origin: r.destination, via: [...via].reverse(), time: dep - 50 * 60, duration: r.duration * 60, voie: r.voie, delay: rnd(aSeed) < 0.15 ? Math.round(2 + rnd(aSeed + 1) * 18) * 60 : 0, cancelled: rnd(aSeed + 2) < 0.02 });

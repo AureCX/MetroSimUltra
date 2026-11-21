@@ -55,7 +55,7 @@ export class Multiplayer {
     ws.onopen = () => {
       clearTimeout(timeout);
       this.retry = 0;
-      const tokens = JSON.parse(localStorage.getItem(TOKEN_KEY) || '{}');
+      let tokens = {}; try { tokens = JSON.parse(localStorage.getItem(TOKEN_KEY) || '{}'); } catch { /* storage blocked */ }
       this.send({ t: 'hello', name: this.name, token: tokens[this.server] });
       clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => this.send({ t: 'ping', c: performance.now() }), 3000);
@@ -90,7 +90,7 @@ export class Multiplayer {
     switch (m.t) {
       case 'welcome': {
         this.me = { id: m.id, name: m.name, color: m.color };
-        const tokens = JSON.parse(localStorage.getItem(TOKEN_KEY) || '{}'); tokens[this.server] = m.token; localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+        try { const tokens = JSON.parse(localStorage.getItem(TOKEN_KEY) || '{}'); tokens[this.server] = m.token; localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens)); } catch { /* storage blocked */ }
         this.clockOffset = m.serverTime - Date.now();
         if (m.session) this.session = m.session;
         this.setStatus('online');

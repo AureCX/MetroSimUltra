@@ -7,8 +7,9 @@ let dbPromise = null;
 function open() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'));
-    const req = indexedDB.open(DB, VERSION);
+    let req;
+    try { if (typeof indexedDB === 'undefined') throw new Error('IndexedDB unavailable'); req = indexedDB.open(DB, VERSION); }
+    catch (e) { dbPromise = null; reject(e); return; }
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('lines')) db.createObjectStore('lines');

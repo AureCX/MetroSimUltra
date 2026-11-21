@@ -32,8 +32,17 @@ export function unwrap(raw) {
   } catch { return null; }
 }
 
+/** localStorage when the page may use it; touching it can throw (sandboxed frames, blocked site data). */
+function defaultStorage() {
+  try { const s = globalThis.localStorage; s?.getItem('metrosim.probe'); return s || null; } catch { return null; }
+}
+/** In-memory fallback so the game still runs (without persistence) where storage is unavailable. */
+function memoryStorage() { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; }
+
 export class SaveSystem {
-  constructor(storage = globalThis.localStorage) {
+  constructor(storage = defaultStorage()) {
+    this.persistent = !!storage;
+    if (!storage) { storage = memoryStorage(); this.warning = 'Saving is not available in this browser context (storage blocked) — progress will not be kept after closing.'; }
     this.store = storage;
     this.data = structuredClone(EMPTY);
     this.status = 'new';        // new | loaded | recovered | legacy | reset

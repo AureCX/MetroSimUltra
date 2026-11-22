@@ -233,3 +233,43 @@ div.train-card { cursor: default; text-align: left; }
 .net-overlay.rail { background: #0b1424; border-color: #b48a3c; }
 .net-overlay.rail .net-hint { left: auto; right: 12px; bottom: 56px; background: rgba(14,22,38,0.85); color: #9fb3d6; }
 .route-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+/* ---- Flight HUD ---- */
+#airhud { position: fixed; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
+#airhud .panel, #airhud button, #airhud .air-map { pointer-events: auto; }
+.air-strip { top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; min-width: 440px; max-width: 70vw; }
+.air-badge { font-weight: 800; padding: 6px 10px; border-radius: 6px; letter-spacing: .03em; white-space: nowrap; }
+.air-route { font-weight: 700; font-size: 17px; } .air-route small { font-weight: 500; color: #9fb3c8; font-size: 12px; margin-left: 6px; }
+.air-tr .air-metar { font: 11px/1.3 monospace; color: #9fc3ff; max-width: 300px; margin-top: 4px; }
+.air-inst { position: absolute; left: 14px; bottom: 72px; display: flex; gap: 8px; }
+.air-inst canvas { width: 230px; height: 230px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+.air-sys { right: 14px; bottom: 72px; min-width: 300px; font-size: 13px; }
+.air-sys .row { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin: 2px 0; }
+.air-sys .row.warn b { color: var(--warn); font-size: 11px; text-align: right; }
+.air-bar { flex: 0 0 70px; height: 6px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; } .air-bar > i { display: block; height: 100%; background: var(--ok); }
+.air-fcu { bottom: 28px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; align-items: center; padding: 6px 10px; }
+.air-fcu button { background: #1d2731; color: #d8e2ec; border: 1px solid #34414e; border-radius: 5px; font: 600 11px system-ui; padding: 4px 7px; cursor: pointer; }
+.air-fcu button.on { background: #164f2c; border-color: #3cff6a; color: #3cff6a; }
+.air-fcu b { font: 700 13px monospace; color: #ffb347; min-width: 44px; text-align: center; } .air-fcu .sep { width: 8px; }
+.air-atc { right: 14px; top: 120px; width: 340px; max-height: 46vh; overflow: auto; font-size: 13px; }
+.air-atc[hidden] { display: none; }
+.air-atc-h { font-weight: 800; letter-spacing: .05em; margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; } .air-atc-h small { font-weight: 400; color: #8fa1b3; font-size: 11px; flex: 1; }
+.air-atc-h button { background: none; border: 0; color: #8fa1b3; font-size: 18px; cursor: pointer; }
+#a-opts button { display: block; width: 100%; text-align: left; margin: 3px 0; background: #17324a; color: #e8eef4; border: 1px solid #2c5577; border-radius: 6px; padding: 6px 8px; cursor: pointer; font: 13px system-ui; }
+#a-opts button:hover { background: #1f4566; } #a-opts kbd { background: #0c1620; border-radius: 3px; padding: 0 5px; margin-right: 6px; font-size: 11px; }
+.air-radio { margin-top: 8px; border-top: 1px solid rgba(255,255,255,.1); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.air-radio div { color: #b8c6d4; font-size: 12px; } .air-radio div.mine { color: #e8eef4; } .air-radio div.me { color: #3cff6a; } .air-radio b { color: #9fc3ff; }
+.air-map { position: absolute; inset: 0; background: #0c1620; } .air-map[hidden] { display: none; }
+.air-map canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+.air-map-info { position: absolute; top: 14px; left: 14px; background: rgba(10,18,26,.9); border-radius: 8px; padding: 8px 12px; font-size: 13px; max-width: 420px; }
+.air-map-info:empty { display: none; }
+.air-map-x { position: absolute; top: 14px; right: 14px; background: #1d2731; color: #e8eef4; border: 1px solid #34414e; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+@media (max-width: 760px) { .air-inst canvas { width: 140px; height: 140px; } .air-atc { width: 260px; top: 150px; } .air-sys { display: none; } .air-strip { min-width: 0; max-width: 94vw; } .air-fcu { flex-wrap: wrap; max-width: 94vw; } }
+/* Airport flight information display */
+.fids { background: #0b0f14; border: 1px solid #1f2a36; border-radius: 10px; overflow: auto; margin: 10px 0; }
+.fids-h { display: flex; justify-content: space-between; padding: 10px 14px; background: #10202f; color: #ffd24a; font: 700 15px "Courier New", monospace; letter-spacing: .06em; }
+.fids table { width: 100%; border-collapse: collapse; font: 600 13px "Courier New", monospace; color: #f2c200; }
+.fids th { text-align: left; color: #8fa1b3; font: 600 11px system-ui; padding: 6px 10px; border-bottom: 1px solid #1f2a36; }
+.fids td { padding: 6px 10px; border-bottom: 1px solid #141c26; } .fids td b { color: #fff; }
+.fids .al { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.fids small.late { color: #ffb000; }

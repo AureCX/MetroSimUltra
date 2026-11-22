@@ -163,7 +163,7 @@ export class Multiplayer {
         if (b[i - 1].at <= now && b[i].at >= now) {
           const a = b[i - 1], c = b[i], k = (now - a.at) / Math.max(1, c.at - a.at);
           st = { ...c };
-          for (const key of ['s', 'v', 'x', 'z']) if (typeof a[key] === 'number') st[key] = a[key] + (c[key] - a[key]) * k;
+          for (const key of ['s', 'v', 'x', 'z', 'y']) if (typeof a[key] === 'number') st[key] = a[key] + (c[key] - a[key]) * k;
           for (const key of ['yaw', 'h', 'trailerYaw']) if (typeof a[key] === 'number') { let d = c[key] - a[key]; d = Math.atan2(Math.sin(d), Math.cos(d)); st[key] = a[key] + d * k; }
           break;
         }

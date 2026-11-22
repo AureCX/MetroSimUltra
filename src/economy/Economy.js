@@ -34,7 +34,7 @@ export class Economy {
     const s = this.spec(kind, model);
     const prefix = (s?.fleetPrefix || model).toUpperCase().replace(/[^A-Z0-9]+/g, '');
     const seq = (this.d.seq[prefix] = (this.d.seq[prefix] || 0) + 1);
-    return `${kind === 'bus' ? 'BUS-' : ''}${prefix}-${String(seq).padStart(3, '0')}`;
+    return `${kind === 'bus' ? 'BUS-' : kind === 'aircraft' ? 'F-' : ''}${prefix}-${String(seq).padStart(3, '0')}`;
   }
   _add(kind, model, price, note) {
     const e = this.d;
@@ -69,7 +69,7 @@ export class Economy {
   sellValue(v) { return Math.round(this.priceOf(v.kind, v.model) * 0.6 * (0.4 + 0.6 * v.condition)); }
   sell(uid) {
     const v = this.vehicle(uid); if (!v) return { ok: false, reason: 'Unknown vehicle.' };
-    if (this.owned(v.kind).length <= 1) return { ok: false, reason: `You need at least one ${v.kind === 'bus' ? 'bus' : 'train'}.` };
+    if (v.kind !== 'aircraft' && this.owned(v.kind).length <= 1) return { ok: false, reason: `You need at least one ${v.kind === 'bus' ? 'bus' : 'train'}.` };
     const value = this.sellValue(v);
     this.d.fleet = this.d.fleet.filter((x) => x !== v);
     this.d.balance += value; this.log(`Sale ${v.uid}`, value, v.uid); this.persist();
@@ -196,6 +196,29 @@ export class Economy {
     const crew = res.items.at(-1).amount; this.d.balance += crew; this.d.ledger[0].amount += crew; res.total += crew; res.balance = this.d.balance; this.persist();
     this.wear(uid, { km });
     return { ok: true, ...res, delay, failure };
+  }
+  /**
+   * Airline flight. r: { completed, flightNo, from, to, km, seats, load (0..1), fuelUsed (kg), mtow (t), lease (€, 0 when
+   * own aircraft), blockMin, costPerHour, delayMin (arrival vs schedule), landingFpm, penalties, crashed, diverted, uid }.
+   * Tickets by distance, fuel at 0.92 €/kg, landing / navigation / handling fees by airport and weight, maintenance
+   * reserve by block hours, punctuality bonus (≤ 5 min) or compensation (> 30 min), smooth-landing bonus.
+   */
+  settleFlight(r) {
+    const items = [], km = r.km;
+    if (r.completed) {
+      const pax = Math.round(r.seats * r.load), fare = 0.17 * km + 38;
+      const tickets = pax * fare; items.push({ label: `${pax} passengers · ${r.from} → ${r.to} · ${km.toFixed(0)} km`, amount: tickets });
+      const late = Math.max(0, r.delayMin || 0);
+      if (late <= 5) items.push({ label: `Punctuality bonus (${late < 1 ? 'on time' : `+${Math.round(late)} min`})`, amount: tickets * 0.1 });
+      else if (late > 30) items.push({ label: `Passenger compensation (+${Math.round(late)} min late)`, amount: -tickets * (late > 120 ? 0.6 : 0.2) });
+      if (r.landingFpm != null && r.landingFpm < 240) items.push({ label: `Smooth landing (${Math.round(r.landingFpm)} ft/min)`, amount: 250 });
+    } else items.push({ label: r.crashed ? 'Flight lost — tickets refunded, insurance excess' : 'Flight not completed — tickets refunded', amount: r.crashed ? -50000 : 0 });
+    items.push({ label: `Fuel · ${Math.round(r.fuelUsed)} kg`, amount: -r.fuelUsed * 0.92 });
+    items.push({ label: 'Landing, navigation & handling fees', amount: -(r.mtow * 9 + 380 + km * 1.6) });
+    items.push({ label: `Maintenance reserve · ${(r.blockMin / 60).toFixed(1)} h`, amount: -(r.costPerHour * 0.35) * (r.blockMin / 60) });
+    if (r.lease) items.push({ label: 'Aircraft lease (per flight)', amount: -r.lease });
+    this.penaltyItems(r, items, { skipped: 0, perPoint: 8 });
+    return this.post(items, `Flight ${r.flightNo || ''}`.trim(), r.uid);
   }
   penaltyItems(r, items, { skipped, perPoint }) {
     if (r.missed) items.push({ label: `${r.missed} station(s) / stop(s) skipped`, amount: -r.missed * skipped });

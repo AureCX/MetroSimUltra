@@ -82,13 +82,14 @@ export class Hub {
   drive(p, d) {
     if (!p.session) return this.error(p, 'no-session', 'Join a session first.');
     if (!d) { p.drive = null; p.state = null; this.sendPlayers(this.sessions.get(p.session)); return; }
-    const kind = d.kind === 'bus' ? 'bus' : 'train';
-    p.drive = kind === 'train'
+    const kind = d.kind === 'bus' ? 'bus' : d.kind === 'aircraft' ? 'aircraft' : 'train';
+    p.drive = kind === 'aircraft' ? { kind, model: clean(d.model, 32), uid: clean(d.uid, 32), route: clean(d.route, 16), length: num(d.length, 10, 80, 38), width: num(d.width, 10, 70, 36), maxSpeed: num(d.maxSpeed, 100, 1100, 950) }
+      : kind === 'train'
       ? { kind, lineId: clean(d.lineId, 64), sourceId: clean(d.sourceId, 64), number: clean(d.number, 4), color: clean(d.color, 12), dir: d.dir === 'B' ? 'B' : 'A', branch: clean(d.branch, 64), trunkEnd: num(d.trunkEnd, 0, 1e6, 1e6), length: num(d.length, 10, 400, 80), maxSpeed: num(d.maxSpeed, 10, 360, 80), model: clean(d.model, 32), uid: clean(d.uid, 32), cars: num(d.cars, 1, 20, 5) }
       : { kind, model: clean(d.model, 32), uid: clean(d.uid, 32), route: clean(d.route, 16), length: num(d.length, 5, 30, 12), width: num(d.width, 2, 3, 2.55), maxSpeed: num(d.maxSpeed, 20, 120, 90) };
     p.state = null;
     this.sendPlayers(this.sessions.get(p.session));
-    this.feed(this.sessions.get(p.session), kind === 'train' ? `${p.name} is driving Line ${p.drive.number} (${p.drive.uid || p.drive.model})` : `${p.name} took bus ${p.drive.uid || p.drive.model}${p.drive.route ? ` on route ${p.drive.route}` : ''}`);
+    this.feed(this.sessions.get(p.session), kind === 'aircraft' ? `${p.name} is flying ${p.drive.route || ''} (${p.drive.uid || p.drive.model})` : kind === 'train' ? `${p.name} is driving Line ${p.drive.number} (${p.drive.uid || p.drive.model})` : `${p.name} took bus ${p.drive.uid || p.drive.model}${p.drive.route ? ` on route ${p.drive.route}` : ''}`);
   }
 
   /** Validates and stores a state update; returns the accepted state or null. */
@@ -102,6 +103,9 @@ export class Hub {
     if (p.drive.kind === 'train') {
       s = { s: num(st.s, -50, 1e6), v: num(st.v, -vmax * 1.1, vmax * 1.1 + 1), doors: clean(st.doors, 12), atStop: st.atStop == null ? null : num(st.atStop, 0, 999), next: clean(st.next, 64), load: num(st.load, 0, 300), x: num(st.x, -1e6, 1e6), z: num(st.z, -1e6, 1e6), h: num(st.h, -100, 100), at: t };
       if (prev && Math.abs(s.s - prev.s) > vmax * 1.2 * dt + 8) { this.send(p.id, { t: 'correction', s: prev.s, reason: 'Position rejected (moved faster than the train can)' }); return null; }
+    } else if (p.drive.kind === 'aircraft') {
+      s = { x: num(st.x, -1e6, 1e6), z: num(st.z, -1e6, 1e6), y: num(st.y, -100, 20000), yaw: num(st.yaw, -1e3, 1e3), pitch: num(st.pitch, -90, 90), bank: num(st.bank, -180, 180), v: num(st.v, 0, vmax * 1.15 + 1), gear: num(st.gear, 0, 1), flaps: num(st.flaps, 0, 1), st: clean(st.st, 16), at: t };
+      if (prev && Math.hypot(s.x - prev.x, s.z - prev.z) > vmax * 1.25 * dt + 30) { this.send(p.id, { t: 'correction', x: prev.x, z: prev.z, reason: 'Position rejected (moved faster than the aircraft can)' }); return null; }
     } else {
       s = { x: num(st.x, -1e6, 1e6), z: num(st.z, -1e6, 1e6), yaw: num(st.yaw, -1e3, 1e3), v: num(st.v, -vmax, vmax * 1.15 + 1), doors: Array.isArray(st.doors) ? st.doors.slice(0, 4).map((x) => num(x, 0, 1)) : [], trailerYaw: num(st.trailerYaw, -1e3, 1e3), lights: !!st.lights, brake: !!st.brake, ind: clean(st.ind, 8), at: t };
       if (prev && Math.hypot(s.x - prev.x, s.z - prev.z) > vmax * 1.25 * dt + 6) { this.send(p.id, { t: 'correction', x: prev.x, z: prev.z, yaw: prev.yaw, reason: 'Position rejected (moved faster than the bus can)' }); return null; }

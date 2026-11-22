@@ -19,6 +19,11 @@ import { Economy } from './economy/Economy.js';
 import { NetworkOverlay } from './ui/NetworkOverlay.js';
 import { drawRailMap, railStationInfo } from './ui/RailMap.js';
 import { Multiplayer, defaultServerUrl } from './net/Multiplayer.js';
+import { FlightGame } from './air/FlightGame.js';
+import { FLIGHT_ACTIONS } from './air/FlightControls.js';
+import { FlightHUD } from './ui/FlightHUD.js';
+import { AirMenu } from './ui/AirMenu.js';
+import { AIRCRAFT } from './air/AirData.js';
 
 // Any error while starting up is shown on screen instead of leaving a black page.
 const startupError = (e) => { const el = document.getElementById('menu'); if (el && !el.querySelector('nav')) el.innerHTML = `<div class="menu-loading"><p>Failed to start: ${String(e?.message || e)}</p><p class="sub">Try reloading the page; if it persists, please report this message.</p></div>`; };
@@ -30,6 +35,8 @@ const save = new SaveSystem();
 const input = new Input(settings, bus);
 const busInput = new Input(settings, bus, { actions: BUS_ACTIONS, key: 'controls.busBindings' });
 busInput.enabled = false;
+const airInput = new Input(settings, bus, { actions: FLIGHT_ACTIONS, key: 'controls.airBindings' });
+airInput.enabled = false;
 const audio = new AudioSystem(settings, bus);
 
 const container = document.getElementById('viewport');
@@ -45,10 +52,13 @@ const game = new Game({ renderer, bus, settings, input, audio });
 const busHud = new BusHUD(document.getElementById('bushud'), bus, settings, busInput);
 busHud.show(false);
 const busGame = new BusGame({ renderer, bus, settings, input: busInput, audio, save });
+const airGame = new FlightGame({ renderer, bus, settings, input: airInput, audio, save });
+const airHud = new FlightHUD(document.getElementById('airhud'), bus, airInput, () => (airGame.scene ? airGame : null));
+airHud.show(false);
 const netOverlay = new NetworkOverlay(document.body);
 // Online multiplayer: connection badge (always visible while connected), feed messages as toasts in game.
 const mp = new Multiplayer(bus, settings);
-game.mp = mp; busGame.mp = mp;
+game.mp = mp; busGame.mp = mp; airGame.mp = mp;
 const badge = document.createElement('div'); badge.id = 'mp-badge'; document.body.appendChild(badge);
 bus.on('mp:status', (st) => {
   const col = { online: '#3cff8a', connecting: '#ffb300', reconnecting: '#ffb300', error: '#ff4a3a', offline: '#8fa1b3' }[st.status];
@@ -63,19 +73,20 @@ bus.on('ui:networkMap', () => {
   netOverlay.toggle(game.netModel, () => game.networkState(false), rail);
 });
 let active = game; // the session currently running (metro or bus)
-window.__metro = { game, busGame, bus, settings, mp }; window.__THREE = THREE; // debugging handles
+window.__metro = { game, busGame, airGame, bus, settings, mp }; window.__THREE = THREE; // debugging handles
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h);
   game.resize(w, h);
   busGame.resize(w, h);
+  airGame.resize(w, h);
 }
 window.addEventListener('resize', resize);
 
 const repo = new LineRepository();
 const busRepo = new BusRepository();
-let busMenu;
+let busMenu, airMenu;
 let menu;
 let economy;
 let state = 'menu'; // menu | playing | paused | summary
@@ -84,11 +95,11 @@ let lastSession = null;
 async function boot() {
   await repo.load();
   await busRepo.load();
-  economy = new Economy(save, { train: repo.trains, bus: busRepo.vehicles });
-  game.economy = economy; busGame.economy = economy; game.saves = save;
+  economy = new Economy(save, { train: repo.trains, bus: busRepo.vehicles, aircraft: Object.values(AIRCRAFT) });
+  game.economy = economy; busGame.economy = economy; airGame.economy = economy; game.saves = save;
   window.__metro.economy = economy;
   menu = new Menu(document.getElementById('menu'), { repo, settings, save, input, bus, audio, busInput, economy, busRepo, mp });
-  menu.netOverlay = netOverlay;
+  menu.netOverlay = netOverlay; menu.airInput = airInput; menu.airActions = FLIGHT_ACTIONS;
   mp.trainSpecs = (id) => repo.train(id); mp.busSpecs = (id) => busRepo.vehicle(id);
   menu.on('play', startSession);
   menu.on('resume', () => setPaused(false));
@@ -99,6 +110,9 @@ async function boot() {
   busMenu = new BusMenu(menu, busRepo, save, busInput, settings);
   menu.on('bus', () => busMenu.show());
   menu.on('busPlay', startBus);
+  airMenu = new AirMenu(menu, save);
+  menu.on('air', () => airMenu.show());
+  menu.on('airPlay', startAir);
   menu.show('main');
   // Invite link (?server=…&join=CODE): connect and join straight away.
   const q = new URLSearchParams(location.search), join = q.get('join'), srv = q.get('server') || settings.get('multiplayer.server') || defaultServerUrl();
@@ -114,7 +128,7 @@ function startBus(cfg) {
   menu.showLoading(`Building ${cfg.route ? `${cfg.route.route} ${cfg.route.name}` : 'the bus world'}…`);
   setTimeout(() => {
     try {
-      if (active === game) game.dispose();
+      if (active !== busGame) leaveActive();
       busGame.start(cfg);
       active = busGame;
       resize(); menu.hide(); hud.show(false); busHud.show(true);
@@ -129,9 +143,39 @@ function startBus(cfg) {
   }, 30);
 }
 
+/** Leaves whichever session is running (before starting another one). */
+function leaveActive() {
+  if (active === game) game.dispose();
+  if (active === busGame) { busGame.dispose(); busHud.show(false); busInput.enabled = false; }
+  if (active === airGame) { airGame.dispose(); airHud.show(false); airInput.enabled = false; }
+}
+
+function startAir(cfg) {
+  audio.init();
+  lastSession = { air: cfg };
+  menu.showLoading(`Preparing flight ${cfg.flight.no} ${cfg.flight.from} → ${cfg.flight.to}…`);
+  setTimeout(() => {
+    try {
+      leaveActive();
+      airGame.start(cfg);
+      active = airGame;
+      resize(); menu.hide(); hud.show(false); busHud.show(false); airHud.show(true);
+      input.enabled = false; input.queue = []; busInput.enabled = false;
+      airInput.enabled = true; airInput.queue = []; menu.controlsTab = 'air';
+      state = 'playing';
+    } catch (e) {
+      console.error(e);
+      airMenu.show();
+      menu.notice(`Could not start: ${e.message}`);
+    }
+  }, 30);
+}
+
 function startSession(sel) {
   if (sel.bus) { startBus(sel.bus); return; }
+  if (sel.air) { startAir(sel.air); return; }
   audio.init();
+  if (active === airGame) { airGame.dispose(); airHud.show(false); airInput.enabled = false; }
   busGame.dispose(); busHud.show(false); busInput.enabled = false; active = game; input.queue = [];
   lastSession = sel;
   hud.setMapOpen(false); game.mapTarget = null; netOverlay.close();
@@ -158,7 +202,7 @@ function setPaused(p) {
   state = p ? 'paused' : 'playing';
   active.setPaused(p);
   if (p) menu.show('pause'); else menu.hide();
-  if (active === game) input.enabled = !p; else busInput.enabled = !p;
+  if (active === game) input.enabled = !p; else if (active === airGame) airInput.enabled = !p; else busInput.enabled = !p;
 }
 
 function quitToMenu() {
@@ -166,7 +210,7 @@ function quitToMenu() {
   audio.endSession();                    // before resuming the (paused) audio context: no leftover loop is heard
   active.setPaused(false);
   active.dispose();
-  hud.show(false); busHud.show(false); busInput.enabled = false; active = game;
+  hud.show(false); busHud.show(false); busInput.enabled = false; airHud.show(false); airInput.enabled = false; active = game;
   state = 'menu';
   input.enabled = true;
   menu.show('main');
@@ -212,6 +256,14 @@ bus.on('bus:finished', (r) => {
     busMenu.summary(r);
   }, 1200);
 });
+bus.on('air:finished', (r) => {
+  setTimeout(() => {
+    state = 'summary';
+    audio.endSession();
+    airGame.dispose(); airHud.show(false); airInput.enabled = false; active = game;
+    airMenu.summary(r);
+  }, r.crashed ? 3500 : 1500);
+});
 bus.on('settings:changed', ({ path }) => { if (path.startsWith('graphics') || path === '*') game.applyGraphics(); });
 
 // Escape while in a menu submenu during pause returns to the pause screen; in main menu nothing.
@@ -246,7 +298,7 @@ function frame(now) {
     else input.poll(dt);
   } catch (e) {
     console.error(e);
-    showError({ where: active === game ? 'metro' : 'bus', message: String(e?.message || e), stack: String(e?.stack || '').split('\n').slice(1, 3).join(' | ') });
+    showError({ where: active === game ? 'metro' : active === airGame ? 'aviation' : 'bus', message: String(e?.message || e), stack: String(e?.stack || '').split('\n').slice(1, 3).join(' | ') });
   }
 }
 boot().then(() => requestAnimationFrame(frame)).catch((e) => {
